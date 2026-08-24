@@ -17,27 +17,37 @@ export const PRICE_GATE_THRESHOLDS = Object.freeze({
  * Check a resolved price against the gate.
  * @param {string} model model id
  * @param {{ input_per_m?: number, output_per_m?: number, estimated?: boolean, source?: string } | null} price resolved price (null = unknown)
- * @returns {{ model: string, blocked: boolean, priceKnown: boolean, inputPerM: number|null, outputPerM: number|null,
+ * @param {{ coveredByPlan?: string }} [opts] `coveredByPlan`: a ChatGPT plan id (e.g. "prolite")
+ *   that makes this assignment flat-rate subscription-covered — codex usage on a
+ *   Pro/Pro-Lite ChatGPT login is NOT billed per token, so there is no per-token
+ *   spend for the gate to pause. Still reported (never silent): `covered:true` +
+ *   an explicit reason naming the plan.
+ * @returns {{ model: string, blocked: boolean, covered: boolean, plan: string|null, priceKnown: boolean, inputPerM: number|null, outputPerM: number|null,
  *   thresholdIn: number, thresholdOut: number, estimated: boolean, source: string|null,
  *   reason: string }}
  */
-export function checkPriceGate(model, price) {
+export function checkPriceGate(model, price, opts = {}) {
   const t = PRICE_GATE_THRESHOLDS;
   const inP = price && Number.isFinite(Number(price.input_per_m)) ? Number(price.input_per_m) : null;
   const outP = price && Number.isFinite(Number(price.output_per_m)) ? Number(price.output_per_m) : null;
   const priceKnown = inP != null || outP != null;
-  const blocked = priceKnown && ((inP != null && inP > t.inputPerM) || (outP != null && outP > t.outputPerM));
+  const covered = !!opts.coveredByPlan;
+  const blocked = !covered && priceKnown && ((inP != null && inP > t.inputPerM) || (outP != null && outP > t.outputPerM));
   const parts = [];
   if (inP != null) parts.push(`input $${inP}/1M (threshold $${t.inputPerM})`);
   if (outP != null) parts.push(`output $${outP}/1M (threshold $${t.outputPerM})`);
-  const reason = !priceKnown
-    ? `price unknown — not blocked by the price gate (verify on Artificial Analysis/OpenRouter)`
-    : blocked
-      ? `EXPENSIVE model: ${parts.join(", ")} exceeds the gate (blocked until a human approves or a cheaper model is configured)`
-      : `within price gate (${parts.join(", ")})`;
+  const reason = covered
+    ? `subscription-covered by ChatGPT plan "${opts.coveredByPlan}" (local codex login; flat rate — no per-token spend to gate)${priceKnown ? `; listed price ${parts.join(", ")} is NOT billed for codex usage` : ""}`
+    : !priceKnown
+      ? `price unknown — not blocked by the price gate (verify on Artificial Analysis/OpenRouter)`
+      : blocked
+        ? `EXPENSIVE model: ${parts.join(", ")} exceeds the gate (blocked until a human approves or a cheaper model is configured)`
+        : `within price gate (${parts.join(", ")})`;
   return {
     model: String(model || ""),
     blocked,
+    covered,
+    plan: covered ? String(opts.coveredByPlan) : null,
     priceKnown,
     inputPerM: inP,
     outputPerM: outP,

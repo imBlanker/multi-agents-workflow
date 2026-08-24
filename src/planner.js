@@ -33,7 +33,7 @@
  *   role: string, agent: string, model: string, appType: string,
  *   costRateLimitUsdPerMin: number, concurrency: number, tools: string[],
  *   reviewRequired: boolean, task: string, modelChoice?: object,
- *   priceGateBlocked?: boolean,
+ *   priceGateBlocked?: boolean, modelReasoningEffort?: string,
  * }} AgentSpec
  *
  * @typedef {{
@@ -51,9 +51,10 @@
  */
 
 import { isoNow, round, slug } from "./util.js";
-import { selectModelForRole, baseRole } from "./modelcap.js";
+import { selectModelForRole, baseRole, classifyModel, capabilityScore, ROLE_REQUIREMENTS } from "./modelcap.js";
 import { resolvePrice } from "./pricing.js";
 import { checkPriceGate, PRICE_GATE_THRESHOLDS } from "./pricegate.js";
+import { reviewerPlanOverride } from "./codexplan.js";
 
 const DEFAULT_PER_AGENT = 5.0;   // USD/min (real inference spend from cc-switch logs)
 const DEFAULT_TOTAL = 10.0;      // USD/min
@@ -146,11 +147,17 @@ function level(l) {
  * @param {{ hasSubagents?: boolean, hasMultiAgent?: boolean, hasDynamicWorkflow?: boolean, app?: string, codexPluginInstalled?: boolean, codexBinary?: string|null }} [ctx.host]
  * @param {{ currentProviders?: Record<string, any>, modelPricing?: Record<string, any> }} [ctx.ccSwitch]
  * @param {{ perAgent?: number, total?: number, maxConcurrency?: number }} [ctx.cost]
+ * @param {import("./codexplan.js").CodexPlanInfo | null} [ctx.codexPlan]
+ *   local codex login state — when a Pro/Pro-Lite ChatGPT plan is active, the
+ *   reviewer role (app_type codex) defaults to `gpt-5.6-sol` @ reasoning `low`
+ *   (machine policy 2026-08-24) and the price gate treats it as
+ *   subscription-covered (flat rate; not blocked).
  */
 export function planWorkflow(signals, ctx = {}) {
   const host = ctx.host ?? {};
   const cc = ctx.ccSwitch ?? {};
   const cost = ctx.cost ?? {};
+  const codexPlan = ctx.codexPlan ?? null;
   const perAgent = round(cost.perAgent ?? DEFAULT_PER_AGENT, 2);
   const total = round(cost.total ?? DEFAULT_TOTAL, 2);
   const maxConcurrency = cost.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
@@ -191,21 +198,60 @@ export function planWorkflow(signals, ctx = {}) {
     const key = `${baseRole(role)}|${appType}|${preferCheap ? "cheap" : "std"}`;
     if (!selCache[key]) {
       let sel = selectModelForRole({ role, appType, cc, quota: cc.quota, preferCheap });
-      sel = sel ?? {
-        role, appType, model: pickModel(cc, appType, fallbackId), providerId: null, providerName: null,
-        capabilityScore: null, quota: null, price: null,
-        reasons: ["cc-switch provider list unavailable; using the current provider's default model"],
-        estimated: true, alternates: [], considered: 0,
-      };
+      // Machine policy (2026-08-24): reviewer on codex defaults to gpt-5.6-sol
+      // @ reasoning low IFF the local codex login carries a Pro / Pro-Lite
+      // ChatGPT plan (flat-rate subscription; codex usage is not billed per
+      // token). The assignment is then subscription-covered — the price gate
+      // reports `covered:true` instead of blocking. Every other login state
+      // keeps the normal capability-aware selection + gate.
+      const planOv = baseRole(role) === "reviewer" && appType === "codex" ? reviewerPlanOverride(codexPlan) : null;
+      const normal = sel;
+      if (planOv) {
+        const cls = classifyModel(planOv.model);
+        const req = ROLE_REQUIREMENTS.reviewer ?? { require: ["agentic"], prefer: [], why: "independent review" };
+        const cap = capabilityScore(cls.caps, req);
+        const ovPrice = resolvePrice(planOv.model, {
+          modelPricing: cc.modelPricing,
+          costMultiplier: Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
+        });
+        sel = {
+          role, appType,
+          model: planOv.model,
+          providerId: null, providerName: planOv.providerLabel,
+          capabilityScore: cap, classification: cls, quota: null,
+          price: ovPrice ? { input_per_m: ovPrice.input_per_m, output_per_m: ovPrice.output_per_m, source: ovPrice.source, estimated: !!ovPrice.estimated } : null,
+          reasons: [
+            `machine policy: local codex is logged in via ChatGPT ${planOv.planLabel} (pro-covered plan) — reviewer defaults to \`${planOv.model}\` @ reasoning ${planOv.reasoningEffort}`,
+            `price gate: subscription-covered by ChatGPT plan "${planOv.planType}" (flat rate; listed per-token price does not apply to codex usage)`,
+            `capability fit ${cap}/100 for role "${role}" (${req.why})`,
+            `model class: ${cls.notes[0] ?? cls.family}`,
+            "runs on the local ChatGPT login (codex OAuth direct, not the cc-switch proxy)",
+          ],
+          estimated: true,
+          alternates: normal?.alternates ?? [],
+          considered: normal?.considered ?? 0,
+          reasoningEffort: planOv.reasoningEffort,
+        };
+      } else {
+        sel = sel ?? {
+          role, appType, model: pickModel(cc, appType, fallbackId), providerId: null, providerName: null,
+          capabilityScore: null, quota: null, price: null,
+          reasons: ["cc-switch provider list unavailable; using the current provider's default model"],
+          estimated: true, alternates: [], considered: 0,
+        };
+      }
       // Price gate (HITL): resolve the FULL price chain (cc-switch model_pricing
       // + provider cost_multiplier + vendored fallback — the same chain
       // configgen writes into .mawf/agents/*.json) and check the thresholds.
       // A blocked assignment pauses the related work and is reported to a human.
+      // A subscription-covered assignment (ChatGPT Pro/Pro-Lite login) is
+      // reported as covered:true instead of blocked — flat rate, no per-token
+      // spend to gate.
       const price = resolvePrice(sel.model, {
         modelPricing: cc.modelPricing,
         costMultiplier: Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
       });
-      sel.priceGate = checkPriceGate(sel.model, price);
+      sel.priceGate = checkPriceGate(sel.model, price, planOv ? { coveredByPlan: planOv.planType } : undefined);
       selCache[key] = sel;
     }
     return selCache[key];
@@ -365,8 +411,10 @@ function mkAgent(role, agent, model, appType, perAgent, tools, task, reviewRequi
       estimated: modelChoice.estimated ?? true,
       considered: modelChoice.considered ?? 0,
       alternates: (modelChoice.alternates ?? []).map((a) => ({ provider: a.providerName, model: a.model, capabilityScore: a.capabilityScore })),
+      ...(modelChoice.reasoningEffort ? { reasoningEffort: modelChoice.reasoningEffort } : {}),
     };
     if (modelChoice.priceGate?.blocked) spec.priceGateBlocked = true;
+    if (modelChoice.reasoningEffort) spec.modelReasoningEffort = modelChoice.reasoningEffort;
   }
   return spec;
 }

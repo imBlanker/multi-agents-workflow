@@ -169,6 +169,8 @@ mawf models --app codex    # same for the codex app_type
 - `mawf guard`／`mawf acquire` 對尚未獲人工批准的昂貴模型角色**拒絕放行**，暫停狀態得以維持。
 - 人工可透過三種方式恢復：改用更便宜的模型（編輯 `.mawf/agents/<role>.json` 後重跑 `mawf plan`）、按角色明確批准（`mawf approve-model --role <role> --yes`——重跑 plan 後仍然有效）、或單次執行覆蓋（`--allow-pricey`）。
 
+**訂閱覆蓋豁免（codex 登入 ChatGPT Pro / Pro-Lite）。** 機器級策略（2026-08-24）：當本機 Codex CLI 登入的 OpenAI 帳戶其 ChatGPT plan 為 `pro` 或 `prolite`（[`src/codexplan.js`](./src/codexplan.js) 讀取 `~/.codex/auth.json`（或 `$CODEX_HOME`）及 id_token 的 `chatgpt_plan_type` 聲明）時，**reviewer** 角色預設使用 `gpt-5.6-sol`（reasoning effort `low`），價格閘門將其標記為 `covered:true` 而非攔截——該登入下的 codex 用量是 flat-rate 訂閱，不按 token 計費，沒有可閘門的按 token 開銷。其他任何登入狀態（API key、free/plus/team、未登入）保持原有的能力感知選型＋閘門。豁免從不靜默：`mawf plan`／`mawf init` 會列印偵測到的登入行，`.mawf/agents/reviewer.json` 記錄 `price_gate.covered` 與 plan id。
+
 ## 7. cc-switch 整合與路由策略
 MAW 預設將你的 cc-switch 視為**唯讀**。以下規則在程式碼中強制執行（[`src/ccswitch.js`](./src/ccswitch.js)、`guardSql`）：
 
