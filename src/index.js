@@ -21,6 +21,7 @@ import { snapshotCcSwitch } from "./backup.js";
 import { classifyModel, selectModelForRole, candidatesForAppType, baseRole } from "./modelcap.js";
 import { resolvePrice } from "./pricing.js";
 import { checkPriceGate, priceGateReport } from "./pricegate.js";
+import { readCodexPlan, reviewerPlanOverride } from "./codexplan.js";
 import { readDshAsCc } from "./dshprovider.js";
 import { readPiAsCc, mergePiIntoCc, enrichPiDbRowsWithModelsJson } from "./piprovider.js";
 import { scanInventory, writeInventoryArtifacts } from "./inventory.js";
@@ -68,7 +69,7 @@ function loadCtx(opts = {}) {
       cc.modelPricing = merged;
     }
   }
-  return { host, cc };
+  return { host, cc, codexPlan: readCodexPlan() };
 }
 
 /** @param {string[]} args @returns {{}} */
@@ -240,7 +241,7 @@ function cmdInit(f, flags) {
   else out(`Initialized .mawf/ in ${project}`), out(`  cc-switch snapshot: skipped — ${snap.error}`);
   const plan = planWorkflow(
     { taskType: "greenfield", files: 0, parallelizableSubtasks: 1, risk: "medium", contextNeed: "small", valuePerRun: "medium", description: "init" },
-    { host: ctx.host, ccSwitch: ctx.cc, cost: costFrom(flags) }
+    { host: ctx.host, ccSwitch: ctx.cc, cost: costFrom(flags), codexPlan: ctx.codexPlan }
   );
   generateConfigs(project, plan, ctx.cc);
   writeText(path.join(project, ".mawf", "AGENTS.md"), AGENTS_INIT);
@@ -263,6 +264,8 @@ function cmdInit(f, flags) {
   out(`  host: ${ctx.host.app} (caps: ${hostCapabilities(ctx.host).join(", ") || "none"}); supported: Claude Code + Codex + Pi + DeepSeek Harness (dsh)`);
   out(`  cc-switch: ${ctx.cc.dbPath ? "ok (read-only)" : "not found"}; user: ${user}`);
   out(`  primary architecture: ${plan.primary}`);
+  const revOv = reviewerPlanOverride(ctx.codexPlan);
+  if (revOv) out(`  reviewer: codex ChatGPT ${revOv.planLabel} login → \`${revOv.model}\` @ reasoning ${revOv.reasoningEffort} (machine default; subscription-covered — price gate exempt)`);
   if (ctx.cc.dbPath && !projectSyncEnabled()) {
     out(`  cc-switch project: DECOUPLED — profiles sync disabled by policy; MAW manages project-level agent/subagent model configs in .mawf/; cc-switch is a read-only provider-config source`);
   }
@@ -439,6 +442,13 @@ function cmdModels(f, flags) {
   out(`\nRole assignments (capability fit → provider remaining quota/balance → cost rate):`);
   const roles = flags.role ? [flags.role] : ["orchestrator", "researcher", "implementer", "researcher-2", "reviewer"];
   for (const role of roles) {
+    // Machine policy (2026-08-24): reviewer on codex with a Pro / Pro-Lite
+    // ChatGPT login → gpt-5.6-sol @ low, subscription-covered.
+    const planOv = baseRole(role) === "reviewer" && appType === "codex" ? reviewerPlanOverride(ctx.codexPlan) : null;
+    if (planOv) {
+      out(`  ${role} → ${planOv.providerLabel} / ${planOv.model} (machine default, reasoning ${planOv.reasoningEffort}; subscription-covered — price gate exempt)`);
+      continue;
+    }
     const at = baseRole(role) === "reviewer" && appType !== "codex" ? appType : appType;
     const sel = selectModelForRole({ role, appType: at, cc: ctx.cc, quota: ctx.cc.quota, preferCheap: /-2$/.test(role) });
     if (!sel) { out(`  ${role}: no available candidates for app_type "${at}"`); continue; }
@@ -510,7 +520,7 @@ function cmdPlan(f, flags) {
   if (flags.persistence) signals.needPersistence = true;
   signals.description = flags.description || path.basename(project);
 
-  const plan = planWorkflow(signals, { host: ctx.host, ccSwitch: ctx.cc, cost: costFrom(flags) });
+  const plan = planWorkflow(signals, { host: ctx.host, ccSwitch: ctx.cc, cost: costFrom(flags), codexPlan: ctx.codexPlan });
   const gen = generateConfigs(project, plan, ctx.cc);
   try {
     const inv = scanInventory({ projectDir: project, dbPath: flags.db });
@@ -543,6 +553,8 @@ function cmdPlan(f, flags) {
     if (g.warnings.length) { out(`  warnings:`); for (const w of g.warnings) out(`    - ${w}`); }
   } else {
     out(`plan: ${plan.primary} (${plan.selected.join(", ")})`);
+    const revOv = reviewerPlanOverride(ctx.codexPlan);
+    if (revOv) out(`  reviewer: codex ChatGPT ${revOv.planLabel} login → \`${revOv.model}\` @ reasoning ${revOv.reasoningEffort} (machine default; subscription-covered — price gate exempt)`);
     out(`  agents: ${plan.agents.map((a) => `${a.role}(${a.agent})`).join(", ")}`);
     out(`  review gates: ${plan.reviewPoints.length}`);
     out(`  loops: ${plan.loops.length}`);

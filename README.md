@@ -171,6 +171,8 @@ Each agent's `.json`/`.md` carries the full `model_selection` record (chosen pro
 - `mawf guard` / `mawf acquire` **deny** any role whose expensive model is not yet approved, so paused work stays paused.
 - A human resumes work in one of three ways: pick a cheaper model (edit `.mawf/agents/<role>.json`, re-run `mawf plan`), explicitly approve per role (`mawf approve-model --role <role> --yes` — sticky across re-plans), or override for one run (`--allow-pricey`).
 
+**Subscription-covered exemption (codex ChatGPT Pro / Pro-Lite login).** Machine policy (2026-08-24): when the local Codex CLI is logged in with an OpenAI account whose ChatGPT plan is `pro` or `prolite` ([`src/codexplan.js`](./src/codexplan.js) reads `~/.codex/auth.json`, or `$CODEX_HOME`, and the id_token's `chatgpt_plan_type` claim), the **reviewer** role defaults to `gpt-5.6-sol` at reasoning effort `low`, and the price gate reports the assignment as `covered:true` instead of blocking — codex usage on that login is flat-rate subscription, not per-token API billing, so there is no per-token spend to gate. Every other login state (API key, free/plus/team plan, not logged in) keeps the normal capability-aware selection + gate. The exemption is never silent: `mawf plan`/`mawf init` print the login-detected line, and `.mawf/agents/reviewer.json` records `price_gate.covered` + the plan id.
+
 ## 7. cc-switch Integration & Routing Policy
 MAW treats your cc-switch as **read-only by default**. The rules below are enforced in code ([`src/ccswitch.js`](./src/ccswitch.js), `guardSql`):
 

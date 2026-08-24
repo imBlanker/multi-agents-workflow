@@ -4,6 +4,12 @@ All notable changes to **multi-agents-workflow (MAW)** are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/). Agent-oriented summary: [`docs/AGENT_CHANGELOG.md`](docs/AGENT_CHANGELOG.md).
 
+## [Unreleased]
+
+### Added
+
+- **Reviewer machine default under a codex ChatGPT Pro / Pro-Lite login (+ price-gate subscription exemption).** Machine policy (2026-08-24): when the local Codex CLI is logged in with an OpenAI account whose ChatGPT plan is `pro` or `prolite` (`src/codexplan.js` — reads `~/.codex/auth.json` (or `$CODEX_HOME`) and the id_token `chatgpt_plan_type` claim), the reviewer role defaults to `gpt-5.6-sol` at reasoning effort `low`, recorded as `model_reasoning_effort` in `.mawf/agents/reviewer.json`; `checkPriceGate` gains `coveredByPlan` and reports the assignment `covered:true` (flat-rate subscription — no per-token spend to gate) instead of blocking. Any other login state (API key, free/plus/team, not logged in) keeps the normal capability-aware selection + gate. Never silent: `mawf plan`/`mawf init`/`mawf models` print the login-detected line; configs record `price_gate.covered` + plan id. README ×3 document the exemption.
+
 ## [0.6.0] - 2026-08-21
 
 ### Added

@@ -82,8 +82,8 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
       const prev = JSON.parse(fs.readFileSync(`${base}.json`, "utf8"));
       stickyApproved = !!prev?.price_gate?.approved;
     } catch {}
-    const priceGateBlock = gate && (gate.blocked || stickyApproved)
-      ? { blocked: !!gate.blocked, approved: stickyApproved, thresholds: { input_per_m: gate.thresholdIn, output_per_m: gate.thresholdOut }, price: { input_per_m: gate.inputPerM, output_per_m: gate.outputPerM }, estimated: !!gate.estimated, model: a.model, reason: gate.reason }
+    const priceGateBlock = gate && (gate.blocked || gate.covered || stickyApproved)
+      ? { blocked: !!gate.blocked, approved: stickyApproved, covered: !!gate.covered, plan: gate.plan ?? null, thresholds: { input_per_m: gate.thresholdIn, output_per_m: gate.thresholdOut }, price: { input_per_m: gate.inputPerM, output_per_m: gate.outputPerM }, estimated: !!gate.estimated, model: a.model, reason: gate.reason }
       : null;
     if (gate?.blocked) {
       warnings.push(`PRICE GATE: role ${a.role} model ${a.model} is expensive (${gate.reason}) — PAUSED until a human approves (mawf approve-model --role ${a.role} --yes) or a cheaper model is configured.`);
@@ -93,6 +93,7 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
       agent: a.agent,
       app_type: a.appType,
       model: a.model,
+      ...(a.modelReasoningEffort ? { model_reasoning_effort: a.modelReasoningEffort } : {}),
       model_selection: a.modelChoice ?? null,
       price_gate: priceGateBlock,
       cost_rate_limit_usd_per_min: a.costRateLimitUsdPerMin,
@@ -155,6 +156,7 @@ function agentMarkdown(a, price, plan) {
     ? `**Price** (${price.estimated ? "estimated" : "exact"}): ${price.input_per_m}/M in, ${price.output_per_m}/M out — source: \`${price.source}\`${price.notes ? `\n  - ${price.notes.join("\n  - ")}` : ""}`
     : `**Price**: unknown (not in cc-switch or fallback). Treat as estimate.`;
   const gate = a.modelChoice?.priceGate ?? null;
+  const coveredNote = gate?.covered ? `\n> 📌 **Subscription-covered**: ${gate.reason}` : "";
   const gateBlock = gate?.blocked
     ? `
 ## ⚠ PRICE GATE — PAUSED (human decision required)
@@ -168,7 +170,7 @@ released until a human acts. Thresholds: Input > $${gate.thresholdIn}/1M Tokens 
 `
     : "";
   return `# Agent: ${a.role}
-${gateBlock}
+${gateBlock}${coveredNote}
 > Part of workflow \`${plan.name}\` (primary: ${plan.primary}). Edit freely; the runner re-reads this file at execute time.
 
 ## Identity
@@ -176,7 +178,7 @@ ${gateBlock}
 - **Role**: ${a.role}
 - **Host agent software**: \`${a.agent}\`
 - **App type (cc-switch)**: \`${a.appType}\`
-- **Model**: \`${a.model}\`
+- **Model**: \`${a.model}\`${a.modelReasoningEffort ? ` @ reasoning \`${a.modelReasoningEffort}\`` : ""}
 ${modelSelectionMd(a)}
 
 ## Task
@@ -296,7 +298,7 @@ function planMarkdown(plan, ccSwitch) {
   }
   lines.push("## Agents & roles");
   for (const a of plan.agents) {
-    lines.push(`### ${a.role}  (\`${a.agent}\`, model \`${a.model}\`)`);
+    lines.push(`### ${a.role}  (\`${a.agent}\`, model \`${a.model}\`${a.modelReasoningEffort ? ` @ reasoning ${a.modelReasoningEffort}` : ""})`);
     lines.push(`- Task: ${a.task}`);
     lines.push(`- Cost-rate limit: $${a.costRateLimitUsdPerMin}/min; concurrency ${a.concurrency}; review required: ${a.reviewRequired}`);
   }
@@ -311,7 +313,8 @@ function planMarkdown(plan, ccSwitch) {
     for (const a of plan.agents) {
       const mc = a.modelChoice;
       if (!mc) { lines.push(`| ${a.role} | (current) | \`${a.model}\` | — | — | — |`); continue; }
-      lines.push(`| ${a.role} | ${mc.provider ?? "(current)"} | \`${a.model}\` | ${mc.capabilityScore ?? "?"}/100 | ${mc.quota?.remainingTodayUsd != null ? "$" + mc.quota.remainingTodayUsd : "unknown"} | ${mc.price ? `$${mc.price.input_per_m}/$${mc.price.output_per_m}${mc.price.estimated ? " est." : ""}` : "unknown"} |`);
+      const priceCell = mc.price ? `$${mc.price.input_per_m}/$${mc.price.output_per_m}${mc.price.estimated ? " est." : ""}` : "unknown";
+      lines.push(`| ${a.role} | ${mc.provider ?? "(current)"} | \`${a.model}\` | ${mc.capabilityScore ?? "?"}/100 | ${mc.quota?.remainingTodayUsd != null ? "$" + mc.quota.remainingTodayUsd : "unknown"} | ${priceCell}${mc.priceGate?.covered ? " (plan-covered)" : ""} |`);
     }
     lines.push("");
   }
