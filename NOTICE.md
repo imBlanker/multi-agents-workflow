@@ -3,7 +3,7 @@
 **MAW — Multi-Agent Workflow for Complex Codebases**
 Repository: <https://github.com/imBlanker/multi-agents-workflow>
 
-MAW is licensed under the **MIT License**. Copyright © 2026 WUSHANGZHEN0010.
+MAW is licensed under the **MIT License**. Copyright © 2026 imBlanker.
 The full license text is in [`LICENSE`](./LICENSE). All source code in this
 repository is original work by the MAW authors unless a different
 attribution is recorded in this file.

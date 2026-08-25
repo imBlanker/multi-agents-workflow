@@ -427,7 +427,7 @@ So a `risk=high` run still gets an independent reviewer gate; it just runs on Cl
 **If cc-switch is missing**, MAW can no longer measure real USD/min spend, so the cost gate degrades to **concurrency-only** limiting (max concurrency `4` still enforced; per-agent and total USD/min rates read as `0` and no longer block). `mawf doctor` surfaces the cause:
 
 ```
-[OK  ] cc-switch database: /home/wsz06/.cc-switch/cc-switch.db …
+[OK  ] cc-switch database: ~/.cc-switch/cc-switch.db …
 ```
 
 becomes a fail with the documented fix: `cc-switch database not found → run mawf doctor; ensure ~/.cc-switch/cc-switch.db exists or set CC_SWITCH_DB`. Until then, prices in agent configs fall through the source chain to the vendored fallback estimate (clearly tagged `estimated: true`) or `null` — never faked as exact.
