@@ -188,6 +188,19 @@ test("judgePool: D4 also constrains ADD — both graph indexers absent → only 
   assert.match(alt.reasons[0], /alternate of/);
 });
 
+test("judgePool: incumbent stability — prior noop gets NO stayBonus; the group winner stays the winner on a later different task", () => {
+  const cat = loadCatalog(CATALOG);
+  // stage-1 graph task: codegraph add, cbm noop (alternate) — recorded
+  const state = { stages: { "stage-1": { judgments: [{ ts: "t1", verdicts: { codegraph: { verdict: "add" }, "codebase-memory-mcp": { verdict: "noop" } } }] } } };
+  // stage-2 BROWSER task (long-lived trait fires for both; only the incumbent add-prior gets the bonus)
+  const j = judgePool({ catalog: cat, pool: poolOf([]), profile: { text: "fix the web ui e2e browser test" }, stageCtx: { id: "stage-2" }, poolState: state });
+  const cg = j.verdicts.find((v) => v.component === "codegraph");
+  const cbm = j.verdicts.find((v) => v.component === "codebase-memory-mcp");
+  assert.equal(cbm.verdict, "noop", "alternate stays noop (no stayBonus from a noop prior)");
+  assert.ok(!cbm.reasons.some((r) => /stayBonus.*noop/.test(r)), "no noop-prior stayBonus reason");
+  assert.equal(cg.verdict, "add", "incumbent stays the recommended member");
+});
+
 test("judgePool: determinism — identical inputs, identical output (twice + shuffled state keys)", () => {
   const cat = loadCatalog(CATALOG);
   const pool = poolOf(["codegraph"]);
