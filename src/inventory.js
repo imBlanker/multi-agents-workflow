@@ -16,6 +16,7 @@ import path from "node:path";
 import os from "node:os";
 import { execSync } from "node:child_process";
 import { exists, isFile, readJson, readText, writeJson, writeText, ensureDir } from "./util.js";
+import { loadCatalog, detectPool } from "./pool.js";
 import { detectHost, hostCapabilities } from "./host.js";
 import { readCcSwitch, piManagedByCcSwitch, piSessionUsagePresent } from "./ccswitch.js";
 import { readPiAsCc } from "./piprovider.js";
@@ -368,7 +369,20 @@ export function scanInventory(opts = {}) {
     push(() => scanDsh({ dshHome, projectDir, cc, hostInfo, dumpConfig: opts.dshDumpConfig ?? "", probe: !!opts.probe, runCli: opts.runCli ?? runCliDefault }));
   }
 
-  return { generatedAt: new Date().toISOString(), projectDir, hosts };
+  const report = { generatedAt: new Date().toISOString(), projectDir, hosts };
+  // plugin-pool section (task 08-31-mawf-pluginpool-stagegate): derived from
+  // the scanned hosts via the declarative catalog; read-only; disable with
+  // opts.pool === false; opts.catalogPath is the test seam.
+  if (opts.pool !== false) {
+    try {
+      const catalog = loadCatalog(opts.catalogPath);
+      report.pool = detectPool(report, catalog);
+      if (catalog.warning) report.pool.warning = catalog.warning;
+    } catch (err) {
+      report.pool = { components: [], warning: `pool detection skipped — ${err?.message ?? err}` };
+    }
+  }
+  return report;
 }
 
 /**

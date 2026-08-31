@@ -20,7 +20,9 @@ const RECORD_FILE = path.join(".mawf", "managed-blocks.json");
 const TARGETS = ["AGENTS.md", "CLAUDE.md"];
 
 /**
- * The managed block (<=20 content lines by design contract). Instructions:
+ * The managed block (<=26 content lines by design contract; raised from
+ * <=20 in 08-31-mawf-pluginpool-stagegate to carry the plugin-pool rule).
+ * Instructions:
  * re-advise at session start + first daily prompt (UTC+8), parse the
  * ADVISE-DONE footer, switch = fill handoff + show command (NEVER execute),
  * continue fresh handoff briefs (<48h), consult the inventory digest before
@@ -43,6 +45,11 @@ export function blockText() {
     "4. Session start: if `.mawf/handoff/` has a brief newer than 48h, offer to continue it.",
     "5. Before claiming a tool/model/skill is missing on this machine, check `.mawf/inventory-digest.md`",
     "   (another host may have it; `mawf inventory --verify` refreshes live MCP/plugin status).",
+    "6. Plugin pool, stage-gated (graph gate batches / plan review points): run `mawf advise --pool`",
+    "   at stage entry AND at the gate (≥2 judgments per stage). Parse the `POOL-DONE` footer;",
+    "   present add/keep/remove verdicts + procedures to the human and NEVER execute them.",
+    "   Apply ONLY at stage boundaries, never mid-batch. Installs must not clobber existing",
+    "   assets; removals must verify no residue (follow the printed checklist).",
     "",
     "Advice is advisory — you propose, the human decides. Removed by `mawf uninstall --purge-config`.",
     BLOCK_END,

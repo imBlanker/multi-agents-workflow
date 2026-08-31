@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "components": [
+    {
+      "id": "agent-browser",
+      "kind": "skill",
+      "hosts": ["claude-code", "codex", "pi"],
+      "detectOnly": ["dsh"],
+      "exclusionGroup": null,
+      "valueSignals": {
+        "any": ["browser", "web ui", "e2e", "screenshot", "frontend", "playwright", "cdp", "web testing"],
+        "projectTraits": []
+      },
+      "detect": {
+        "claude-code": { "skillName": "agent-browser" },
+        "codex": { "skillName": "agent-browser" },
+        "pi": { "skillName": "agent-browser" },
+        "dsh": { "pluginName": "agent-browser" }
+      },
+      "install": {
+        "footprint": [
+          { "host": "claude-code", "scope": "project", "artifact": ".claude/skills/agent-browser/SKILL.md", "how": "npx skills add vercel-labs/agent-browser (discovery stub)" },
+          { "host": "codex", "scope": "project", "artifact": "~/.codex/skills/agent-browser", "how": "npx skills add vercel-labs/agent-browser" },
+          { "host": "pi", "scope": "project", "artifact": ".pi/skills/agent-browser/", "how": "npx skills add vercel-labs/agent-browser --skill agent-browser --agent pi -y" },
+          { "host": "*", "scope": "machine", "artifact": "npm global package agent-browser (bin verified) + Chrome-for-Testing download", "how": "which agent-browser || npm i -g agent-browser && agent-browser install" }
+        ],
+        "noClobber": "Check-then-act: `which agent-browser` before npm i -g; `test -e .pi/skills/agent-browser` (or the per-host skill path) before skills add — existing install is NEVER overwritten, skip and diff instead. The AGENTS.md/CLAUDE.md instruction section is optional plain markdown — add it manually, it is NOT marker-fenced.",
+        "procedure": "1) which agent-browser || npm i -g agent-browser\n2) agent-browser install   # Chrome for Testing (first time)\n3) cd <project> && npx skills add vercel-labs/agent-browser [--agent pi]\n4) optional: add the Browser Automation block from the README to AGENTS.md/CLAUDE.md\nNOTE: agent-browser mcp (stdio) is an alternative integration for any MCP host — mcpServers: {\"agent-browser\": {command: \"agent-browser\", args: [\"mcp\"]}} merged into .mcp.json / .codex/config.toml / .pi/mcp.json.",
+        "verified": true
+      },
+      "removal": {
+        "residueChecklist": [
+          { "artifact": ".pi/skills/agent-browser/", "verifyCmd": "test ! -e .pi/skills/agent-browser" },
+          { "artifact": ".claude/skills/agent-browser/", "verifyCmd": "test ! -e .claude/skills/agent-browser" },
+          { "artifact": "~/.codex/skills/agent-browser", "verifyCmd": "test ! -e ~/.codex/skills/agent-browser" },
+          { "artifact": "npm global agent-browser (optional)", "verifyCmd": "! which agent-browser" }
+        ],
+        "procedure": "rm -rf <project>/.pi/skills/agent-browser .claude/skills/agent-browser (as present)\nnpm rm -g agent-browser   # optional global prereq\nagent-browser doctor       # official diagnose + auto-clean of stale daemon/browser files (browser/daemon dirs are tool-managed — path not doc-stated, honest-gap)\nVerify each residueChecklist command returns true.",
+        "gaps": "Chrome-for-Testing / daemon cache locations are managed by agent-browser doctor — no manual rm without its output. AGENTS.md instruction section (if added) is plain markdown: remove manually."
+      },
+      "source": "https://github.com/vercel-labs/agent-browser",
+      "footprintVerified": true
+    },
+    {
+      "id": "codebase-memory-mcp",
+      "kind": "mcp",
+      "hosts": ["claude-code", "codex", "pi"],
+      "detectOnly": ["dsh"],
+      "exclusionGroup": "code-graph-indexer",
+      "valueSignals": {
+        "any": ["codebase", "knowledge graph", "call chain", "symbol", "refactor", "architecture", "sqlite", "trace"],
+        "projectTraits": ["long-lived", "large-codebase"]
+      },
+      "detect": {
+        "claude-code": { "mcpName": "codebase-memory-mcp" },
+        "codex": { "mcpName": "codebase-memory-mcp" },
+        "pi": { "mcpName": "codebase-memory-mcp" },
+        "dsh": { "pluginName": "codebase-memory-mcp" }
+      },
+      "install": {
+        "footprint": [
+          { "host": "pi", "scope": "project", "artifact": ".pi/mcp.json mcpServers[\"codebase-memory-mcp\"] (with environment.CBM_CACHE_DIR=.codebase-memory/cache)", "how": "merge into .pi/mcp.json — never replace the file" },
+          { "host": "claude-code", "scope": "project", "artifact": ".mcp.json mcpServers[\"codebase-memory-mcp\"]", "how": "merge into project .mcp.json" },
+          { "host": "codex", "scope": "project", "artifact": ".codex/config.toml [mcp_servers.codebase-memory-mcp]", "how": "merge into project .codex/config.toml" },
+          { "host": "pi", "scope": "project", "artifact": ".codebase-memory/cache/<project>.db (regenerable index)", "how": "CBM_CACHE_DIR=.codebase-memory/cache codebase-memory-mcp cli index_repository '{\"repo_path\": \"<abs project>\"}'" },
+          { "host": "pi", "scope": "project", "artifact": "AGENTS.md marker block <!-- codebase-memory-mcp:start/end -->", "how": "append block (kickstart recipe)" },
+          { "host": "*", "scope": "project", "artifact": ".gitignore line .codebase-memory/", "how": "append to .gitignore" },
+          { "host": "*", "scope": "machine", "artifact": "~/.local/bin/codebase-memory-mcp (npm global)", "how": "npm i -g codebase-memory-mcp" }
+        ],
+        "noClobber": "Check-then-act: `which codebase-memory-mcp` before global install; MERGE the mcpServers key into existing .pi/mcp.json / .mcp.json / .codex/config.toml — never rewrite the whole file; if the key already exists, skip and diff. The upstream `codebase-memory-mcp install` (45-client user-scope installer incl. hooks/agents/daemon) is a DIFFERENT path — out of project scope; do not mix the two.",
+        "procedure": "1) which codebase-memory-mcp || npm i -g codebase-memory-mcp\n2) merge mcpServers[\"codebase-memory-mcp\"] into the project MCP config (per host; pi adds environment.CBM_CACHE_DIR=\".codebase-memory/cache\")\n3) CBM_CACHE_DIR=.codebase-memory/cache codebase-memory-mcp cli index_repository '{\"repo_path\": \"<abs>\"}'\n4) append the marker-fenced priority block to AGENTS.md\n5) echo '.codebase-memory/' >> .gitignore",
+        "verified": true
+      },
+      "removal": {
+        "residueChecklist": [
+          { "artifact": "AGENTS.md marker block", "verifyCmd": "! grep 'codebase-memory-mcp:start' AGENTS.md" },
+          { "artifact": ".pi/mcp.json / .mcp.json / .codex/config.toml key", "verifyCmd": "! grep -r 'codebase-memory-mcp' .pi/mcp.json .mcp.json .codex/config.toml" },
+          { "artifact": ".codebase-memory/", "verifyCmd": "test ! -e .codebase-memory" },
+          { "artifact": ".gitignore line", "verifyCmd": "! grep -F '.codebase-memory/' .gitignore" },
+          { "artifact": "npm global binary (optional)", "verifyCmd": "! which codebase-memory-mcp" }
+        ],
+        "procedure": "1) strip the AGENTS.md block BETWEEN the start/end markers (inclusive)\n2) remove the mcpServers key (merge-safe JSON/TOML edit — file preserved)\n3) rm -rf .codebase-memory\n4) remove the .gitignore line\n5) optional: npm rm -g codebase-memory-mcp\nVerify every residueChecklist command. If the upstream user-scope installer was used instead, run `codebase-memory-mcp uninstall` (owned-entry tracking) — do NOT hand-edit its hooks/agents.",
+        "gaps": "dsh: no verified recipe — detect-only."
+      },
+      "source": "https://github.com/DeusData/codebase-memory-mcp",
+      "footprintVerified": true
+    },
+    {
+      "id": "codegraph",
+      "kind": "mcp",
+      "hosts": ["claude-code", "codex", "pi"],
+      "detectOnly": ["dsh"],
+      "exclusionGroup": "code-graph-indexer",
+      "valueSignals": {
+        "any": ["codebase", "knowledge graph", "call chain", "blast radius", "symbol", "refactor", "explore", "impact"],
+        "projectTraits": ["long-lived", "large-codebase"]
+      },
+      "detect": {
+        "claude-code": { "mcpName": "codegraph" },
+        "codex": { "mcpName": "codegraph" },
+        "pi": { "mcpName": "codegraph" },
+        "dsh": { "pluginName": "codegraph" }
+      },
+      "install": {
+        "footprint": [
+          { "host": "claude-code", "scope": "project", "artifact": "MCP config + marker-fenced CLAUDE.md/AGENTS.md section + auto-allow permissions", "how": "npx -y @colbymchenry/codegraph install (choose 'just this one' for project scope)" },
+          { "host": "codex", "scope": "project", "artifact": "MCP config + marker-fenced AGENTS.md section", "how": "npx -y @colbymchenry/codegraph install (project scope)" },
+          { "host": "pi", "scope": "project", "artifact": ".pi/mcp.json mcpServers[\"codegraph\"] {command:\"codegraph\", args:[\"serve\",\"--mcp\"]}", "how": "merge into .pi/mcp.json (kickstart manual recipe — pi not in official installer list)" },
+          { "host": "*", "scope": "project", "artifact": ".codegraph/ index (regenerable)", "how": "npx -y @colbymchenry/codegraph init" },
+          { "host": "*", "scope": "project", "artifact": ".gitignore line .codegraph/", "how": "append to .gitignore" },
+          { "host": "*", "scope": "machine", "artifact": "codegraph CLI (installer-managed)", "how": "via the official installer" }
+        ],
+        "noClobber": "Check-then-act: the official installer detects configured agents and asks project-vs-global — pick project. For pi, MERGE the key into .pi/mcp.json (never replace). If a codegraph entry already exists anywhere, skip and diff.",
+        "procedure": "1) npx -y @colbymchenry/codegraph install   # choose target agents + 'just this one'\n2) pi: merge mcpServers[\"codegraph\"] = {command:\"codegraph\", args:[\"serve\",\"--mcp\"]} into .pi/mcp.json\n3) npx -y @colbymchenry/codegraph init\n4) echo '.codegraph/' >> .gitignore",
+        "verified": true
+      },
+      "removal": {
+        "residueChecklist": [
+          { "artifact": "agent MCP configs + instructions + permissions (claude-code/codex)", "verifyCmd": "codegraph uninstall (previews every deletion — official reverser)" },
+          { "artifact": ".pi/mcp.json key", "verifyCmd": "! grep codegraph .pi/mcp.json" },
+          { "artifact": ".codegraph/", "verifyCmd": "test ! -e .codegraph" },
+          { "artifact": ".gitignore line", "verifyCmd": "! grep -F '.codegraph/' .gitignore" }
+        ],
+        "procedure": "1) codegraph uninstall            # official: strips config/instructions/permissions from every configured agent, previews first (--keep-cli keeps the CLI)\n2) codegraph uninit               # removes the per-project index\n3) pi manual: remove the .pi/mcp.json key (merge-safe) + rm -rf .codegraph + drop the .gitignore line\nVerify every residueChecklist command.",
+        "gaps": "dsh: no verified recipe — detect-only."
+      },
+      "source": "https://github.com/colbymchenry/codegraph",
+      "footprintVerified": true
+    }
+  ]
+}
