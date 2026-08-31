@@ -194,6 +194,15 @@ export function listSkills(dirs) {
       seen.add(s.realPath);
       out.push({ ...s, origin });
     }
+    // pi 0.84.3 discovery rule: Markdown skills nested one level inside
+    // grouping directories (<group>/<skill>.md) are discovered in ALL skill
+    // dirs (incl. .agents/skills surfaces). A subdir that itself has a
+    // SKILL.md is a skill dir (handled above), not a grouping dir.
+    for (const s of scanGroupedMdSkills(dir)) {
+      if (seen.has(s.realPath)) continue;
+      seen.add(s.realPath);
+      out.push({ ...s, origin });
+    }
     // pi discovery rule: root .md files in ~/.pi/agent/skills and .pi/skills
     // are individual skills (ignored in .agents/skills dirs)
     if (Array.isArray(d) && (origin === "user-global" || origin === "project")) {
@@ -207,6 +216,10 @@ export function listSkills(dirs) {
   return out;
 }
 
+// Well-known non-skill markdown files. pi 0.84.3: root Markdown files such
+// as README.md/AGENTS.md without valid skill frontmatter are NOT skills.
+const NON_SKILL_MD = new Set(["README.md", "AGENTS.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE.md", "NOTICE.md"]);
+
 /** Root-level *.md files as skills (pi rule; none on the verify machine). */
 function scanRootMdSkills(dir) {
   if (!exists(dir)) return [];
@@ -214,9 +227,38 @@ function scanRootMdSkills(dir) {
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
   const out = [];
   for (const e of entries) {
-    if (!e.isFile() || !e.name.endsWith(".md")) continue;
+    if (!e.isFile() || !e.name.endsWith(".md") || NON_SKILL_MD.has(e.name)) continue;
     const p = path.join(dir, e.name);
-    out.push({ name: e.name.replace(/\.md$/, ""), path: p, realPath: fs.realpathSync(p), description: "" });
+    out.push({ name: e.name.replace(/\.md$/, ""), path: p, realPath: fs.realpathSync(p), description: readSkillDescription(p) });
+  }
+  return out;
+}
+
+/**
+ * Markdown skills nested one level inside grouping directories:
+ * <dir>/<group>/<skill>.md where <group> has no SKILL.md of its own.
+ * pi 0.84.3 fix: nested Markdown skills inside `.agents/skills/` grouping
+ * directories are discovered (previously missed → under-reporting drift).
+ * @param {string} dir
+ */
+function scanGroupedMdSkills(dir) {
+  if (!exists(dir)) return [];
+  let entries = [];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  const out = [];
+  for (const e of entries) {
+    if (!e.isDirectory() && !e.isSymbolicLink()) continue;
+    const groupDir = path.join(dir, e.name);
+    if (isFile(path.join(groupDir, "SKILL.md"))) continue; // a skill dir, not a group
+    let groupEntries = [];
+    try { groupEntries = fs.readdirSync(groupDir, { withFileTypes: true }); } catch { continue; }
+    for (const g of groupEntries) {
+      if (!g.isFile() || !g.name.endsWith(".md") || NON_SKILL_MD.has(g.name)) continue;
+      const p = path.join(groupDir, g.name);
+      let realPath = p;
+      try { realPath = fs.realpathSync(p); } catch {}
+      out.push({ name: g.name.replace(/\.md$/, ""), path: p, realPath, description: readSkillDescription(p) });
+    }
   }
   return out;
 }
@@ -400,20 +442,28 @@ function scanCodex(o) {
   const app = "codex";
   const tomlFile = path.join(o.codexDir, "config.toml");
   const toml = isFile(tomlFile) ? readText(tomlFile) : "";
-  const skills = listSkills([path.join(o.codexDir, "skills")]);
+  // codex 0.151.0: plugin catalogs combine per-repository configuration —
+  // a project-level .codex/config.toml is scanned with the same parse when
+  // present (additive; absence changes nothing).
+  const projectTomlFile = path.join(o.projectDir, ".codex", "config.toml");
+  const projectToml = isFile(projectTomlFile) ? readText(projectTomlFile) : "";
+  const skills = listSkills([path.join(o.codexDir, "skills"), [path.join(o.projectDir, ".codex", "skills"), "project"]]);
   // plugins: [plugins."name@marketplace"] sections in config.toml (verified
   // vs `codex plugin list` — installed+enabled plugins appear there)
   const plugins = [];
-  for (const m of toml.matchAll(/^\[plugins\."([^"]+)"\]\s*$/gm)) {
-    plugins.push({ name: m[1], source: "codex-config.toml" });
+  for (const src of [["codex-config.toml", toml], ["codex-project-config.toml", projectToml]]) {
+    for (const m of src[1].matchAll(/^\[plugins\."([^"]+)"\]\s*$/gm)) {
+      if (!plugins.some((p) => p.name === m[1])) plugins.push({ name: m[1], source: src[0] });
+    }
   }
   // MCP: codex keeps servers in config.toml [mcp_servers.<name>] sections;
   // mcp.json is a tolerated fallback shape.
   const mcps = [];
-  if (isFile(tomlFile)) {
+  for (const src of [["codex-config.toml", toml, tomlFile], ["codex-project-config.toml", projectToml, projectTomlFile]]) {
+    if (!src[2] || !isFile(src[2])) continue;
     try {
       const names = [];
-      for (const m of toml.matchAll(/^\[mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))\]\s*$/gm)) {
+      for (const m of src[1].matchAll(/^\[mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))\]\s*$/gm)) {
         names.push(m[1] ?? m[2]);
       }
       // drop TOML sub-sections (e.g. [mcp_servers.<srv>.env]) — a dotted
@@ -421,7 +471,7 @@ function scanCodex(o) {
       for (const n of names) {
         const dot = n.lastIndexOf(".");
         if (dot > 0 && names.includes(n.slice(0, dot))) continue;
-        mcps.push({ name: n, source: "codex-config.toml" });
+        if (!mcps.some((m) => m.name === n)) mcps.push({ name: n, source: src[0] });
       }
     } catch {}
   }

@@ -263,3 +263,78 @@ test("scanInventory: cc-switch absent → hosts still scanned, models empty", ()
   assert.deepEqual(claude.skills.filter((s) => s.origin === "user-global"), []); // user dir emptied
   assert.deepEqual(claude.models, []); // no cc-switch db in fixture (dbPath nonexistent)
 });
+
+// --- pi 0.84.3 skill-discovery adaptation (2026-08-31 host-changelog audit rows 1+2) ---
+
+test("pi 0.84.3: grouped nested .md skills discovered; README/AGENTS never skills; skill dirs not treated as groups", () => {
+  const root = tmpHome();
+  const skillsDir = mk(path.join(root, "pi", "skills"));
+  w(path.join(skillsDir, "grilling", "SKILL.md"), "---\ndescription: grill\n---\nx\n"); // classic skill dir
+  w(path.join(skillsDir, "research", "find-docs.md"), "---\ndescription: find docs\n---\nx\n"); // grouped single-file skill
+  w(path.join(skillsDir, "research", "to-issues.md"), "# to issues\nA nested skill without frontmatter.\n");
+  w(path.join(skillsDir, "research", "README.md"), "# group readme"); // non-skill markdown
+  w(path.join(skillsDir, "research", "AGENTS.md"), "# agents");
+  w(path.join(skillsDir, "solo.md"), "---\ndescription: solo root skill\n---\nx\n"); // root .md (pi rule)
+  w(path.join(skillsDir, "README.md"), "# dir readme"); // non-skill root markdown
+  const list = listSkills([[skillsDir, "user-global"]]);
+  const names = list.map((s) => s.name).sort();
+  assert.deepEqual(names, ["find-docs", "grilling", "solo", "to-issues"]);
+});
+
+test("pi 0.84.3: grouped .md skills discovered in .agents/skills surfaces; bare root .md still ignored there", () => {
+  const root = tmpHome();
+  const agentsSkills = mk(path.join(root, ".agents", "skills"));
+  w(path.join(agentsSkills, "group-a", "to-issues.md"), "---\ndescription: t\n---\nx\n");
+  w(path.join(agentsSkills, "caveman", "SKILL.md"), "---\ndescription: c\n---\nx\n"); // skill dir, not a group
+  w(path.join(agentsSkills, "loose.md"), "---\ndescription: bare root md in agents dir\n---\nx\n"); // ignored per pi rule
+  const list = listSkills([[agentsSkills, "agents-global"]]);
+  const names = list.map((s) => s.name).sort();
+  assert.deepEqual(names, ["caveman", "to-issues"]);
+});
+
+// --- codex 0.151.0 per-repository plugin catalog adaptation (audit row 4) ---
+
+test("codex 0.151.0: project .codex/config.toml + .codex/skills scanned, deduped against global config", () => {
+  const root = tmpHome();
+  const codexDir = mk(path.join(root, "h", ".codex"));
+  w(path.join(codexDir, "config.toml"), `[plugins."global@market"]\nenabled = true\n\n[mcp_servers.global-srv]\ncommand = "npx"\n`);
+  const projectDir = mk(path.join(root, "proj"));
+  w(path.join(projectDir, ".codex", "config.toml"), `[plugins."proj-plug@market"]\nenabled = true\n\n[mcp_servers."proj-srv"]\ncommand = "x"\n\n[mcp_servers.global-srv]\ncommand = "dup"\n`);
+  w(path.join(projectDir, ".codex", "skills", "proj-codex-skill", "SKILL.md"), "---\ndescription: p\n---\nx\n");
+  const none = path.join(root, "none");
+  const report = scanInventory({
+    claudeDir: none, piDir: none, dshHome: none,
+    claudeJson: path.join(root, "none.json"),
+    codexDir, projectDir, dbPath: "/nonexistent/ccswitch.db",
+  });
+  const codex = report.hosts.find((h) => h.app === "codex");
+  assert.ok(codex, "codex host scanned");
+  assert.ok(codex.plugins.some((p) => p.name === "proj-plug@market" && p.source === "codex-project-config.toml"), "project plugin listed");
+  assert.ok(codex.plugins.some((p) => p.name === "global@market" && p.source === "codex-config.toml"), "global plugin listed");
+  assert.equal(codex.plugins.filter((p) => p.name === "global@market").length, 1, "no plugin dupe across configs");
+  assert.ok(codex.mcps.some((m) => m.name === "proj-srv" && m.source === "codex-project-config.toml"), "project mcp listed");
+  assert.equal(codex.mcps.filter((m) => m.name === "global-srv").length, 1, "global mcp name wins, no dupe");
+  assert.ok(codex.skills.some((s) => s.name === "proj-codex-skill" && s.origin === "project"), "project .codex/skills listed");
+});
+
+// --- dsh 0.1.2-alpha.2 real captured dump-config (audit rows 6+7, live-verified) ---
+
+test("dsh 0.1.2-alpha.2 real dump-config fixture (captured 2026-08-31): plugins parse, no duplicate ids", () => {
+  const dump = fs.readFileSync(new URL("./fixtures/dsh-dump-0.1.2a2.txt", import.meta.url), "utf8");
+  const root = tmpHome();
+  const dshHome = mk(path.join(root, "h", ".dsh"));
+  w(path.join(dshHome, "settings.yaml"), "agent-presets:\n  default: x\n");
+  const none = path.join(root, "none");
+  const report = scanInventory({
+    claudeDir: none, piDir: none, codexDir: none,
+    claudeJson: path.join(root, "none.json"),
+    dshHome, projectDir: mk(path.join(root, "p")), dbPath: "/nonexistent/ccswitch.db",
+    dshDumpConfig: dump,
+  });
+  const dsh = report.hosts.find((h) => h.app === "dsh");
+  assert.ok(dsh, "dsh host scanned");
+  assert.ok(dsh.plugins.length >= 170, `real 0.1.2 dump yields the full plugin table (got ${dsh.plugins.length})`);
+  assert.ok(dsh.plugins.some((p) => /dsh-web-all/.test(p.origin || "")), "migrated @linxin666/dsh-web-all bundle origin present");
+  const ids = dsh.plugins.map((p) => p.id);
+  assert.equal(ids.filter((x, i) => ids.indexOf(x) !== i).length, 0, "no duplicate plugin ids");
+});
