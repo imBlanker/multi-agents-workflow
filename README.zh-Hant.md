@@ -3,7 +3,7 @@
 [![CI](https://github.com/imBlanker/multi-agents-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/imBlanker/multi-agents-workflow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.17-green.svg)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-281%20passing-success.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-296%20passing-success.svg)](#testing)
 [![GitHub stars](https://img.shields.io/github/stars/imBlanker/multi-agents-workflow?style=social&label=Stars)](https://github.com/imBlanker/multi-agents-workflow/stargazers)
 
 # MAW — 面向複雜程式碼庫的多智慧體工作流系統
@@ -218,7 +218,7 @@ MAW 项目中任一受支持宿主的会话都掌握整机的全貌。三个组�
 
 **`mawf advise [--task "<文本>"] [--difficulty 1-5] [--json]`** 用纯确定性规则为每个宿主打分——capabilityFit（≤30）、skillMatch（≤30；失败/待批准的 MCP 与已禁用插件永不参与匹配）、modelFit（≤25）、costFit（≤15），另对当前宿主 +8 留守加分；仅当领先者超出 ≥10 分才建议切换（滞回，防反复横跳）。判定为 `switch` 时预生成 `.mawf/handoff/<时间戳>-<from>-<to>.md` 交接简报，并打印确切的启动命令——dsh 的命令是 `kill -9 $(lsof -ti tcp:3080) && dsh web`（旧实例占用 3080 端口）。**advise 绝不执行任何命令**，由人类自己运行。
 
-**主动注入（仅项目级——绝不碰全局提示词文件）。** `init/plan/install/update/upgrade` 会向项目根 `AGENTS.md` + `CLAUDE.md`（所有受支持宿主都会加载的面）写入幂等管理块（≤20 行，`<!-- mawf:cross-host-advise BEGIN/END -->`）。该块指示任何会话中的 agent：在会话开始及每天（UTC+8）第一个提示词时重新运行留守/切换分析（新鲜度状态存于 `.mawf/runtime/advise-state.json`）；主动向人类呈现建议与理由；切换时填好交接简报并原样展示命令；接续 48 小时内的交接简报；在声称本机"缺少"某能力之前先查摘要。`mawf uninstall` 默认保留管理块；`--purge-config` 将其移除。
+**主动注入（仅项目级——绝不碰全局提示词文件）。** `init/plan/install/update/upgrade` 会向项目根 `AGENTS.md` + `CLAUDE.md`（所有受支持宿主都会加载的面）写入幂等管理块（≤20 行，`<!-- mawf:cross-host-advise BEGIN/END -->`）。该块指示任何会话中的 agent：在会话开始及每天（UTC+8）第一个提示词时重新运行留守/切换分析（新鲜度状态存于 `.mawf/runtime/advise-state.json`）；主动向人类呈现建议与理由；切换时填好交接简报并原样展示命令；接续 48 小时内的交接简报；在声称本机"缺少"某能力之前先查摘要。`mawf uninstall` 默認保留管理塊；`--purge-config` 將其移除。注意（codex ≥0.150.0）：不受信任的專案會忽略專案級 `AGENTS.md`——需在 codex 中授予專案信任，否則管理塊不會在 codex 會話中載入（`mawf doctor` 有提示）。
 
 ## 10b. Watchdog：停滯偵測與跨 host 救援（opt-in）
 

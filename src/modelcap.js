@@ -68,6 +68,11 @@ const RULES = [
   // --- text-only agentic reasoners (multi-turn reasoning + dialogue, no vision) ---
   { re: /^deepseek-r|reasoner/i, family: "reasoner-text-only",
     caps: { agentic: T, reasoning: T, coding: T, math: T, visionIn: F, imageOut: F, videoOut: F, speech: F } },
+  // deepseek vision variants (e.g. deepseek-v4-flash-vision-exp, pi 0.84.4 /
+  // dsh 0.1.1-rc.1 DeepSeek-V4-Flash-Vision-Exp) are vision-capable — must
+  // precede the generic ^deepseek-v text-only rule
+  { re: /^deepseek-v[\w.-]*vision/i, family: "multimodal-generalist",
+    caps: { agentic: T, reasoning: T, coding: "unknown", math: "unknown", visionIn: T, imageOut: F, videoOut: F, speech: F } },
   { re: /^deepseek-v/i, family: "agentic-text-only",
     caps: { agentic: T, reasoning: T, coding: T, math: F, visionIn: F, imageOut: F, videoOut: F, speech: F } },
   { re: /^kimi-k/i, family: "agentic-text-only",

@@ -121,3 +121,14 @@ test("providerModels extracts the pi provider model list via _piModels", () => {
   const models = providerModels({ model: "deepseek-v4-flash", _piModels: ["deepseek-v4-flash", "glm-5.2"] }, "pi");
   assert.deepEqual(models.sort(), ["deepseek-v4-flash", "glm-5.2"]);
 });
+
+test("classifyModel: deepseek vision variants are multimodal, generic deepseek-v stays text-only (pi 0.84.4 / dsh 0.1.1-rc.1)", () => {
+  for (const id of ["deepseek-v4-flash-vision-exp", "DeepSeek-V4-Flash-Vision-Exp"]) {
+    const c = classifyModel(id);
+    assert.equal(c.family, "multimodal-generalist", id);
+    assert.equal(c.caps.visionIn, true, id);
+  }
+  const t = classifyModel("deepseek-v4-pro-0813");
+  assert.equal(t.family, "agentic-text-only");
+  assert.equal(t.caps.visionIn, false);
+});

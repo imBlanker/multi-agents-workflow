@@ -36,7 +36,7 @@ function pricingSyncInfo() {
   }
 }
 
-/** @returns {{ ok: boolean, checks: { name: string, status: "ok"|"warn"|"fail", detail: string }[], summary: string }} */
+/** @returns {{ ok: boolean, checks: { name: string, status: "ok"|"warn"|"fail"|"info", detail: string }[], summary: string }} */
 export function doctor() {
   const checks = [];
 
@@ -95,6 +95,10 @@ export function doctor() {
   const cs = codexStatus();
   checks.push({ name: "Codex CLI", status: cs.binary ? "ok" : "warn", detail: cs.binary || "not found" });
   checks.push({ name: "codex-plugin-cc", status: cs.companion ? "ok" : "warn", detail: cs.companion || cs.reason });
+  // codex 0.150.0 (#39837): untrusted projects no longer supply project-level
+  // AGENTS.md instructions — the mawf managed block reaches codex sessions
+  // only after project trust is granted (info, not a failure).
+  checks.push({ name: "codex project trust (managed block)", status: "info", detail: "codex ≥0.150.0 ignores project AGENTS.md in untrusted projects — grant trust in codex or the mawf advise block never loads there" });
 
   // pi agent — config lives in ~/.pi/agent/. Since cc-switch v3.20.0 (schema
   // v17) pi MAY be cc-switch-managed: providers/pricing then come from the
