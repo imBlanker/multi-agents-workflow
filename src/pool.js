@@ -193,7 +193,11 @@ export function judgePool(o) {
       if (trait === "large-codebase" && (o.poolState?.projectTraits?.largeCodebase === true)) { v += 2; reasons.push("trait large-codebase"); }
     }
     const lastVerdict = lastVerdictFor(o.poolState, c.id);
-    if (lastVerdict && lastVerdict !== "remove" && v > 0) { v += cfg.stayBonus; reasons.push(`stayBonus +${cfg.stayBonus} (prior: ${lastVerdict})`); }
+    // stayBonus encodes INCUMBENCY: only add/keep priors count. A noop prior
+    // (alternate of the exclusion-group winner) must NOT get the bonus —
+    // otherwise the alternate can tie and flip the winner on a later task
+    // (found in parent-acceptance smoke 2026-08-31, fixed with regression test).
+    if ((lastVerdict === "add" || lastVerdict === "keep") && v > 0) { v += cfg.stayBonus; reasons.push(`stayBonus +${cfg.stayBonus} (prior: ${lastVerdict})`); }
     value.set(c.id, v);
     reasonsMap.set(c.id, reasons);
   }
