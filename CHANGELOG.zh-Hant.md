@@ -4,6 +4,17 @@
 格式：[Keep a Changelog](https://keepachangelog.com/)；版本遵循
 [SemVer](https://semver.org/)。
 
+## [Unreleased]
+
+### Added
+
+- **宿主 changelog 適配：claude-code 2.1.238→2.1.251 / codex 0.149.0→0.151.0 / pi 0.84.2→0.84.4 / dsh 0.1.0-rc.8→0.1.2-alpha.2**（自 2026-08-20 dsh rc.8 基線以來的審計；完整矩陣見任務追蹤）。
+  - pi 0.84.3 技能發現：分組目錄內嵌套一層的 Markdown 技能（`<group>/<skill>.md`）現在在所有技能目錄（含 `.agents/skills` 各面）被發現；眾所周知的非技能 Markdown（README/AGENTS/CHANGELOG/CONTRIBUTING/LICENSE/NOTICE.md）在根級與分組掃描中一律排除。修復相對 pi 自身發現的少報與多報漂移。
+  - pi 0.84.4 + dsh 0.1.1-rc.1：deepseek 視覺變體（如 `deepseek-v4-flash-vision-exp`）透過先於通用 `^deepseek-v` 純文字規則的規則歸類為 `multimodal-generalist`（支援視覺輸入）。
+  - codex 0.151.0 每倉庫插件目錄：`mawf inventory` 增掃專案級 `.codex/config.toml`（plugins + mcp_servers，同一解析，與全域配置去重；來源標記 `codex-project-config.toml`）及專案級 `.codex/skills`。
+  - codex 0.150.0 專案信任：doctor `[INFO] codex project trust (managed block)` 檢查 + README ×3 說明——不受信任的 codex 專案會忽略專案級 `AGENTS.md`，mawf advise 管理塊需在 codex 授予專案信任後才會載入。
+  - dsh 0.1.2-alpha.2：`listDshProfiles` 與 `parseDshPlugins` 經真實 0.1.2 `--dump-config`（610 行實機捕獲，隨包作為回歸 fixture）驗證不變；Profile 統一化與 Web UI 插件分組不影響 mawf 的解析錨點。測試 291→296；README ×3 徽章 281→296。
+
 ## [0.6.0] - 2026-08-21
 
 ### Added

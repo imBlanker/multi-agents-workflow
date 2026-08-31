@@ -8,6 +8,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ### Added
 
+- **Host-changelog adaptation: claude-code 2.1.238→2.1.251 / codex 0.149.0→0.151.0 / pi 0.84.2→0.84.4 / dsh 0.1.0-rc.8→0.1.2-alpha.2** (audit since the 2026-08-20 dsh rc.8 baseline; full matrix in the task tracker).
+  - pi 0.84.3 skills discovery: Markdown skills nested one level inside grouping dirs (`<group>/<skill>.md`) are now discovered in ALL skill dirs (incl. `.agents/skills` surfaces); well-known non-skill markdown (README/AGENTS/CHANGELOG/CONTRIBUTING/LICENSE/NOTICE.md) is excluded everywhere (root-md and grouped scans). Fixes both under- and over-reporting drift vs pi's own discovery.
+  - pi 0.84.4 + dsh 0.1.1-rc.1: deepseek vision variants (e.g. `deepseek-v4-flash-vision-exp`) classify `multimodal-generalist` (vision input) via a rule preceding the generic `^deepseek-v` text-only rule.
+  - codex 0.151.0 per-repository plugin catalogs: `mawf inventory` additionally scans project `.codex/config.toml` (plugins + mcp_servers, same parse, deduped against the global config; sources `codex-project-config.toml`) and project `.codex/skills`.
+  - codex 0.150.0 project trust: doctor `[INFO] codex project trust (managed block)` check + README ×3 note — untrusted codex projects ignore project-level `AGENTS.md`, so the mawf advise managed block needs codex project trust to load there.
+  - dsh 0.1.2-alpha.2: `listDshProfiles` + `parseDshPlugins` verified unchanged against a REAL 0.1.2 `--dump-config` (610-line live capture, shipped as a regression fixture); profile unification and web-UI plugin grouping do not touch mawf's parse anchors. Tests 291→296; README ×3 badge 281→296.
+
 - **Reviewer machine default under a codex ChatGPT Pro / Pro-Lite login (+ price-gate subscription exemption).** Machine policy (2026-08-24): when the local Codex CLI is logged in with an OpenAI account whose ChatGPT plan is `pro` or `prolite` (`src/codexplan.js` — reads `~/.codex/auth.json` (or `$CODEX_HOME`) and the id_token `chatgpt_plan_type` claim), the reviewer role defaults to `gpt-5.6-sol` at reasoning effort `low`, recorded as `model_reasoning_effort` in `.mawf/agents/reviewer.json`; `checkPriceGate` gains `coveredByPlan` and reports the assignment `covered:true` (flat-rate subscription — no per-token spend to gate) instead of blocking. Any other login state (API key, free/plus/team, not logged in) keeps the normal capability-aware selection + gate. Never silent: `mawf plan`/`mawf init`/`mawf models` print the login-detected line; configs record `price_gate.covered` + plan id. README ×3 document the exemption.
 
 ## [0.6.0] - 2026-08-21
