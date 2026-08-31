@@ -218,7 +218,9 @@ MAW 项目中任一受支持宿主的会话都掌握整机的全貌。三个组�
 
 **`mawf advise [--task "<文本>"] [--difficulty 1-5] [--json]`** 用纯确定性规则为每个宿主打分——capabilityFit（≤30）、skillMatch（≤30；失败/待批准的 MCP 与已禁用插件永不参与匹配）、modelFit（≤25）、costFit（≤15），另对当前宿主 +8 留守加分；仅当领先者超出 ≥10 分才建议切换（滞回，防反复横跳）。判定为 `switch` 时预生成 `.mawf/handoff/<时间戳>-<from>-<to>.md` 交接简报，并打印确切的启动命令——dsh 的命令是 `kill -9 $(lsof -ti tcp:3080) && dsh web`（旧实例占用 3080 端口）。**advise 绝不执行任何命令**，由人类自己运行。
 
-**主动注入（仅项目级——绝不碰全局提示词文件）。** `init/plan/install/update/upgrade` 会向项目根 `AGENTS.md` + `CLAUDE.md`（所有受支持宿主都会加载的面）写入幂等管理块（≤20 行，`<!-- mawf:cross-host-advise BEGIN/END -->`）。该块指示任何会话中的 agent：在会话开始及每天（UTC+8）第一个提示词时重新运行留守/切换分析（新鲜度状态存于 `.mawf/runtime/advise-state.json`）；主动向人类呈现建议与理由；切换时填好交接简报并原样展示命令；接续 48 小时内的交接简报；在声称本机"缺少"某能力之前先查摘要。`mawf uninstall` 默認保留管理塊；`--purge-config` 將其移除。注意（codex ≥0.150.0）：不受信任的專案會忽略專案級 `AGENTS.md`——需在 codex 中授予專案信任，否則管理塊不會在 codex 會話中載入（`mawf doctor` 有提示）。
+**`mawf advise --pool [--task "<文本>"] [--json]`** ——階段門控的**插件池判定**：對專案級 MCP / 技能 / 插件批次（宣告式目錄 `defaults/pool-catalog.json`；種子：agent-browser、codebase-memory-mcp、codegraph——按各自上游均為多宿主，dsh 僅可探測的誠實缺口）輸出 `add / keep / remove / noop` 判定，附理由與**防禦性程序**：安裝一律 check-then-act（絕不破壞既有資產），移除帶逐項**無殘留清單**；排斥組保證代碼知識圖索引器互斥（codegraph 與 codebase-memory-mcp 絕不同時推薦——已共存則輸出整合移除，雙缺席則只推薦其一）。階段來自 graph 閘控批次 / plan 審查點；每階段 ≥2 次判定記錄於 `.mawf/runtime/pool-state.json`，低於 2 次時 `mawf doctor --project` 給出 WARN。**僅建議性**——mawf 絕不執行安裝/移除；插件池唯一的寫入就是其狀態檔案。判定閾值（`threshold` / `stayBonus` / `removeLookback`）可在 `.mawf/config.yaml` 的 `pool:` 段覆寫。
+
+**主动注入（仅项目级——绝不碰全局提示词文件）。** `init/plan/install/update/upgrade` 会向项目根 `AGENTS.md` + `CLAUDE.md`（所有受支持宿主都会加载的面）写入幂等管理块（≤26 行，`<!-- mawf:cross-host-advise BEGIN/END -->`）。该块指示任何会话中的 agent：在会话开始及每天（UTC+8）第一个提示词时重新运行留守/切换分析（新鲜度状态存于 `.mawf/runtime/advise-state.json`）；主动向人类呈现建议与理由；切换时填好交接简报并原样展示命令；接续 48 小时内的交接简报；在声称本机"缺少"某能力之前先查摘要；并在每个阶段边界（graph 门控批次 / plan 审查点）运行 `mawf advise --pool`（每阶段 ≥2 次判定），把增/留/删判定呈现给人类，绝不在批次中途执行安装/移除。`mawf uninstall` 默認保留管理塊；`--purge-config` 將其移除。注意（codex ≥0.150.0）：不受信任的專案會忽略專案級 `AGENTS.md`——需在 codex 中授予專案信任，否則管理塊不會在 codex 會話中載入（`mawf doctor` 有提示）。
 
 ## 10b. Watchdog：停滯偵測與跨 host 救援（opt-in）
 

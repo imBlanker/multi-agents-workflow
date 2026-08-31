@@ -8,6 +8,8 @@
 
 ### Added
 
+- **階段門控插件池判定（`mawf advise --pool`）**——對專案級 MCP / 技能 / 插件批次跨宿主輸出 add/keep/remove/noop 判定，在每個大階段（graph 閘控批次 / plan 審查點）執行，每階段 ≥2 次判定記錄於 `.mawf/runtime/pool-state.json`（低於 2 次時 doctor WARN）。宣告式目錄 `defaults/pool-catalog.json`（schema v1，前向相容守衛）帶三個種子——agent-browser、codebase-memory-mcp、codegraph——足跡來自各自上游（claude-code/codex/pi 多宿主；dsh 僅可探測的誠實缺口），安裝程序一律 check-then-act（絕不破壞既有資產），移除帶逐項無殘留清單，並執行 D4 互斥：codegraph 與 codebase-memory-mcp 絕不同時推薦（已共存→整合移除；雙缺席→只推其一，另一為替代 noop）。滯回（stayBonus）+ removeLookback 防判定抖動；閾值可在 `.mawf/config.yaml` `pool:` 段覆寫。**僅建議性**：mawf 絕不執行安裝/移除——插件池唯一寫入是其狀態檔案（不變量測試覆蓋）。`mawf inventory` 新增唯讀 `pool` 段（逐元件逐宿主檢出狀態與證據）；管理塊新增第 6 條（≤20→≤26 行），mawf-run 批次循環在階段入口與閘控點運行判定、絕不在批次中途執行。測試 296→315；README ×3 徽章 296→315。
+
 - **宿主 changelog 適配：claude-code 2.1.238→2.1.251 / codex 0.149.0→0.151.0 / pi 0.84.2→0.84.4 / dsh 0.1.0-rc.8→0.1.2-alpha.2**（自 2026-08-20 dsh rc.8 基線以來的審計；完整矩陣見任務追蹤）。
   - pi 0.84.3 技能發現：分組目錄內嵌套一層的 Markdown 技能（`<group>/<skill>.md`）現在在所有技能目錄（含 `.agents/skills` 各面）被發現；眾所周知的非技能 Markdown（README/AGENTS/CHANGELOG/CONTRIBUTING/LICENSE/NOTICE.md）在根級與分組掃描中一律排除。修復相對 pi 自身發現的少報與多報漂移。
   - pi 0.84.4 + dsh 0.1.1-rc.1：deepseek 視覺變體（如 `deepseek-v4-flash-vision-exp`）透過先於通用 `^deepseek-v` 純文字規則的規則歸類為 `multimodal-generalist`（支援視覺輸入）。
