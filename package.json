@@ -1,6 +1,6 @@
 {
   "name": "multi-agents-workflow",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A portable, dynamic multi-agents workflow system for complex codebases. Reads cc-switch config, selects the right agent architecture (loop / orchestrator-workers / multi-agent / graph / dynamic / ultracode), generates per-agent configs, enforces cost-rate limits, and integrates Codex review.",
   "type": "module",
   "main": "src/index.js",
