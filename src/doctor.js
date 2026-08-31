@@ -10,6 +10,7 @@ import { status as codexStatus } from "./codex.js";
 import { detectTrellis } from "./trellis.js";
 import { readDshConfig, readDshAsCc, readCredentialKeys, dshDefaultModel, dshCostRateNote, readCcPricingJson, listDshProfiles } from "./dshprovider.js";
 import { detectInstallMode } from "./upgrade.js";
+import { loadCatalog, catalogProblems, readPoolState, poolCadenceIssues } from "./pool.js";
 import path from "node:path";
 import os from "node:os";
 
@@ -37,8 +38,9 @@ function pricingSyncInfo() {
 }
 
 /** @returns {{ ok: boolean, checks: { name: string, status: "ok"|"warn"|"fail"|"info", detail: string }[], summary: string }} */
-export function doctor() {
+export function doctor(opts = {}) {
   const checks = [];
+  const projectDir = opts.projectDir ? path.resolve(opts.projectDir) : null;
 
   // node version
   const nv = process.versions.node;
@@ -99,6 +101,26 @@ export function doctor() {
   // AGENTS.md instructions — the mawf managed block reaches codex sessions
   // only after project trust is granted (info, not a failure).
   checks.push({ name: "codex project trust (managed block)", status: "info", detail: "codex ≥0.150.0 ignores project AGENTS.md in untrusted projects — grant trust in codex or the mawf advise block never loads there" });
+
+  // plugin-pool (08-31-mawf-pluginpool-stagegate): catalog validity is a
+  // package-level invariant (fail = mawf bug); cadence/corrupt are per-project
+  // WARNs and only appear when a --project was given.
+  try {
+    const catalog = loadCatalog(opts.catalogPath);
+    const problems = catalogProblems(catalog);
+    checks.push({ name: "pool catalog", status: problems.length ? "fail" : "ok", detail: problems.length ? `invalid: ${problems.join("; ")}` : `v${catalog.schemaVersion}, ${catalog.components.length} component(s)` });
+  } catch (err) {
+    checks.push({ name: "pool catalog", status: "fail", detail: String(err?.message ?? err) });
+  }
+  if (projectDir) {
+    const ps = readPoolState(projectDir);
+    if (ps.corrupt) {
+      checks.push({ name: "pool state", status: "warn", detail: `.mawf/runtime/pool-state.json is corrupt — delete it to reset cadence history (judgment verdicts re-derive from inventory)` });
+    } else {
+      const issues = poolCadenceIssues(ps);
+      checks.push({ name: "pool cadence", status: issues.length ? "warn" : "ok", detail: issues.length ? `${issues.join("; ")} — run \`mawf advise --pool\` at the stage gate` : `all stages ≥2 judgments` });
+    }
+  }
 
   // pi agent — config lives in ~/.pi/agent/. Since cc-switch v3.20.0 (schema
   // v17) pi MAY be cc-switch-managed: providers/pricing then come from the

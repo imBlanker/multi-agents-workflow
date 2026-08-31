@@ -3,7 +3,7 @@
 // unit-tested without spawning a process.
 import fs from "node:fs";
 import path from "node:path";
-import { readJson, writeText, writeJson, exists, ensureDir, isoNow, slug } from "./util.js";
+import { readJson, writeText, writeJson, exists, ensureDir, isoNow, slug, isFile, readText, parseYamlSubset } from "./util.js";
 import { readCcSwitch, piManagedByCcSwitch } from "./ccswitch.js";
 import { detectHost, hostCapabilities } from "./host.js";
 import { planWorkflow, inferSignals } from "./planner.js";
@@ -29,7 +29,8 @@ import { scanOnce } from "./watchdog/scan.js";
 import { registerProject } from "./watchdog/registry.js";
 import { applyGrillSwap, grillSwapStatus } from "./grillswap.js";
 import { readRegistry, resolveWatchList } from "./watchdog/registry.js";
-import { adviseTask, checkFreshness, renderAdvise } from "./advise.js";
+import { adviseTask, checkFreshness, renderAdvise, deriveTaskProfile } from "./advise.js";
+import { loadCatalog, detectPool, deriveStages, judgePool, renderPool, readPoolState, recordJudgment } from "./pool.js";
 import { writeManagedBlocks, removeManagedBlocks } from "./injectblock.js";
 
 /**
@@ -167,6 +168,9 @@ Commands:
                 across ALL installed hosts (scores + reasons + exact launch
                 command; switch pre-creates a .mawf/handoff brief). Never
                 executes anything. --check-fresh prints STALE/ADVISED_TODAY
+                [--pool] stage-gated plugin-pool judgment (add/keep/remove
+                verdicts + D3-safe procedures; records .mawf/runtime/
+                pool-state.json; POOL-DONE footer)
                 (UTC+8 day gate for proactive re-advising)
   watchdog      Scan mawf-initialized projects for alarm-blocked agent/
                 subagent sessions (signals d>c>a>b) and record incidents
@@ -412,6 +416,7 @@ function cmdAdvise(f, flags) {
     out(checkFreshness(state));
     return;
   }
+  if (flags.pool) return cmdAdvisePool(project, flags);
   const r = adviseTask({
     projectDir: project,
     task: flags.task,
@@ -421,6 +426,42 @@ function cmdAdvise(f, flags) {
   });
   if (flags.json) { out(JSON.stringify(r, null, 2)); return; }
   out(renderAdvise(r));
+}
+
+/** Stage-gated plugin-pool judgment (advisory-only; never executes). */
+function cmdAdvisePool(project, flags) {
+  const catalog = loadCatalog(flags.catalog);
+  const report = scanInventory({ projectDir: project });
+  const pool = report.pool || detectPool(report, catalog);
+  const profile = flags.task
+    ? { text: flags.task, domain: flags.domain || "" }
+    : deriveTaskProfile(project);
+  const stageInfo = deriveStages(project);
+  const poolState = readPoolState(project);
+  // current stage = first with <2 judgments, else the last stage
+  let stageCtx = null;
+  if (stageInfo) {
+    stageCtx = stageInfo.stages.find((s) => ((poolState.stages[s.id]?.judgments) || []).length < 2) || stageInfo.stages[stageInfo.stages.length - 1];
+  }
+  const cfg = readPoolConfig(project);
+  const j = judgePool({ catalog, pool, profile, stageCtx, poolState, cfg });
+  const verdictMap = {};
+  for (const v of j.verdicts) verdictMap[v.component] = { verdict: v.verdict, low: v.low === true };
+  const state = recordJudgment(project, stageCtx, verdictMap, new Date().toISOString());
+  const n = stageCtx ? ((state.stages[stageCtx.id]?.judgments) || []).length : 0;
+  if (flags.json) { out(JSON.stringify({ ...j, state }, null, 2)); return; }
+  out(renderPool(j, stageCtx ? { judgments: n, needed: 2 } : undefined));
+}
+
+/** pool: section of .mawf/config.yaml (threshold/stayBonus/removeLookback). */
+function readPoolConfig(project) {
+  const file = path.join(project, ".mawf", "config.yaml");
+  if (!isFile(file)) return {};
+  try {
+    const parsed = parseYamlSubset(readText(file));
+    const p = parsed?.pool;
+    return p && typeof p === "object" ? p : {};
+  } catch { return {}; }
 }
 
 function cmdModels(f, flags) {
@@ -874,8 +915,8 @@ function cmdUpgrade(f, flags) {
 }
 
 // --- doctor ---
-function cmdDoctor() {
-  const r = doctor();
+function cmdDoctor(f, flags) {
+  const r = doctor({ projectDir: flags.project, catalogPath: flags.catalog });
   out(`mawf doctor — ${r.summary}`);
   for (const c of r.checks) out(`  [${c.status.toUpperCase().padEnd(4)}] ${c.name}: ${c.detail}`);
   if (!r.ok) process.exitCode = 1;

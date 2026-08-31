@@ -3,7 +3,7 @@
 [![CI](https://github.com/imBlanker/multi-agents-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/imBlanker/multi-agents-workflow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.17-green.svg)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-296%20passing-success.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-315%20passing-success.svg)](#testing)
 [![GitHub stars](https://img.shields.io/github/stars/imBlanker/multi-agents-workflow?style=social&label=Stars)](https://github.com/imBlanker/multi-agents-workflow/stargazers)
 
 # MAW — 面向复杂代码库的多智能体工作流系统
@@ -218,7 +218,9 @@ MAW 项目中任一受支持宿主的会话都掌握整机的全貌。三个组�
 
 **`mawf advise [--task "<文本>"] [--difficulty 1-5] [--json]`** 用纯确定性规则为每个宿主打分——capabilityFit（≤30）、skillMatch（≤30；失败/待批准的 MCP 与已禁用插件永不参与匹配）、modelFit（≤25）、costFit（≤15），另对当前宿主 +8 留守加分；仅当领先者超出 ≥10 分才建议切换（滞回，防反复横跳）。判定为 `switch` 时预生成 `.mawf/handoff/<时间戳>-<from>-<to>.md` 交接简报，并打印确切的启动命令——dsh 的命令是 `kill -9 $(lsof -ti tcp:3080) && dsh web`（旧实例占用 3080 端口）。**advise 绝不执行任何命令**，由人类自己运行。
 
-**主动注入（仅项目级——绝不碰全局提示词文件）。** `init/plan/install/update/upgrade` 会向项目根 `AGENTS.md` + `CLAUDE.md`（所有受支持宿主都会加载的面）写入幂等管理块（≤20 行，`<!-- mawf:cross-host-advise BEGIN/END -->`）。该块指示任何会话中的 agent：在会话开始及每天（UTC+8）第一个提示词时重新运行留守/切换分析（新鲜度状态存于 `.mawf/runtime/advise-state.json`）；主动向人类呈现建议与理由；切换时填好交接简报并原样展示命令；接续 48 小时内的交接简报；在声称本机"缺少"某能力之前先查摘要。`mawf uninstall` 默认保留管理块；`--purge-config` 将其移除。注意（codex ≥0.150.0）：不受信任的项目会忽略项目级 `AGENTS.md`——需在 codex 中授予项目信任，否则管理块不会在 codex 会话中加载（`mawf doctor` 有提示）。
+**`mawf advise --pool [--task "<文本>"] [--json]`** ——阶段门控的**插件池判定**：对项目级 MCP / 技能 / 插件批次（声明式目录 `defaults/pool-catalog.json`；种子：agent-browser、codebase-memory-mcp、codegraph——按各自上游均为多宿主，dsh 仅可探测的诚实缺口）输出 `add / keep / remove / noop` 判定，附理由与**防御性程序**：安装一律 check-then-act（绝不破坏既有资产），移除带逐项**无残留清单**；排斥组保证代码知识图索引器互斥（codegraph 与 codebase-memory-mcp 绝不同时推荐——已共存则输出整合移除，双缺席则只推荐其一）。阶段来自 graph 门控批次 / plan 审查点；每阶段 ≥2 次判定记录于 `.mawf/runtime/pool-state.json`，低于 2 次时 `mawf doctor --project` 给出 WARN。**仅建议性**——mawf 绝不执行安装/移除；插件池唯一的写入就是其状态文件。判定阈值（`threshold` / `stayBonus` / `removeLookback`）可在 `.mawf/config.yaml` 的 `pool:` 段覆写。
+
+**主动注入（仅项目级——绝不碰全局提示词文件）。** `init/plan/install/update/upgrade` 会向项目根 `AGENTS.md` + `CLAUDE.md`（所有受支持宿主都会加载的面）写入幂等管理块（≤26 行，`<!-- mawf:cross-host-advise BEGIN/END -->`）。该块指示任何会话中的 agent：在会话开始及每天（UTC+8）第一个提示词时重新运行留守/切换分析（新鲜度状态存于 `.mawf/runtime/advise-state.json`）；主动向人类呈现建议与理由；切换时填好交接简报并原样展示命令；接续 48 小时内的交接简报；在声称本机"缺少"某能力之前先查摘要；并在每个阶段边界（graph 门控批次 / plan 审查点）运行 `mawf advise --pool`（每阶段 ≥2 次判定），把增/留/删判定呈现给人类，绝不在批次中途执行安装/移除。`mawf uninstall` 默认保留管理块；`--purge-config` 将其移除。注意（codex ≥0.150.0）：不受信任的项目会忽略项目级 `AGENTS.md`——需在 codex 中授予项目信任，否则管理块不会在 codex 会话中加载（`mawf doctor` 有提示）。
 
 ## 10b. Watchdog：停滞检测与跨 host 救援（opt-in）
 

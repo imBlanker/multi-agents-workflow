@@ -272,7 +272,7 @@ src/advise.js ── deterministic scoring (caps/skills/models/prices) ──▶
         │  .mawf/runtime/advise-state.json (UTC+8 freshness)  ·  .mawf/handoff/<ts>-<from>-<to>.md
         ▼  text output ends with the stable `ADVISE-DONE …` footer
 src/injectblock.js ── managed block in project AGENTS.md + CLAUDE.md
-        (mawf:cross-host-advise BEGIN/END · idempotent · ≤20 lines)
+        (mawf:cross-host-advise BEGIN/END · idempotent · ≤26 lines)
 ```
 
 ### InventoryReport (per host)
