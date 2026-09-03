@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-03
+
+### Changed
+
+- **Clean npm release provenance** — republish the same runtime behavior as `0.7.1` from merged, tagged, and clean `main`. The `0.7.1` runtime remains valid, but its npm metadata recorded the pre-merge feature commit because that version was published from a dirty checkout. No runtime behavior changes in `0.7.2`.
+
 ## [0.7.1] - 2026-09-03
 
 ### Fixed
