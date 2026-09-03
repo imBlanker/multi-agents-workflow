@@ -51,6 +51,13 @@ is the short contributor guide.
 ## 5. Branch protection & release
 - `main` is protected: required PR review + required CI status checks; branches
   must be up to date before merge.
+- Workflow-file changes have one extra operational rule: scheduled GitHub
+  Actions only take effect from the default branch, so after merging workflow
+  changes, smoke-test them with `workflow_dispatch`.
+- The `trellis-update-tracker` workflow writes back
+  `.github/trellis-tracker/state.json` as `github-actions[bot]`; if branch
+  protection is tightened further, keep an allowance/bypass path for that state
+  commit or the tracker will fail to persist its state.
 - Semantic Versioning tags (`vMAJOR.MINOR.PATCH`) for releases; update
   [`CHANGELOG`](../docs/ARCHITECTURE.md) on release.
 - [`CODEOWNERS`](./CODEOWNERS) routes review by path.
