@@ -16,12 +16,12 @@ const countBlocks = (file) => {
   return t.split(BLOCK_BEGIN).length - 1;
 };
 
-test("blockText: <=20 content lines, required phrases present", () => {
+test("blockText: <=26 content lines, required phrases present", () => {
   const lines = blockText().split("\n");
   const content = lines.slice(1, -1); // between markers
-  assert.ok(content.length <= 20, `${content.length} lines`);
+  assert.ok(content.length <= 26, `${content.length} lines`);
   const text = blockText();
-  for (const phrase of ["UTC+8", "ADVISE-DONE", "inventory-digest", "kill -9 $(lsof -ti tcp:3080) && dsh web", "NEVER execute", "48h"]) {
+  for (const phrase of ["UTC+8", "ADVISE-DONE", "inventory-digest", "kill -9 $(lsof -ti tcp:3080) && dsh web", "NEVER execute", "48h", "ask/grill only unresolved", "Do NOT treat the switch as ready"]) {
     assert.ok(text.includes(phrase), phrase);
   }
 });
