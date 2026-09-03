@@ -88,6 +88,7 @@ Common types:
 3. Make sure `npm test` passes locally and CI is green.
 4. Keep PRs focused — **one logical change per PR.**
 5. Update the README and `examples/` if your change affects user-facing behavior.
+6. Workflow-file changes need one extra check: scheduled GitHub Actions run from the default branch, so after merging workflow changes, smoke-test them with `workflow_dispatch`.
 
 ## Governance & cc-switch policy
 
