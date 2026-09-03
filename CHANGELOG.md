@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-03
+
+### Fixed
+
+- **Host-aware cross-host handoff readiness gate** — when `mawf advise` recommends a host switch, the generated handoff brief now records known source/target host facts and requires review of main/subagent models, reasoning/effort, speed/cost, and MCP/skill/plugin/prompt/harness differences. It deterministically recommends direct questions or grilling and the managed `AGENTS.md` / `CLAUDE.md` block forbids treating the switch as ready before the user responds. This is a guidance-level hard gate only: stay/switch scoring, hysteresis, CLI state, and the stable `ADVISE-DONE` footer are unchanged. Tests remain 316 passing.
+
 ## [0.7.0] - 2026-08-31
 
 ### Added

@@ -283,7 +283,7 @@ Truth sources (verified against each host's own introspection): claude MCP = `~/
 
 ### AdviseResult
 
-`{ currentHost, task{text,domain,difficulty}, tokens[], recommendation: stay|switch, target, margin, scores[{host,total,breakdown{capabilityFit,skillMatch,modelFit,costFit},stayBonus,matched{skills,plugins,mcps,models},reasons[]}], launch{command,note}|null, handoffPath|null, stateUpdated }`. Weights/stayBonus/margin overridable in `.mawf/config.yaml` `advise:`. Output contract: text mode ends with `ADVISE-DONE recommendation=… target=… margin=… handoff=…` for the injected block to parse.
+`{ currentHost, task{text,domain,difficulty}, tokens[], recommendation: stay|switch, target, margin, scores[{host,total,breakdown{capabilityFit,skillMatch,modelFit,costFit},stayBonus,matched{skills,plugins,mcps,models},reasons[]}], launch{command,note}|null, handoffPath|null, stateUpdated }`. Weights/stayBonus/margin overridable in `.mawf/config.yaml` `advise:`. Output contract: text mode ends with `ADVISE-DONE recommendation=… target=… margin=… handoff=…` for the injected block to parse. On `switch`, `handoffPath` points to the host-aware handoff gate brief: inspect source/target differences from MAW evidence, ask/grill only unresolved model/workflow decisions, and do not treat the switch as ready before the user responds.
 
 ### Scoring rules (defaults)
 
@@ -302,7 +302,7 @@ claude → `claude`; codex → `codex`; pi → `pi` (run in the project director
 
 ### Injection & reversibility
 
-Managed block written to project `AGENTS.md` + `CLAUDE.md` (create-if-absent; CLAUDE.md stub references AGENTS.md) at init/plan/install/update/upgrade. Foreign managed spans (e.g. Trellis) stay contiguous; corrupt single-marker spans are repaired non-destructively. Reversibility: keep-config keeps blocks; `--purge-config` strips spans and deletes mawf-created files recorded in `.mawf/managed-blocks.json` (project scope — NEVER the installer manifest `files[]`, which means whole-file removal).
+Managed block written to project `AGENTS.md` + `CLAUDE.md` (create-if-absent; CLAUDE.md stub references AGENTS.md) at init/plan/install/update/upgrade. On `switch`, the block makes the handoff review a guidance-level hard gate: inspect source/target differences, ask/grill only unresolved model/workflow decisions, and do not treat the switch as ready before the user responds. Foreign managed spans (e.g. Trellis) stay contiguous; corrupt single-marker spans are repaired non-destructively. Reversibility: keep-config keeps blocks; `--purge-config` strips spans and deletes mawf-created files recorded in `.mawf/managed-blocks.json` (project scope — NEVER the installer manifest `files[]`, which means whole-file removal).
 
 ---
 

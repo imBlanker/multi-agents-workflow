@@ -7,7 +7,7 @@
 // Policy (parent task 08-20 decisions):
 //   D2 — pure deterministic rules; the CALLING agent (an LLM) does semantic
 //        synthesis from the structured output + full inventory digest.
-//   D3 — recommend + ready handoff; advise NEVER executes launch commands
+//   D3 — recommend + gated handoff; advise NEVER executes launch commands
 //        (the only exec is PID resolution for port 3080, injectable/mocked).
 import fs from "node:fs";
 import path from "node:path";
@@ -323,7 +323,7 @@ export function adviseTask(opts = {}) {
   // handoff brief (switch only)
   let handoffPath = null;
   if (recommendSwitch) {
-    handoffPath = writeHandoffBrief({ projectDir, from: currentHost, to: target, profile, clock: opts.clock });
+    handoffPath = writeHandoffBrief({ projectDir, from: currentHost, to: target, profile, inventory, clock: opts.clock });
   }
 
   // freshness state
@@ -346,19 +346,55 @@ export function adviseTask(opts = {}) {
   };
 }
 
-/**
- * Write `.mawf/handoff/<ts>-<from>-<to>.md` (UTC+8 stamp); keep newest 10.
- * @param {{ projectDir: string, from: string, to: string, profile: any, clock?: any }} o
- */
+function handoffHostFacts(host) {
+  if (!host) return "- host facts unavailable (check `.mawf/inventory-digest.md`)";
+  const models = (host.models || []).filter((m) => m.isCurrent).map((m) => m.id);
+  const promptCount = (host.prompts?.global ? 1 : 0) + (host.prompts?.project?.length || 0);
+  const note = String(host.harnessNote || host.mcpNote || "").replace(/\s+/g, " ").trim();
+  return [`- capabilities: ${(host.capabilities || []).join(", ") || "none"}`,
+    `- current models: ${(models.length ? models : (host.models || []).slice(0, 2).map((m) => m.id)).join(", ") || "none discovered"}`,
+    `- workflow surfaces: ${(host.skills || []).length} skills, ${(host.mcps || []).length} MCP, ${(host.plugins || []).length} plugins, ${promptCount} prompt surface(s)`, note && `- note: ${note}`].filter(Boolean).join("\n");
+}
+
+function handoffMode(fromHost, toHost) {
+  const surfaces = (h) => (h?.skills?.length || 0) + (h?.mcps?.length || 0) + (h?.plugins?.length || 0) + (h?.prompts?.project?.length || 0) + (h?.prompts?.global ? 1 : 0);
+  const diffs = [JSON.stringify([...(fromHost?.capabilities || [])].sort()) !== JSON.stringify([...(toHost?.capabilities || [])].sort()),
+    (fromHost?.models || []).find((m) => m.isCurrent)?.id !== (toHost?.models || []).find((m) => m.isCurrent)?.id,
+    Math.abs(surfaces(fromHost) - surfaces(toHost)) >= 2, !!(fromHost?.harnessNote || fromHost?.mcpNote) !== !!(toHost?.harnessNote || toHost?.mcpNote)].filter(Boolean).length;
+  return diffs >= 2 ? "grill" : "ask";
+}
+
 function writeHandoffBrief(o) {
   const dir = path.join(o.projectDir, ".mawf", "handoff");
   ensureDir(dir);
   const ts = utc8Stamp(o.clock);
   const file = path.join(dir, `${ts}-${o.from}-to-${o.to}.md`);
+  const hosts = o.inventory?.hosts || [];
+  const fromHost = hosts.find((h) => h.app === o.from);
+  const toHost = hosts.find((h) => h.app === o.to);
+  const mode = handoffMode(fromHost, toHost);
+  const gate = [`- This switch is NOT ready yet.`,
+    `- Inspect the host facts below and .mawf/inventory-digest.md; do not silently reuse the ${o.from} model/workflow setup on ${o.to}.`,
+    `- Ask the user only about unresolved main-agent/subagent model, thinking/effort, speed/cost, and workflow choices.`,
+    `- Recommended interrogation mode: **${mode}**${mode === "grill" ? " (host/model/workflow differences are material)" : " (direct questions should be enough)"}.`,
+    `- A user response is required before this switch is treated as ready.`].join("\n");
+  const review = [`- main-agent model`, `- child/subagent model strategy`, `- reasoning / thinking / effort level`, `- speed / latency / cost preference`, `- workflow changes caused by MCPs / skills / plugins / prompts / harness`].join("\n");
   const body = `# Handoff: ${o.from} → ${o.to} (${ts} UTC+8)
 
 ## Task
 ${o.profile.text}
+
+## Reconfiguration gate (required before ready)
+${gate}
+
+## Known source-host facts (${o.from})
+${handoffHostFacts(fromHost)}
+
+## Known target-host facts (${o.to})
+${handoffHostFacts(toHost)}
+
+## Configuration review required before ready
+${review}
 
 ## Progress so far
 (To be filled by the outgoing agent before the human switches: what was done, decisions made, current state.)
@@ -370,10 +406,9 @@ ${suggestedRole(o.projectDir)}
 (List the files this task touches — fill in before switching.)
 
 ## Next steps
-(Concrete next actions for the incoming agent in ${o.to}.)
+(Concrete next actions for the incoming agent in ${o.to} after the user responds.)
 `;
   fs.writeFileSync(file, body);
-  // retention: keep newest 10
   try {
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort();
     for (const old of files.slice(0, Math.max(0, files.length - 10))) fs.rmSync(path.join(dir, old), { force: true });
@@ -381,10 +416,6 @@ ${suggestedRole(o.projectDir)}
   return path.relative(o.projectDir, file);
 }
 
-/**
- * Suggested main-agent role from plan artifacts (orchestrator if present).
- * @param {string} projectDir
- */
 function suggestedRole(projectDir) {
   const wf = readJson(path.join(projectDir, ".mawf", "workflow.json"), null);
   const agents = Array.isArray(wf?.agents) ? wf.agents : [];
@@ -393,12 +424,6 @@ function suggestedRole(projectDir) {
   return "orchestrator (default — no plan artifacts found)";
 }
 
-/**
- * Update `.mawf/runtime/advise-state.json`.
- * @param {string} projectDir
- * @param {{ recommendation: string, target: string|null }} last
- * @param {any} [clock]
- */
 function updateAdviseState(projectDir, last, clock) {
   try {
     const dir = path.join(projectDir, ".mawf", "runtime");
@@ -417,24 +442,12 @@ function updateAdviseState(projectDir, last, clock) {
   } catch { return false; }
 }
 
-/**
- * Freshness gate for the injected block: STALE when state missing or the
- * last run was on a previous UTC+8 day.
- * @param {string} statePath
- * @param {any} [clock]
- * @returns {"STALE"|"ADVISED_TODAY"}
- */
 export function checkFreshness(statePath, clock) {
   const state = exists(statePath) ? readJson(statePath, null) : null;
   if (!state || !state.lastDayUtc8) return "STALE";
   return state.lastDayUtc8 === utc8Day(clock) ? "ADVISED_TODAY" : "STALE";
 }
 
-/**
- * Human-readable rendering ending with the stable machine footer
- * `ADVISE-DONE recommendation=… target=… margin=… handoff=…`.
- * @param {any} r AdviseResult
- */
 export function renderAdvise(r) {
   const lines = [];
   lines.push(`MAW cross-host advise — current host: ${r.currentHost}`);
@@ -458,7 +471,7 @@ export function renderAdvise(r) {
     }
     if (r.handoffPath) {
       lines.push("");
-      lines.push(`handoff brief pre-created: ${r.handoffPath} — fill "Progress so far" + "Relevant files" before switching.`);
+      lines.push(`handoff brief pre-created: ${r.handoffPath} — inspect source/target differences, fill the required handoff fields, ask/grill only unresolved model/workflow decisions, and do NOT treat the switch as ready before the user responds.`);
     }
   } else {
     lines.push(`RECOMMEND: STAY in ${r.currentHost}`);

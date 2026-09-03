@@ -24,9 +24,9 @@ const TARGETS = ["AGENTS.md", "CLAUDE.md"];
  * <=20 in 08-31-mawf-pluginpool-stagegate to carry the plugin-pool rule).
  * Instructions:
  * re-advise at session start + first daily prompt (UTC+8), parse the
- * ADVISE-DONE footer, switch = fill handoff + show command (NEVER execute),
- * continue fresh handoff briefs (<48h), consult the inventory digest before
- * claiming a capability is missing.
+ * ADVISE-DONE footer, on switch fill the host-aware handoff gate + show the
+ * command (NEVER execute), continue fresh handoff briefs (<48h), consult the
+ * inventory digest before claiming a capability is missing.
  * @returns {string}
  */
 export function blockText() {
@@ -39,19 +39,22 @@ export function blockText() {
     "1. Session start AND first prompt of each day (UTC+8): run `mawf advise --check-fresh`;",
     "   when STALE, run `mawf advise --task \"<current task>\"` (no --task → project plan profile).",
     "2. Parse the trailing `ADVISE-DONE recommendation=… target=… margin=… handoff=…` line.",
-    "3. On `switch`: fill the pre-created handoff brief (path from handoff=), then present the",
-    "   recommendation + reasons and the exact launch command (dsh: `kill -9 $(lsof -ti tcp:3080) && dsh web`).",
+    "3. On `switch`: fill the pre-created handoff brief (path from handoff=), inspect source/target",
+    "   differences from the brief + `.mawf/inventory-digest.md`, and ask/grill only unresolved",
+    "   model/workflow decisions.",
+    "4. Do NOT treat the switch as ready before the user responds; then present the recommendation +",
+    "   reasons and the exact launch command (dsh: `kill -9 $(lsof -ti tcp:3080) && dsh web`).",
     "   NEVER execute the launch command yourself — the human runs it.",
-    "4. Session start: if `.mawf/handoff/` has a brief newer than 48h, offer to continue it.",
-    "5. Before claiming a tool/model/skill is missing on this machine, check `.mawf/inventory-digest.md`",
+    "5. Session start: if `.mawf/handoff/` has a brief newer than 48h, offer to continue it.",
+    "6. Before claiming a tool/model/skill is missing on this machine, check `.mawf/inventory-digest.md`",
     "   (another host may have it; `mawf inventory --verify` refreshes live MCP/plugin status).",
-    "6. Plugin pool, stage-gated (graph gate batches / plan review points): run `mawf advise --pool`",
+    "7. Plugin pool, stage-gated (graph gate batches / plan review points): run `mawf advise --pool`",
     "   at stage entry AND at the gate (≥2 judgments per stage). Parse the `POOL-DONE` footer;",
     "   present add/keep/remove verdicts + procedures to the human and NEVER execute them.",
     "   Apply ONLY at stage boundaries, never mid-batch. Installs must not clobber existing",
     "   assets; removals must verify no residue (follow the printed checklist).",
     "",
-    "Advice is advisory — you propose, the human decides. Removed by `mawf uninstall --purge-config`.",
+    "Host choice is advisory; switch readiness is gated by the handoff review. Removed by `mawf uninstall --purge-config`.",
     BLOCK_END,
   ].join("\n");
 }

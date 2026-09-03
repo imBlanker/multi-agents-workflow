@@ -112,8 +112,19 @@ test("adviseTask: switch fires when margin ≥ 10; handoff created; launch prese
   assert.notEqual(r.target, "dsh");
   assert.ok(r.margin >= 10, `margin ${r.margin}`);
   assert.ok(r.handoffPath && r.handoffPath.includes("-to-"));
-  assert.ok(fs.existsSync(path.join(projectDir, r.handoffPath)));
+  const handoffFile = path.join(projectDir, r.handoffPath);
+  assert.ok(fs.existsSync(handoffFile));
   assert.ok(r.launch && r.launch.command);
+  const handoff = fs.readFileSync(handoffFile, "utf8");
+  assert.match(handoff, /Reconfiguration gate \(required before ready\)/);
+  assert.match(handoff, /This switch is NOT ready yet/);
+  assert.match(handoff, /Known source-host facts \(dsh\)/);
+  assert.match(handoff, /Known target-host facts \(pi\)/);
+  assert.match(handoff, /Recommended interrogation mode: \*\*grill\*\*/);
+  assert.match(handoff, /A user response is required before this switch is treated as ready/);
+  assert.match(handoff, /child\/subagent model strategy/);
+  const rendered = renderAdvise(r);
+  assert.match(rendered, /do NOT treat the switch as ready before the user responds/i);
 });
 
 test("adviseTask: dsh launch = kill -9 <resolved pid> && dsh web; template fallback", () => {
