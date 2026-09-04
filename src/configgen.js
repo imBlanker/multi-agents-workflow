@@ -291,6 +291,7 @@ function planMarkdown(plan, ccSwitch) {
     lines.push("## Host notes — DeepSeek Harness (dsh)");
     lines.push("");
     lines.push("- **Orchestration**: one orchestrator session (`dsh web` or `dsh --profile headless`); workers spawn via the prompt-driven `subagent` tool with `.mawf/agents/<role>.md` as the payload — dsh has no named agent files.");
+    lines.push("- **Headless output** (dsh ≥0.1.2-rc.1): progress streams to stderr; stdout carries only the final result.");
     lines.push("- **Skills**: trellis skills live in the shared `.agents/skills/` and dsh-private `.dsh/skills/` roots (rank 100–600 discovery).");
     lines.push("- **Context**: AGENTS.md is loaded by dsh from `$DSH_HOME/AGENTS.md` plus the project root down to the session cwd (64 KiB cap).");
     lines.push("- **Cost**: rate limits degrade to concurrency-only (`mawf acquire` / `mawf release`); model prices come from cc-switch's synced `~/.cc-switch/model-pricing.json` where model ids match.");

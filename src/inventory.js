@@ -477,14 +477,23 @@ function scanCodex(o) {
     if (!src[2] || !isFile(src[2])) continue;
     try {
       const names = [];
+      const quoted = new Set(); // quoted TOML keys are atomic server names
+      // (codex 0.152.0+ allows `:` `@` `/` `.` inside), never dotted-child
+      // config detail
       for (const m of src[1].matchAll(/^\[mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))\]\s*$/gm)) {
-        names.push(m[1] ?? m[2]);
+        const n = m[1] ?? m[2];
+        names.push(n);
+        if (m[1] !== undefined) quoted.add(n);
       }
       // drop TOML sub-sections (e.g. [mcp_servers.<srv>.env]) — a dotted
-      // child of another captured name is config detail, not a server
+      // child of another captured name is config detail, not a server.
+      // Quoted keys are exempt: `[mcp_servers."tools.calendar"]` is ONE
+      // server name (0.152 package-style), not a child of server "tools".
       for (const n of names) {
-        const dot = n.lastIndexOf(".");
-        if (dot > 0 && names.includes(n.slice(0, dot))) continue;
+        if (!quoted.has(n)) {
+          const dot = n.lastIndexOf(".");
+          if (dot > 0 && names.includes(n.slice(0, dot))) continue;
+        }
         if (!mcps.some((m) => m.name === n)) mcps.push({ name: n, source: src[0] });
       }
     } catch {}
