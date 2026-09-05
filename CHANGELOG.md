@@ -6,6 +6,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-05
+
+### Fixed
+
+- **codex 0.152.0 MCP-name atomicity in `mawf inventory`** — quoted TOML server names (`[mcp_servers."tools.calendar"]`) have been atomic server names since codex 0.152.0 allowed `:` `@` `/` `.` in server names; they are no longer misclassified as dotted-child config detail when a same-prefix server exists (with server `tools` configured, `"tools.calendar"` stays its own server). Genuine TOML sub-sections (`[mcp_servers.<srv>.env]`) are still dropped; package-style names (`:` `@` `/` `.`) are covered by regression tests.
+
+### Added
+
+- **Upstream round-2 host-changelog adaptation: dsh 0.1.2-alpha.2→0.1.2-rc.1 + the 2026-09-05 plugin-rename wave / codex 0.151.0→0.153.3 / pi 0.84.4→0.85.0 / claude-code 2.1.251→2.1.260** (audit since the 2026-08-31 baseline; full matrix in the task tracker).
+  - dsh 0.1.2-rc.1: `--dump-config` anchor row re-verified byte-identical; plugin delta (`-dsh-tool-subagent-report`, superseded by two-way `send_message`; `+dsh-session-turn-outline`; `tool-web.config.fetch` default flip) covered by a NEW 630-line real capture `tests/fixtures/dsh-dump-0.1.2rc1.txt`. The 0.1.2a2 fixture is KEPT as the legacy pre-rename plugin-name regression — parse tests run over BOTH.
+  - dsh plugin rename wave: `@noob-stupid/dsh-plugin-console` / `@changfenhuang/dsh-genui` / `dsh-drag-and-drop` (git deps → npm registry packages) + `@linxin666/dsh-web-all@0.3.14` sub-plugin namespacing (`@linxin666/dsh-web-all/<x>` ids with nested `config.plugin`) — tests cover renamed bundle origins, zero old-name residue, and namespaced ids; live-verified on the real machine (171 plugins, 0 dupes; doctor / inventory --verify / advise all exit 0).
+  - codex 0.153.0: remote-marketplace plugin installs keep the `[plugins."name@market"]` config shape (verified against codex-rs `config/src/plugin_edit.rs`); `[marketplaces.*]` tables are not a plugin surface — regression tests document both.
+  - configgen: dsh host notes gain the rc.1 headless output contract (progress streams to stderr; stdout carries only the final result).
+  - pi 0.85.0 / claude-code 2.1.251→2.1.260: corpus-audited with code-cited evidence — no mawf impact (TUI/SDK/session-management and permission-rule entries only).
+  - Tests 316→321; README ×3 badge 321.
+
 ## [0.7.2] - 2026-09-03
 
 ### Changed
