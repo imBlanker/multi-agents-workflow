@@ -317,10 +317,72 @@ test("codex 0.151.0: project .codex/config.toml + .codex/skills scanned, deduped
   assert.ok(codex.skills.some((s) => s.name === "proj-codex-skill" && s.origin === "project"), "project .codex/skills listed");
 });
 
-// --- dsh 0.1.2-alpha.2 real captured dump-config (audit rows 6+7, live-verified) ---
+// --- codex 0.152.0/0.153.0 adaptations (upstream round 2, audit rows A4/A5) ---
 
-test("dsh 0.1.2-alpha.2 real dump-config fixture (captured 2026-08-31): plugins parse, no duplicate ids", () => {
-  const dump = fs.readFileSync(new URL("./fixtures/dsh-dump-0.1.2a2.txt", import.meta.url), "utf8");
+test("codex 0.152.0: MCP names with `:` `@` `/` `.` parse as atomic quoted keys, never dropped as dotted children", () => {
+  const root = tmpHome();
+  const codexDir = mk(path.join(root, "h", ".codex"));
+  w(path.join(codexDir, "config.toml"), [
+    `[mcp_servers."pkg@market:server/1.0"]`, `command = "npx"`, ``,
+    `[mcp_servers."tools.calendar"]`, `command = "npx"`, ``,
+    `[mcp_servers.tools]`, `command = "npx"`, ``,
+    `[mcp_servers."my srv"]`, `command = "npx"`, ``,
+    `[mcp_servers.plain-srv_2]`, `command = "npx"`, ``,
+    `[mcp_servers.plain-srv_2.env]`, `TOKEN = "x"`, ``,
+  ].join("\n"));
+  const none = path.join(root, "none");
+  const report = scanInventory({
+    claudeDir: none, piDir: none, dshHome: none,
+    claudeJson: path.join(root, "none.json"),
+    codexDir, projectDir: mk(path.join(root, "p")), dbPath: "/nonexistent/ccswitch.db",
+  });
+  const codex = report.hosts.find((h) => h.app === "codex");
+  const names = codex.mcps.map((m) => m.name);
+  assert.ok(names.includes("pkg@market:server/1.0"), "package-style name with : @ / . parsed verbatim");
+  assert.ok(names.includes("tools.calendar"), "quoted dotted name kept (atomic, not a child of tools)");
+  assert.ok(names.includes("tools"), "bare namespaced sibling kept");
+  assert.ok(names.includes("my srv"), "quoted name with space parsed");
+  assert.ok(names.includes("plain-srv_2"), "bare name parsed");
+  assert.ok(!names.includes("plain-srv_2.env"), "genuine TOML sub-section still dropped");
+});
+
+test("codex 0.153.0: remote-marketplace plugin installs keep the [plugins.\"name@market\"] shape; [marketplaces.*] tables ignored", () => {
+  const root = tmpHome();
+  const codexDir = mk(path.join(root, "h", ".codex"));
+  // shape verified against codex-rs config/src/plugin_edit.rs (set_plugin_enabled
+  // writes plugins[plugin_key] with plugin_key = "name@marketplace" via toml_edit;
+  // remote marketplaces register under [marketplaces.<name>] — not a plugin surface)
+  w(path.join(codexDir, "config.toml"), [
+    `[marketplaces."my-remote-marketplace"]`, `git = "https://example.com/plugins.git"`, ``,
+    `[plugins."remote-plugin@my-remote-marketplace"]`, `enabled = true`, ``,
+    `[plugins."documents@openai-primary-runtime"]`, `enabled = true`, ``,
+  ].join("\n"));
+  const none = path.join(root, "none");
+  const report = scanInventory({
+    claudeDir: none, piDir: none, dshHome: none,
+    claudeJson: path.join(root, "none.json"),
+    codexDir, projectDir: mk(path.join(root, "p")), dbPath: "/nonexistent/ccswitch.db",
+  });
+  const codex = report.hosts.find((h) => h.app === "codex");
+  const pluginNames = codex.plugins.map((p) => p.name);
+  assert.ok(pluginNames.includes("remote-plugin@my-remote-marketplace"), "remote-marketplace plugin listed with name@market key");
+  assert.ok(pluginNames.includes("documents@openai-primary-runtime"), "official-marketplace plugin listed");
+  assert.equal(codex.plugins.length, 2, "no phantom plugins from [marketplaces.*] tables");
+});
+
+// --- dsh real captured dump-config fixtures (upstream round 2, audit rows A1/A2, live-verified) ---
+// dsh-dump-0.1.2a2.txt  — captured 2026-08-31 on 0.1.2-alpha.2 core: post
+//   dsh-web-ui-all→dsh-web-all migration but PRE the 2026-09-05 plugin-rename
+//   wave (@deepseek-ai/dsh-plugin-console / @omdsh-dev/dsh-genui /
+//   @omdsh-dev/dsh-drag-and-drop git names) and PRE web-all 0.3.14
+//   sub-plugin namespacing — the LEGACY plugin-name regression fixture.
+// dsh-dump-0.1.2rc1.txt — captured 2026-09-05 on 0.1.2-rc.1 core after the
+//   rename wave (@noob-stupid/dsh-plugin-console@0.3.24,
+//   @changfenhuang/dsh-genui@0.9.7, dsh-drag-and-drop@0.1.6, dsh-at-file 0.7.0
+//   git, @linxin666/dsh-web-all@0.3.14 namespaced sub-plugins,
+//   dsh-plugin-terminal 0.2.0) — the CURRENT plugin-id shape.
+
+function scanDshFixture(dump) {
   const root = tmpHome();
   const dshHome = mk(path.join(root, "h", ".dsh"));
   w(path.join(dshHome, "settings.yaml"), "agent-presets:\n  default: x\n");
@@ -331,10 +393,50 @@ test("dsh 0.1.2-alpha.2 real dump-config fixture (captured 2026-08-31): plugins 
     dshHome, projectDir: mk(path.join(root, "p")), dbPath: "/nonexistent/ccswitch.db",
     dshDumpConfig: dump,
   });
-  const dsh = report.hosts.find((h) => h.app === "dsh");
-  assert.ok(dsh, "dsh host scanned");
-  assert.ok(dsh.plugins.length >= 170, `real 0.1.2 dump yields the full plugin table (got ${dsh.plugins.length})`);
-  assert.ok(dsh.plugins.some((p) => /dsh-web-all/.test(p.origin || "")), "migrated @linxin666/dsh-web-all bundle origin present");
-  const ids = dsh.plugins.map((p) => p.id);
-  assert.equal(ids.filter((x, i) => ids.indexOf(x) !== i).length, 0, "no duplicate plugin ids");
+  return report.hosts.find((h) => h.app === "dsh");
+}
+
+for (const [file, label] of [
+  ["./fixtures/dsh-dump-0.1.2a2.txt", "dsh 0.1.2-alpha.2 (2026-08-31, legacy plugin names)"],
+  ["./fixtures/dsh-dump-0.1.2rc1.txt", "dsh 0.1.2-rc.1 (2026-09-05, rename wave + web-all 0.3.14 namespacing)"],
+]) {
+  test(`real dump-config fixture ${label}: plugins parse, no duplicate ids`, () => {
+    const dump = fs.readFileSync(new URL(file, import.meta.url), "utf8");
+    const dsh = scanDshFixture(dump);
+    assert.ok(dsh, "dsh host scanned");
+    assert.ok(dsh.plugins.length >= 170, `real dump yields the full plugin table (got ${dsh.plugins.length})`);
+    assert.ok(dsh.plugins.some((p) => /dsh-web-all/.test(p.origin || "")), "@linxin666/dsh-web-all bundle origin present");
+    const ids = dsh.plugins.map((p) => p.id);
+    assert.equal(ids.filter((x, i) => ids.indexOf(x) !== i).length, 0, "no duplicate plugin ids");
+  });
+}
+
+test("dsh 0.1.2-rc.1 fixture: plugin-rename wave ids + web-all 0.3.14 namespaced sub-plugins", () => {
+  const dump = fs.readFileSync(new URL("./fixtures/dsh-dump-0.1.2rc1.txt", import.meta.url), "utf8");
+  const dsh = scanDshFixture(dump);
+  const names = dsh.plugins.map((p) => p.name);
+  const origins = dsh.plugins.map((p) => p.origin || "");
+  // rename wave (audit row A2): new registry names present, old git names gone
+  assert.ok(origins.some((o) => o.includes("@noob-stupid/dsh-plugin-console")), "renamed console bundle origin present");
+  assert.ok(origins.every((o) => !o.includes("@deepseek-ai/dsh-plugin-console")), "old console name absent");
+  assert.ok(origins.some((o) => o.includes("dsh-drag-and-drop")), "renamed drag-and-drop bundle origin present");
+  assert.ok(origins.some((o) => o.includes("@changfenhuang/dsh-genui")), "renamed genui bundle origin present");
+  assert.ok(origins.every((o) => !o.includes("@omdsh-dev/")), "no @omdsh-dev/* residue");
+  // web-all 0.3.14 namespacing: sub-plugin names under dsh-web-all/<x>
+  const ns = names.filter((n) => /^@linxin666\/dsh-web-all\//.test(n));
+  assert.ok(ns.length >= 10, `namespaced web-all sub-plugin names parsed (got ${ns.length})`);
+  assert.ok(dump.includes("plugin: '@linxin666/dsh-client-ui-web-ui-settings'"), "nested config.plugin key preserved in fixture");
+  // rc.1 core: one-way report tool removed (superseded by send_message), turn-outline added
+  assert.ok(names.every((n) => !n.includes("dsh-tool-subagent-report")), "one-way report tool gone in rc.1");
+  assert.ok(names.some((n) => n.includes("dsh-session-turn-outline")), "session-turn-outline present in rc.1");
+});
+
+test("dsh 0.1.2-alpha.2 legacy fixture keeps pre-rename plugin-name shapes parsing", () => {
+  const dump = fs.readFileSync(new URL("./fixtures/dsh-dump-0.1.2a2.txt", import.meta.url), "utf8");
+  const dsh = scanDshFixture(dump);
+  const names = dsh.plugins.map((p) => p.name);
+  const origins = dsh.plugins.map((p) => p.origin || "");
+  assert.ok(origins.some((o) => o.includes("@deepseek-ai/dsh-plugin-console")), "old console git name present (legacy)");
+  assert.ok(names.some((n) => n.includes("@linxin666/dsh-client-ui-web-ui-settings")), "flat pre-namespacing client-ui name parses (legacy)");
+  assert.ok(names.some((n) => n.includes("dsh-tool-subagent-report")), "report tool present pre-rc.1 (legacy)");
 });
