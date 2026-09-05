@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-05
+
+### Fixed
+
+- **codex 0.152.0 MCP 名称原子性（`mawf inventory`）**——自 codex 0.152.0 允许服务器名含 `:` `@` `/` `.` 起，带引号的 TOML 服务器名（`[mcp_servers."tools.calendar"]`）即为原子名称；不再在同前缀服务器存在时被误判为点分子节点配置细节（已配置服务器 `tools` 时，`"tools.calendar"` 仍保留为独立服务器）。真正的 TOML 子节（`[mcp_servers.<srv>.env]`）仍被剔除；包式名称（`:` `@` `/` `.`）由回归测试覆盖。
+
+### Added
+
+- **第二轮宿主 changelog 适配：dsh 0.1.2-alpha.2→0.1.2-rc.1 及 2026-09-05 插件改名波 / codex 0.151.0→0.153.3 / pi 0.84.4→0.85.0 / claude-code 2.1.251→2.1.260**（自 2026-08-31 基线以来的审计；完整矩阵见任务追踪）。
+  - dsh 0.1.2-rc.1：`--dump-config` 锚点行经字节级复验一致；插件差异（`-dsh-tool-subagent-report`，被双向 `send_message` 取代；`+dsh-session-turn-outline`；`tool-web.config.fetch` 默认值翻转）由新增的 630 行真实捕获 `tests/fixtures/dsh-dump-0.1.2rc1.txt` 覆盖。0.1.2a2 fixture 保留作为改名前旧插件名的回归 fixture——解析测试同时在两个 fixture 上运行。
+  - dsh 插件改名波：`@noob-stupid/dsh-plugin-console` / `@changfenhuang/dsh-genui` / `dsh-drag-and-drop`（git 依赖 → npm 注册表包）+ `@linxin666/dsh-web-all@0.3.14` 子插件命名空间化（`@linxin666/dsh-web-all/<x>` id 及嵌套 `config.plugin`）——测试覆盖改名后的 bundle origin、旧名零残留、命名空间 id；实机验证通过（171 插件、0 重复；doctor / inventory --verify / advise 全部 exit 0）。
+  - codex 0.153.0：远程市场插件安装保持 `[plugins."name@market"]` 配置形状（对 codex-rs `config/src/plugin_edit.rs` 验证）；`[marketplaces.*]` 表不是插件面——回归测试存档两者。
+  - configgen：dsh host notes 新增 rc.1 headless 输出契约（进度流至 stderr；stdout 仅含最终结果）。
+  - pi 0.85.0 / claude-code 2.1.251→2.1.260：带代码引据的语料审计——对 mawf 无影响（仅 TUI/SDK/会话管理与权限规则条目）。
+  - 测试 316→321；README ×3 徽章 321。
+
 ## [0.7.2] - 2026-09-03
 
 ### Changed
