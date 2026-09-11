@@ -20,7 +20,7 @@ import { loadCatalog, detectPool } from "./pool.js";
 import { detectHost, hostCapabilities } from "./host.js";
 import { readCcSwitch, piManagedByCcSwitch, piSessionUsagePresent } from "./ccswitch.js";
 import { readPiAsCc, resolvePiAgentDir } from "./piprovider.js";
-import { readPiResources, readPiMcps } from "./pi-resources.js";
+import { readPiResources, readPiMcps, readPiRunner } from "./pi-resources.js";
 import { readDshSkills, readDshPresets } from "./dsh-resources.js";
 import { parseDshPlugins } from "./dsh-plugin-inventory.js";
 import { readDshAsCc } from "./dshprovider.js";
@@ -541,7 +541,8 @@ function scanPi(o) {
     app, homeDir: o.piDir,
     detected: o.hostInfo.detected.filter((d) => /pi agent/i.test(d)),
     capabilities: hostCapabilities({ ...o.hostInfo, app: "pi" }),
-    skills, plugins, marketplaces: [], mcps, resources: discovery.resources, harnessNote, subagentRunner: o.hostInfo.subagentRunner,
+    skills, plugins, marketplaces: [], mcps, resources: discovery.resources, harnessNote,
+    subagentRunner: readPiRunner({ piDir: o.piDir, projectDir: o.projectDir }),
     prompts: { global, project: projectPromptSurfaces(o.projectDir, ["AGENTS.md"]) },
     models: modelsForAppType(piAsCc, APP_TYPES[app]),
     workflowsHarnesses: projectWorkflows(o.projectDir),

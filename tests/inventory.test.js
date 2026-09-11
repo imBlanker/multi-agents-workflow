@@ -59,9 +59,11 @@ function fullFixture() {
   mk(path.join(piDir, "skills"));
   fs.symlinkSync(realSkill, path.join(piDir, "skills", "alias-a"), process.platform === "win32" ? "junction" : "dir");
   fs.symlinkSync(realSkill, path.join(piDir, "skills", "alias-b"), process.platform === "win32" ? "junction" : "dir");
-  w(path.join(piDir, "npm", "package.json"), JSON.stringify({ name: "pi-extensions", dependencies: { "some-pkg": "^1.0.0", "pi-mcp-adapter": "^2.0.0" } }));
+  w(path.join(piDir, "npm", "package.json"), JSON.stringify({ name: "pi-extensions", dependencies: { "some-pkg": "^1.0.0", "pi-mcp-adapter": "^2.0.0", "pi-subagents-lite": "^1.13.1" } }));
   w(path.join(piDir, "npm", "node_modules", "pi-mcp-adapter", "package.json"), JSON.stringify({ name: "pi-mcp-adapter", pi: { skills: ["./skills"] } }));
   w(path.join(piDir, "npm", "node_modules", "pi-mcp-adapter", "skills", "mcp-scripting", "SKILL.md"), `---\ndescription: Write mcpScript JavaScript\n---\nx\n`);
+  w(path.join(piDir, "npm", "node_modules", "pi-subagents-lite", "package.json"), JSON.stringify({ name: "pi-subagents-lite", pi: { extensions: ["./index.ts"] } }));
+  w(path.join(piDir, "npm", "node_modules", "pi-subagents-lite", "index.ts"), "// fixture extension");
   w(path.join(piDir, "extensions", "rtk.ts"), "// ext");
   w(path.join(piDir, "mcp.json"), JSON.stringify({ mcpServers: { exa: {}, context7: {} } }));
   w(path.join(piDir, "AGENTS.md"), "# pi global");
@@ -139,6 +141,10 @@ test("scanInventory: full 4-host fixture — all hosts present with expected sur
   assert.ok(piOrigins.has("user-global") && piOrigins.has("agents-global") && piOrigins.has("npm-package"), [...piOrigins]);
   assert.ok(pi.plugins.some((p) => p.name === "some-pkg" && p.source === "npm"));
   assert.ok(pi.plugins.some((p) => p.name === "rtk.ts" && p.source === "extension"));
+  assert.equal(pi.subagentRunner?.name, "pi-subagents-lite");
+  assert.equal(pi.subagentRunner?.tool, "Agent");
+  assert.equal(pi.subagentRunner?.status, "discovered", "workspace presence is not configured package evidence");
+  assert.equal(pi.subagentRunner?.ready, false, "static inventory must not claim live readiness");
   assert.ok(pi.mcps.some((m) => m.name === "exa" && m.source === "pi-mcp.json"));
   assert.ok(pi.mcps.some((m) => m.name === "context7" && m.source === "pi-mcp.json"));
   assert.equal(pi.mcps.length, 3);

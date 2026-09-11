@@ -160,14 +160,18 @@ test("Pi generated Agent frontmatter preserves tools/model selection and externa
   const plan = planWorkflow({ files: 30, parallelizableSubtasks: 4, risk: "high", contextNeed: "large", valuePerRun: "high", taskType: "coding" }, { host: { ...host, app: "pi" }, ccSwitch: cc });
   const impl = plan.agents.find((a) => a.role === "implementer");
   impl.model = "model-id"; impl.modelChoice = { provider: "Provider display label", providerId: "custom-provider" }; impl.modelReasoningEffort = "low";
-  impl.tools = ["Read", "Bash", "Edit", "Write", "Grep", "Glob", "Task", "Agent", "custom_tool"];
+  impl.tools = ["Read", "Bash", "Edit", "Write", "Grep", "Glob", "Task", "Agent", "custom_tool", "mcp:context7", "web/*"];
   plan.name = 'workflow: "quoted"';
   fs.mkdirSync(path.join(proj, ".pi", "agents"), { recursive: true });
   fs.writeFileSync(path.join(proj, ".pi", "agents", "maw-reviewer.md"), "Stale incorrectly materialized Codex reviewer");
   generateConfigs(proj, plan, cc);
   const native = fs.readFileSync(path.join(proj, ".pi", "agents", "maw-implementer.md"), "utf8");
   const field = (name) => JSON.parse(native.match(new RegExp(`^${name}: (.+)$`, "m"))[1]);
-  assert.deepEqual(field("tools"), ["read", "bash", "edit", "write", "grep", "find", "custom_tool"]);
+  // The installed lite runner splits commas, strips brackets and trims;
+  // it does not JSON/YAML-unquote individual list values.
+  const toolField = native.match(/^tools: (.+)$/m)[1];
+  const runnerToolIds = toolField.split(",").map((s) => s.trim().replace(/^\[|\]$/g, "").trim()).filter(Boolean);
+  assert.deepEqual(runnerToolIds, ["read", "bash", "edit", "write", "grep", "find", "custom_tool", "mcp:context7", "web/*"]);
   assert.equal(field("model"), "custom-provider/model-id");
   assert.equal(field("thinking"), "low");
   assert.ok(field("description").includes(plan.name));
@@ -182,4 +186,13 @@ test("Pi generated Agent frontmatter preserves tools/model selection and externa
   assert.ok(reviewer);
   assert.ok(!exists(path.join(proj, ".pi", "agents", `maw-${reviewer.role}.md`)));
   assert.match(fs.readFileSync(path.join(proj, ".mawf", "agents", `${reviewer.role}.md`), "utf8"), /codex-plugin-cc/);
+});
+
+
+test("Pi agent generation rejects tool names its runner cannot represent faithfully", (t) => {
+  const proj = mkTmpProject();
+  t.after(() => fs.rmSync(proj, { recursive: true, force: true }));
+  const plan = planWorkflow({ files: 5, parallelizableSubtasks: 1, risk: "low", taskType: "coding" }, { host: { ...host, app: "pi" }, ccSwitch: cc });
+  plan.agents.find((a) => a.appType === "pi").tools = ["read, bash"];
+  assert.throws(() => generateConfigs(proj, plan, cc), /tool identifier unsupported/);
 });

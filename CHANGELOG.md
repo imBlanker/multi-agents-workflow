@@ -19,6 +19,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 - Add required descriptions and names to the five shared mawf skills, with source and Pi installer/update regressions for both operating systems.
 - Honor Pi's canonical agent directory and generate supported Agent role metadata; inventory configured package/MCP resources with provenance, filters, disabled/trust state, and redacted Git credentials.
+- Emit Pi agent tool allowlists in the plain flow-list format consumed by `pi-subagents-lite@1.13.1`; live installed-runner validation now preserves exact native tool IDs.
 - Read dsh versioned credential names and saved default selections correctly; report current DeepSeek adapter/model evidence, shadowed skills and staged presets without fabricated prices or live-readiness claims.
 - Match Claude `Agent` and legacy `Task` spawns in the cost guard; quote watchdog Python advice for native Windows and Linux.
 - Verify cc-switch schema 18 while preserving older schemas, cost attribution, future-version diagnostics and database write protections.

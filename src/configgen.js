@@ -228,13 +228,18 @@ or use the slash command \`/codex:review\` (review-only). For adversarial review
 function piAgentFileMd(a, plan) {
   const builtin = { Read: "read", Edit: "edit", Write: "write", Bash: "bash", Grep: "grep", Glob: "find" };
   const tools = [...new Set(a.tools.filter((t) => t !== "Task" && t !== "Agent").map((t) => builtin[t] ?? t))];
+  // pi-subagents-lite 1.13.1 splits flow lists without unquoting items.
+  // Native tool IDs/globs must stay plain YAML scalars in its flat parser.
+  if (tools.some((tool) => !/^[A-Za-z_][A-Za-z0-9_.:/*-]*$/.test(tool))) {
+    throw new Error(`Pi role ${a.role} has a tool identifier unsupported by pi-subagents-lite frontmatter`);
+  }
   const provider = a.modelChoice?.providerId ?? a.modelChoice?.provider;
   const model = provider && !a.model.startsWith(`${provider}/`) ? `${provider}/${a.model}` : a.model;
   const fm = [
     "---",
     `name: maw-${slug(a.role)}`,
     `description: ${JSON.stringify(`${a.role} agent for the MAW "${plan.name}" workflow`)}`,
-    `tools: ${JSON.stringify(tools)}`,
+    `tools: [${tools.join(", ")}]`,
     ...(model ? [`model: ${JSON.stringify(model)}`] : []),
     ...(a.modelReasoningEffort ? [`thinking: ${JSON.stringify(a.modelReasoningEffort)}`] : []),
     "---",
