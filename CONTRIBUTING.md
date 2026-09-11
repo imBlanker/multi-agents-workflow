@@ -29,7 +29,7 @@ Linux and Windows share one release version, beginning with **0.8.0**. Keep appl
 npm test
 ```
 
-This runs the full suite with Node's built-in test runner (`node --test`). All tests must pass on the Ubuntu/Windows × Node 22/24 CI matrix before release. Run the suite directly without npm using `node --test --test-reporter=spec "tests/**/*.test.js"`.
+This runs the full suite with Node's built-in test runner (`node --test`). All tests must pass on the Ubuntu/Windows × Node 22/24 CI matrix before release. Run the suite directly without npm using `node scripts/run-tests.mjs`.
 
 Tests that write configuration must use temporary homes for both `HOME` and `USERPROFILE`, restore the environment, and stub external installation, upgrade, and agent launch commands. Never use the developer's real host directories as fixtures. Adapter tests on one OS do not substitute for tests on the other native OS.
 
