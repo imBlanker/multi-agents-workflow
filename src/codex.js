@@ -79,10 +79,12 @@ export function runReview(opts = {}) {
   if (opts.scope) args.push("--scope", opts.scope);
   if (opts.task && cmd === "delegate") args.push("--", opts.task);
 
-  const r = spawnSync(process.execPath, [companion, ...args], {
+  const spawnFn = opts.spawnFn ?? spawnSync;
+  const r = spawnFn(process.execPath, [companion, ...args], {
     encoding: "utf8",
     timeout: opts.timeoutMs ?? 120000,
     maxBuffer: 16 * 1024 * 1024,
+    cwd: opts.cwd,
     env: { ...process.env, CLAUDE_PLUGIN_ROOT: path.dirname(path.dirname(companion)) },
   });
   return {

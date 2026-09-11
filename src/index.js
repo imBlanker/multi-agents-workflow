@@ -81,7 +81,7 @@ function parse(args) {
     const a = args[i];
     if (a.startsWith("--")) {
       const k = a.replace(/^--/, "");
-      if (args[i + 1] && !args[i + 1].startsWith("--")) { out.flags[k] = args[++i]; }
+      if (args[i + 1] && !args[i + 1].startsWith("-")) { out.flags[k] = args[++i]; }
       else out.flags[k] = true;
     } else if (a.startsWith("-") && a.length > 1 && !a.startsWith("--")) {
       // short flag, e.g. -u alice
@@ -506,7 +506,7 @@ function cmdModels(f, flags) {
 // --- routing ---
 function cmdRouting(f, flags) {
   const ctx = loadCtx({ dbPath: flags.db });
-  if (ctx.host.app === "dsh") {
+  if (ctx.host.app === "dsh" || ctx.host.app === "pi") {
     out(`routing policy: N/A — dsh is not cc-switch-managed (providers/MCP/skills live in $DSH_HOME; nothing to route or fix)`);
     return;
   }
@@ -818,6 +818,7 @@ function cmdReview(f, flags) {
     scope: dec.scope || flags.scope,
     base: flags.base,
     mode: flags.mode === "background" ? "background" : "wait",
+    cwd: project,
   });
   if (r.stdout) out(r.stdout);
   if (r.stderr && !r.ok) out(`[stderr] ${r.stderr}`, false);

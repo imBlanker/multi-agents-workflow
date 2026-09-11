@@ -225,3 +225,24 @@ test("mawf --version flag prints the version (not help)", () => {
 });
 
 test.after(() => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {} });
+
+test("long boolean flags do not consume following short flags", () => {
+  const shortOrderProject = path.join(tmp, "proj-short-order");
+  fs.mkdirSync(shortOrderProject, { recursive: true });
+  let output = "";
+  try {
+    output = run(["init", "--no-trellis", "-u", "short-order", "--project", shortOrderProject, "--allow-pricey"]);
+  } catch (error) {
+    output = String(error.stdout || "") + String(error.stderr || "");
+    assert.notEqual(error.status, 1, output);
+    throw error;
+  }
+  assert.match(output, /Initialized \.mawf\//);
+  assert.match(output, /trellis init: skipped/);
+});
+
+test("mawf routing on a pi host prints N/A and writes nothing", () => {
+  fs.mkdirSync(path.join(tmp, ".pi", "agent"), { recursive: true });
+  const out = run(["routing"], { env: { MAW_HOST: "pi", CC_SWITCH_DB: path.join(tmp, "missing-pi-routing.db") } });
+  assert.match(out, /routing policy: N\/A/);
+});

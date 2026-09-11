@@ -47,3 +47,15 @@ test("runReview with no companion returns a graceful not-found result", () => {
   assert.equal(r.ok, false);
   assert.match(r.stderr, /companion script not found/);
 });
+
+test("runReview passes the selected project as child cwd", () => {
+  const project = path.join(os.tmpdir(), "mawf review project");
+  let received;
+  const result = runReview({ companion: "C:/tmp/companion.mjs", cwd: project, spawnFn: (bin, args, options) => {
+    received = { bin, args, options };
+    return { status: 0, stdout: "review ok", stderr: "" };
+  } });
+  assert.equal(result.ok, true);
+  assert.equal(received.options.cwd, project);
+  assert.equal(received.args[1], "review");
+});
