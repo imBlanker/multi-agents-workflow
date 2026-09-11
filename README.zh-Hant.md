@@ -3,12 +3,17 @@
 [![CI](https://github.com/imBlanker/multi-agents-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/imBlanker/multi-agents-workflow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.17-green.svg)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-321%20passing-success.svg)](#testing)
 [![GitHub stars](https://img.shields.io/github/stars/imBlanker/multi-agents-workflow?style=social&label=Stars)](https://github.com/imBlanker/multi-agents-workflow/stargazers)
 
 # MAW — 面向複雜程式碼庫的多智慧體工作流系統
 
 [變更日誌](./CHANGELOG.zh-Hant.md)（[English](./CHANGELOG.md)·[简](./CHANGELOG.zh-Hans.md)）
+
+## Linux 與 Windows（v0.8.0）
+
+兩個平台共用 `src/` 中的應用核心，Linux 與 Windows 配接模組分別放在 `src/platform/` 下，套件和外掛使用統一版本號。Windows 原生開發面向 PowerShell，mawf 自身功能無需 WSL 或 Git Bash；外部宿主仍有各自的環境要求。
+
+只複製儲存庫、不安裝 mawf 時，可在儲存庫目錄執行 `node bin/mawf.js version` 和 `node --test --test-reporter=spec "tests/**/*.test.js"`。CI 使用 Node 22 和 24；最低版本仍為 20.17，缺少內建 SQLite 時需外部 `sqlite3` 命令。CI 設定涵蓋 Ubuntu/Windows × Node 22/24，但設定本身不能證明未執行的工作或外部整合已通過驗證。架構與同步升級方式見[跨平台開發指南](./docs/CROSS_PLATFORM.md)。
 
 > 一個可攜、**動態**的多智慧體工作流系統。面對全新的複雜專案，MAW 會讀取你的 [cc-switch](https://github.com/farion1231/cc-switch) 設定，探測程式碼庫，並挑選合適的智慧體架構 —— *迴圈工程*、*編排者-工人*（子智慧體）、*多智慧體*、*圖工作流*、*動態工作流* 或 *ultracode* —— 或其組合。它為每個智慧體產生可獨立編輯的設定，強制執行**真實消費的成本速率限制**，並透過 [`codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) 整合 **Codex 審查**。
 

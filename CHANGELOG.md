@@ -6,6 +6,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+## [0.8.0] - Unreleased
+
+### Changed
+
+- Maintain one shared application core with separate Linux and native Windows platform modules, selected automatically; both platforms use the same package/plugin version.
+- Adapt command discovery and launching, native paths, process/port inspection, and plugin guard execution for Windows while retaining Linux behavior and existing policy/upgrade safeguards.
+- Expand CI to Ubuntu and Windows on Node 22 and 24 without installing mawf or dependencies. Native CI and external-host verification remain release gates, not implied test results.
+- Document source-only development, platform boundaries, prerequisites, and synchronized releases in [Cross-platform development](docs/CROSS_PLATFORM.md).
+
 ## [0.7.3] - 2026-09-05
 
 ### Fixed

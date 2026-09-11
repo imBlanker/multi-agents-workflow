@@ -3,12 +3,17 @@
 [![CI](https://github.com/imBlanker/multi-agents-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/imBlanker/multi-agents-workflow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.17-green.svg)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-321%20passing-success.svg)](#testing)
 [![GitHub stars](https://img.shields.io/github/stars/imBlanker/multi-agents-workflow?style=social&label=Stars)](https://github.com/imBlanker/multi-agents-workflow/stargazers)
 
 # MAW — Multi-Agent Workflow for Complex Codebases
 
 [Changelog](./CHANGELOG.md)（[简](./CHANGELOG.zh-Hans.md)·[繁](./CHANGELOG.zh-Hant.md)）
+
+## Linux and Windows (v0.8.0)
+
+Both platforms share the application core in `src/`, with separate Linux and Windows adapters under `src/platform/` and one synchronized package/plugin version. Native Windows development targets PowerShell without requiring WSL or Git Bash for mawf-owned operations; external hosts have their own prerequisites.
+
+To work from a clone without installing mawf, run `node bin/mawf.js version` and `node --test --test-reporter=spec "tests/**/*.test.js"` from the repository directory. Use Node 22 or 24 for the CI test matrix; the minimum remains 20.17, with an external `sqlite3` CLI needed when built-in SQLite is unavailable. CI covers Ubuntu/Windows × Node 22/24; unrun jobs and external integrations are not verified by that configuration alone. See [cross-platform development](./docs/CROSS_PLATFORM.md) for architecture and synchronized upgrades.
 
 > A portable, **dynamic** multi-agent workflow system. For a new complex project, MAW reads your [cc-switch](https://github.com/farion1231/cc-switch) config, probes the codebase, and picks the right agent architecture — *loop*, *orchestrator-workers* (subagents), *multi-agent*, *graph*, *dynamic*, or *ultracode* — or a combination. It generates per-agent, independently-editable configs, enforces **real-spend cost-rate limits**, and integrates **Codex review via [`codex-plugin-cc`](https://github.com/openai/codex-plugin-cc)**.
 

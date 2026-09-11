@@ -4,8 +4,8 @@ Thanks for your interest in improving **multi-agents-workflow (MAW)** — a port
 
 ## Prerequisites
 
-- **Node.js >= 20.17** (20.x LTS or 22.x recommended)
-- npm (bundled with Node)
+- **Node.js >= 20.17**; use Node 22 or 24 for the CI matrix and built-in SQLite support. Node 20 requires the external `sqlite3` CLI for database features.
+- Git; PowerShell on Windows for native process inspection.
 - Optional: [cc-switch](https://github.com/farion1231/cc-switch) and the Codex CLI, for full `doctor` output
 
 ## Getting started
@@ -15,10 +15,11 @@ Thanks for your interest in improving **multi-agents-workflow (MAW)** — a port
    ```bash
    git checkout -b feat/my-change
    ```
-3. Install dependencies:
-   ```bash
-   npm install --no-audit --no-fund
-   ```
+3. Work directly from the checkout. There are no package dependencies to install; do not run `mawf install` to develop or test the repository.
+
+### Shared core and platform modules
+
+Linux and Windows share one release version, beginning with **0.8.0**. Keep application behavior under `src/` and OS-specific behavior in `src/platform/linux.js` and `src/platform/windows.js`, selected through `src/platform/index.js`. Do not fork the application into separate OS trees. See [Cross-platform development](./docs/CROSS_PLATFORM.md) for adapter boundaries, prerequisites, and the release checklist.
 
 ## Development workflow
 
@@ -28,7 +29,9 @@ Thanks for your interest in improving **multi-agents-workflow (MAW)** — a port
 npm test
 ```
 
-This runs the full suite with Node's built-in test runner (`node --test`). **All 69 tests must pass** before you open a PR.
+This runs the full suite with Node's built-in test runner (`node --test`). All tests must pass on the Ubuntu/Windows × Node 22/24 CI matrix before release. Run the suite directly without npm using `node --test --test-reporter=spec "tests/**/*.test.js"`.
+
+Tests that write configuration must use temporary homes for both `HOME` and `USERPROFILE`, restore the environment, and stub external installation, upgrade, and agent launch commands. Never use the developer's real host directories as fixtures. Adapter tests on one OS do not substitute for tests on the other native OS.
 
 Run tests in watch mode while developing:
 
