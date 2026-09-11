@@ -106,8 +106,8 @@ test("Windows shim recognition does not bypass comments, custom programs, or Nod
   const shim = path.join(dir, "tool.cmd");
   fs.writeFileSync(shim, '@echo off\r\nREM node "%~dp0\\entry.cjs" %*\r\necho custom\r\n');
   assert.equal(windows.run(shim, [], { encoding: "utf8" }).stdout.trim(), "custom");
-  fs.writeFileSync(shim, '@echo off\r\nREM node\r\nSET "_prog=echo"\r\n"%_prog%" "%~dp0\\entry.cjs" %*\r\n');
-  assert.notEqual(windows.run(shim, [], { encoding: "utf8" }).status, 0); // quoted echo is not an executable
+  fs.writeFileSync(shim, '@echo off\r\nREM node\r\nSET "_prog=mawf-definitely-missing-program"\r\n"%_prog%" "%~dp0\\entry.cjs" %*\r\n');
+  assert.notEqual(windows.run(shim, [], { encoding: "utf8" }).status, 0); // a missing custom program must not be mistaken for a Node shim
   fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" --no-warnings "%~dp0\\entry.cjs" %*\r\n`);
   assert.deepEqual(JSON.parse(windows.run(shim, [], { encoding: "utf8" }).stdout), ["--no-warnings"]);
 });
