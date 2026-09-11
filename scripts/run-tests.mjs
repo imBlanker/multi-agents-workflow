@@ -9,7 +9,7 @@ const tests = fs.readdirSync(path.join(root, "tests"))
   .sort()
   .map((name) => path.join("tests", name));
 
-const result = spawnSync(process.execPath, ["--test", "--test-reporter=spec", ...tests], {
+const result = spawnSync(process.execPath, ["--test", "--test-concurrency=1", "--test-reporter=spec", ...tests], {
   cwd: root,
   stdio: "inherit",
 });
