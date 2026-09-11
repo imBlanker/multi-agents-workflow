@@ -507,7 +507,8 @@ function cmdModels(f, flags) {
 function cmdRouting(f, flags) {
   const ctx = loadCtx({ dbPath: flags.db });
   if (ctx.host.app === "dsh" || ctx.host.app === "pi") {
-    out(`routing policy: N/A — dsh is not cc-switch-managed (providers/MCP/skills live in $DSH_HOME; nothing to route or fix)`);
+    const configHome = ctx.host.app === "pi" ? "~/.pi/agent" : "$DSH_HOME";
+    out(`routing policy: N/A — ${ctx.host.app} is not cc-switch-managed (providers/MCP/skills live in ${configHome}; nothing to route or fix)`);
     return;
   }
   if (!ctx.cc.dbPath) { out(`cc-switch database not found`, false); return; }

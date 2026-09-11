@@ -18,7 +18,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "test": "node --test --test-reporter=spec \"tests/**/*.test.js\"",
+    "test": "node scripts/run-tests.mjs",
     "test:watch": "node --test --watch tests/",
     "smoke": "node bin/mawf.js doctor && node bin/mawf.js plan --self-test",
     "demo": "node bin/mawf.js plan --project examples/sample-project --out examples/.mawf-sample",

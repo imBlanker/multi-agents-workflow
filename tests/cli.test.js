@@ -199,7 +199,7 @@ test("mawf models --app dsh lists fixture settings.yaml models with the not-mana
     "          name: GLM-5.2",
     "        - id: fixture-only-model",
   ].join("\n"));
-  const out = run(["models", "--app", "dsh"], { env: { DSH_HOME: dshHome } });
+  const out = run(["models", "--app", "dsh"], { env: { DSH_HOME: dshHome, PATH: path.join(tmp, "no-bin") } });
   assert.match(out, /note: dsh models come from \$DSH_HOME\/settings\.yaml/);
   assert.match(out, /Available dsh provider models \(2\)/);
   assert.match(out, /fixture-gw \(current\): glm-5\.2/);
@@ -245,4 +245,7 @@ test("mawf routing on a pi host prints N/A and writes nothing", () => {
   fs.mkdirSync(path.join(tmp, ".pi", "agent"), { recursive: true });
   const out = run(["routing"], { env: { MAW_HOST: "pi", CC_SWITCH_DB: path.join(tmp, "missing-pi-routing.db") } });
   assert.match(out, /routing policy: N\/A/);
+  assert.match(out, /pi is not cc-switch-managed/);
+  assert.match(out, /~\/.pi\/agent/);
+  assert.doesNotMatch(out, /dsh|\$DSH_HOME/);
 });

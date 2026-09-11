@@ -36,7 +36,7 @@ jobs:
         run: node --version
 
       - name: Run tests
-        run: node --test --test-reporter=spec "tests/**/*.test.js"
+        run: node scripts/run-tests.mjs
 
       - name: Smoke (version)
         run: node bin/mawf.js version
