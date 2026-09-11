@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Grill-brainstorm swap (task 08-21-grill-brainstorm-swap).
 import { test } from "node:test";
@@ -7,7 +9,7 @@ import path from "node:path";
 import os from "node:os";
 import { applyGrillSwap, grillSwapStatus, grillAssetsRoot } from "../src/grillswap.js";
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function workspaceWithStockTrellis() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "maw-grill-"));

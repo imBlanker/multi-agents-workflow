@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Tests for the dsh provider/model reader (no cc-switch) + pricing JSON sync.
 import { test } from "node:test";

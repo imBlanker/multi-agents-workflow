@@ -1,3 +1,4 @@
+import { setHome } from "./fixtures/test-env.mjs";
 // @ts-check
 // Tests for `mawf upgrade` (self-upgrade: checkout ff-pull / npm / squat detection).
 import { test } from "node:test";
@@ -210,8 +211,7 @@ test("npm mode: refresh spawns update with MAW_HOST inherited from the installed
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-host-hint-"));
   fs.mkdirSync(path.join(home, ".mawf"), { recursive: true });
   fs.writeFileSync(path.join(home, ".mawf", "installed.json"), JSON.stringify({ version: "0.4.1", host: { app: "dsh" }, dirs: {}, files: [] }));
-  const prevHome = process.env.HOME;
-  process.env.HOME = home;
+  const restoreHome = setHome(home);
   try {
     /** @type {any} */
     let captured;
@@ -223,15 +223,14 @@ test("npm mode: refresh spawns update with MAW_HOST inherited from the installed
     assert.equal(r.ok, true, r.error || "");
     assert.equal(r.appliedTemplates, true);
     assert.equal(captured.env?.MAW_HOST, "dsh", "spawned update must run with the recorded install host");
-    assert.equal(captured.env?.PATH, process.env.PATH, "rest of the environment is inherited");
-  } finally { process.env.HOME = prevHome; }
+    assert.equal(Object.entries(captured.env ?? {}).find(([key]) => key.toUpperCase() === "PATH")?.[1], process.env.PATH, "rest of the environment is inherited");
+  } finally { restoreHome(); }
 });
 
 test("npm mode: no manifest → no MAW_HOST injection into the spawned update", () => {
   const { pkgRoot, npmPrefix } = mkNpmPkg();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-no-hint-"));
-  const prevHome = process.env.HOME;
-  process.env.HOME = home; // no ~/.mawf here
+  const restoreHome = setHome(home); // no ~/.mawf here
   try {
     /** @type {any} */
     let captured;
@@ -243,5 +242,5 @@ test("npm mode: no manifest → no MAW_HOST injection into the spawned update", 
     assert.equal(r.ok, true, r.error || "");
     assert.equal(r.appliedTemplates, true);
     assert.ok(!captured.env?.MAW_HOST, "no manifest → pure detection, no env injection");
-  } finally { process.env.HOME = prevHome; }
+  } finally { restoreHome(); }
 });

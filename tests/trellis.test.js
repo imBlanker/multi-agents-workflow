@@ -1,3 +1,4 @@
+import { setHome } from "./fixtures/test-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -64,32 +65,31 @@ test("applyConflictChoice returns the chosen disposition", () => {
 });
 
 test("trellisPlatformFlags: pi host -> --pi (empty home, no ~/.claude)", () => {
-  const oldHome = process.env.HOME;
-  process.env.HOME = tmp; // tmp has no .claude
+  const restoreHome = setHome(tmp); // tmp has no .claude
   try {
     assert.deepEqual(trellisPlatformFlags("pi"), ["--pi"]);
-  } finally { process.env.HOME = oldHome; }
+  } finally { restoreHome?.(); }
 });
 
 test("trellisPlatformFlags: pi host with ~/.claude present -> --pi --claude", () => {
-  const oldHome = process.env.HOME;
+  let restoreHome;
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "maw-tr-pi-"));
   fs.mkdirSync(path.join(d, ".claude"), { recursive: true });
   try {
-    process.env.HOME = d;
+    restoreHome = setHome(d);
     assert.deepEqual(trellisPlatformFlags("pi"), ["--pi", "--claude"]);
-  } finally { process.env.HOME = oldHome; try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
+  } finally { restoreHome?.(); try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
 });
 
 test("trellisPlatformFlags: dsh host -> --dsh (+ --claude when ~/.claude present)", () => {
-  const oldHome = process.env.HOME;
+  let restoreHome;
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), "maw-tr-dsh-"));
   try {
-    process.env.HOME = bare; // no .claude
+    restoreHome = setHome(bare); // no .claude
     assert.deepEqual(trellisPlatformFlags("dsh"), ["--dsh"]);
     fs.mkdirSync(path.join(bare, ".claude"), { recursive: true });
     assert.deepEqual(trellisPlatformFlags("dsh"), ["--dsh", "--claude"]);
-  } finally { process.env.HOME = oldHome; try { fs.rmSync(bare, { recursive: true, force: true }); } catch {} }
+  } finally { restoreHome?.(); try { fs.rmSync(bare, { recursive: true, force: true }); } catch {} }
 });
 
 test("trellisPlatformFlags: claude/codex/unknown keep --claude --codex", () => {

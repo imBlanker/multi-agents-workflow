@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Pi real-spend metering via cc-switch Pi (Session) import (schema v17).
 // PRD R3: when pi-session rows exist, pi spend is real (not concurrency-only),

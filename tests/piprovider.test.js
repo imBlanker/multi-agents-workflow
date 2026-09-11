@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Tests for the Pi Agent provider/model reader (src/piprovider.js) and the
 // modelcap.js pi appType path. cc-switch does NOT manage pi, so these cover the

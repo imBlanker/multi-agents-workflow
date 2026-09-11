@@ -14,7 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { execSync } from "node:child_process";
+import { execFile } from "./platform/index.js";
 import { exists, isFile, readJson, readText, writeJson, writeText, ensureDir } from "./util.js";
 import { loadCatalog, detectPool } from "./pool.js";
 import { detectHost, hostCapabilities } from "./host.js";
@@ -37,7 +37,9 @@ const APP_TYPES = { "claude-code": "claude", codex: "codex", pi: "pi", dsh: "dsh
 /** Default CLI runner for probe mode (injectable in tests; hermetic default off).
  *  60s timeout: `claude mcp list` performs live health checks. */
 function runCliDefault(cmd) {
-  try { return execSync(cmd, { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8", timeout: 60000 }); }
+  // Callers supply fixed probe tokens; preserve the injected string runner.
+  const [bin, ...args] = cmd.split(" ");
+  try { return execFile(bin, args, { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8", timeout: 60000 }); }
   catch { return ""; }
 }
 
@@ -101,7 +103,7 @@ function home() { return os.homedir(); }
  *  remains the FULL plugin truth (it can show more than the dump). */
 function parseDshPlugins(dump) {
   const out = [];
-  const text = String(dump);
+  const text = String(dump).replace(/\r\n/g, "\n");
   const originRe = /^# == ([^\n]+)/m;
   // iterate entries; `disabled: true` counts ONLY when it appears inside THIS
   // entry's block (before the next `- id:` or `# ==` line)
@@ -319,6 +321,7 @@ function ancestorAgentsSkillsDirs(projectDir) {
   const out = [];
   let cur = path.resolve(projectDir);
   for (;;) {
+    if (exists(path.join(cur, ".git"))) break;
     const parent = path.dirname(cur);
     if (parent === cur) break;
     cur = parent;

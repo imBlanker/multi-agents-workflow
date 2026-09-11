@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Watchdog Stage 3: dispatch — host rotation, price valve, prompts, verdicts,
 // workspace bootstrap, snapshot gate, scan wiring.
@@ -272,7 +273,7 @@ test("scanOnce dispatch:true resolves an incident end-to-end (fixture tree, fake
   fs.mkdirSync(path.join(home, ".pi", "agent"), { recursive: true });
   fs.mkdirSync(path.join(home, ".dsh"), { recursive: true });
   fs.mkdirSync(path.join(home, ".codex"), { recursive: true });
-  const claudeSlug = "-" + dir.replace(/\//g, "-").replace(/^-+/, "");
+  const claudeSlug = process.platform === "win32" ? dir.replace(/[^a-zA-Z0-9]/g, "-") : "-" + dir.replace(/\//g, "-").replace(/^-+/, "");
   const claudeSess = path.join(home, ".claude", "projects", claudeSlug);
   fs.mkdirSync(claudeSess, { recursive: true });
   const blocked = [1, 2, 3].map((i) => JSON.stringify({ type: "tool_result", is_error: true, content: `boom ${i}`, sessionId: "b1", timestamp: new Date((now - 100 * i) * 1000).toISOString() })).join("\n");

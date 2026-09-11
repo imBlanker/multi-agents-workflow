@@ -1,3 +1,4 @@
+import { setHome } from "./fixtures/test-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -9,8 +10,9 @@ const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "maw-inst-"));
 const claudeDir = path.join(tmpHome, ".claude");
 fs.mkdirSync(path.join(claudeDir, "commands"), { recursive: true });
 
+let restoreSuiteHome;
 test.before(() => {
-  process.env.HOME = tmpHome; // detectHost uses os.homedir(); but we pass claudeDir explicitly
+  restoreSuiteHome = setHome(tmpHome);
 });
 
 test("install copies commands/agents/skills into the host and writes a manifest", () => {
@@ -263,14 +265,13 @@ test("union targets the OLD manifest's recorded dir, not a fresh detection path"
 });
 
 test.after(() => {
-  process.env.HOME = os.homedir();
+  restoreSuiteHome();
   try { fs.rmSync(tmpHome, { recursive: true, force: true }); } catch {}
 });
 
 test("migrateLegacyMawDirs: renames legacy .maw -> .mawf (project + global), idempotent", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-mig-home-"));
-  const prevHome = process.env.HOME;
-  process.env.HOME = home;
+  const restoreHome = setHome(home);
   try {
     const proj = fs.mkdtempSync(path.join(os.tmpdir(), "maw-mig-proj-"));
     fs.mkdirSync(path.join(home, ".maw", "skills", "mawf-cost-guard"), { recursive: true });
@@ -291,6 +292,6 @@ test("migrateLegacyMawDirs: renames legacy .maw -> .mawf (project + global), ide
     assert.deepEqual(migrateLegacyMawDirs({ project: proj }), []);
     assert.ok(fs.existsSync(path.join(proj, ".maw", "stale.txt")));
   } finally {
-    process.env.HOME = prevHome;
+    restoreHome();
   }
 });

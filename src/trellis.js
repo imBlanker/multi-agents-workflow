@@ -16,7 +16,7 @@
 //   pre-snapshot MAW files → run trellis init (logged) → post-diff → on any
 //   conflict, pause + prompt + apply the user's choice + re-run trellis init.
 // `detectConflicts`/`applyConflictChoice` are pure and unit-tested separately.
-import { spawnSync } from "node:child_process";
+import { findExecutable, run as spawnSync } from "./platform/index.js";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -31,8 +31,7 @@ export function detectTrellis() {
   if (process.env.TRELLIS_BIN && exists(process.env.TRELLIS_BIN)) {
     return { via: "env", bin: process.env.TRELLIS_BIN, args: [] };
   }
-  const r = spawnSync("sh", ["-c", "command -v trellis 2>/dev/null || which trellis 2>/dev/null"], { encoding: "utf8" });
-  const p = (r.stdout || "").trim();
+  const p = findExecutable("trellis");
   if (p && exists(p)) return { via: "path", bin: p, args: [] };
   return { via: "npx", bin: null, args: ["--yes", "@mindfoldhq/trellis@latest"] };
 }

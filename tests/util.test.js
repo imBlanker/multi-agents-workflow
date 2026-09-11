@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { toYaml, slug, round, yamlQuote, parseYamlSubset } from "../src/util.js";

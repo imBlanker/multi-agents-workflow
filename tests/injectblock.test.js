@@ -1,3 +1,4 @@
+import { setHome } from "./fixtures/test-env.mjs";
 // @ts-check
 // Tests for project-level proactive advising blocks (src/injectblock.js).
 import { test } from "node:test";
@@ -21,7 +22,7 @@ test("blockText: <=26 content lines, required phrases present", () => {
   const content = lines.slice(1, -1); // between markers
   assert.ok(content.length <= 26, `${content.length} lines`);
   const text = blockText();
-  for (const phrase of ["UTC+8", "ADVISE-DONE", "inventory-digest", "kill -9 $(lsof -ti tcp:3080) && dsh web", "NEVER execute", "48h", "ask/grill only unresolved", "Do NOT treat the switch as ready"]) {
+  for (const phrase of ["UTC+8", "ADVISE-DONE", "inventory-digest", process.platform === "win32" ? "Get-NetTCPConnection -LocalPort 3080" : "kill -9 $(lsof -ti tcp:3080) && dsh web", "NEVER execute", "48h", "ask/grill only unresolved", "Do NOT treat the switch as ready"]) {
     assert.ok(text.includes(phrase), phrase);
   }
 });
@@ -106,8 +107,7 @@ test("removeManagedBlocks: user content preserved; created header-only files del
 
 test("uninstall --purge-config strips blocks + deletes created files; keep keeps them", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-inj-home-"));
-  const prevHome = process.env.HOME;
-  process.env.HOME = home;
+  const restoreHome = setHome(home);
   try {
     // keep: blocks stay
     const keep = tmpProject();
@@ -127,6 +127,6 @@ test("uninstall --purge-config strips blocks + deletes created files; keep keeps
     assert.ok(!fs.existsSync(path.join(purge, ".mawf")));
     assert.ok(r.purged.some((x) => x.endsWith("AGENTS.md")));
   } finally {
-    process.env.HOME = prevHome;
+    restoreHome();
   }
 });

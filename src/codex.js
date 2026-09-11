@@ -4,7 +4,7 @@
 // Codex blindly: the planner decides *when* to review (risk-based gates), and
 // this module performs the actual review and degrades gracefully if codex or
 // the plugin is missing.
-import { execFileSync, spawnSync } from "node:child_process";
+import { findExecutable, run as spawnSync } from "./platform/index.js";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -38,12 +38,7 @@ export function findCodexCompanion(claudeDir) {
 
 /** @returns {string|null} */
 export function findCodexBinary() {
-  try {
-    const r = execFileSync("sh", ["-c", "command -v codex 2>/dev/null || which codex 2>/dev/null"], { encoding: "utf8" }).trim();
-    return r || null;
-  } catch {
-    return null;
-  }
+  return findExecutable("codex");
 }
 
 /**

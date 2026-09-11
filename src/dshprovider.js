@@ -12,7 +12,7 @@
 // prices (models.dev) into `~/.cc-switch/model-pricing.json`. Model ids that
 // match get REAL per-M prices (source "cc-switch-pricing-json"); unmatched
 // ids simply have no entry (price gate reports "unknown" — never fabricated).
-import { execSync } from "node:child_process";
+import { execFile } from "./platform/index.js";
 import path from "node:path";
 import fs from "node:fs";
 import { home, exists, readText, readJson, parseYamlSubset } from "./util.js";
@@ -142,7 +142,7 @@ export function dshDefaultModel(opts = {}) {
   if (profile in _dumpCache) return _dumpCache[profile];
   let out = null;
   try {
-    const dump = execSync(`dsh --profile ${profile} --dump-config`, {
+    const dump = execFile("dsh", ["--profile", profile, "--dump-config"], {
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
       timeout: 15000,

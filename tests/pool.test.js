@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Tests for the stage-gated plugin-pool (src/pool.js + integrations).
 // Task 08-31-mawf-pluginpool-stagegate; PRD D1-D4 are the binding decisions.
@@ -14,7 +16,7 @@ import { tokenize } from "../src/advise.js";
 import { scanInventory } from "../src/inventory.js";
 import { blockText, BLOCK_BEGIN, BLOCK_END } from "../src/injectblock.js";
 
-const CATALOG = new URL("../defaults/pool-catalog.json", import.meta.url).pathname;
+const CATALOG = fileURLToPath(new URL("../defaults/pool-catalog.json", import.meta.url));
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "maw-pool-")); }
 function w(file, data) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, data); return file; }

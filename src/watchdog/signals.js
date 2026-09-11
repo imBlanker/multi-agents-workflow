@@ -1,3 +1,4 @@
+import { sessionSlugs } from "../platform/index.js";
 // @ts-check
 // Watchdog signal classifiers — pure functions over session-transcript tails
 // and spend-log stats. Priority order (user-mandated 2026-08-21): d → c → a → b
@@ -161,11 +162,11 @@ export function discoverSessionFiles(args) {
   const fsh = args.fs ?? fs_default;
   const p = args.path ?? path_default;
   const cwd = args.projectDir;
-  const slug = cwd.replace(/[/\\]/g, "-").replace(/^-+/, "").replace(/-+$/, "") || "root";
+  const slugs = sessionSlugs(cwd);
   /** @type {{ host: any, file: string, sessionId: string }[]} */
   const out = [];
   // claude: ~/.claude/projects/<full-path-dash-slug>/*.jsonl (leading dash kept)
-  const claudeSlug = "-" + cwd.replace(/[/\\]/g, "-").replace(/^-+/, "");
+  const claudeSlug = slugs.claude;
   const claudeDir = args.claudeDir ?? p.join(os.homedir(), ".claude", "projects");
   const cDir = p.join(claudeDir, claudeSlug);
   for (const file of listJsonl(fsh, cDir)) {
@@ -174,7 +175,7 @@ export function discoverSessionFiles(args) {
   }
   // pi: ~/.pi/agent/sessions/<--cwd-slug-->/<ts>_<uuid>.jsonl (dir has trailing dashes)
   const piDir = args.piDir ?? p.join(os.homedir(), ".pi", "agent", "sessions");
-  const piSessDir = p.join(piDir, `--${slug}--`);
+  const piSessDir = p.join(piDir, slugs.pi);
   for (const file of listJsonl(fsh, piSessDir)) {
     const base = p.basename(file).replace(/\.jsonl$/, "");
     const sessionId = base.split("_").pop() || base;

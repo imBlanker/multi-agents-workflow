@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 // @ts-check
 // CLI dispatch for `mawf`. All subcommands are plain functions so they can be
 // unit-tested without spawning a process.
@@ -146,7 +147,7 @@ function cmdVersion() { out(`mawf ${pkgVersion()}`); }
 
 function pkgVersion() {
   try {
-    const p = readJson(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "package.json"), { version: "?" });
+    const p = readJson(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json"), { version: "?" });
     return p.version;
   } catch { return "?"; }
 }
@@ -536,7 +537,7 @@ function cmdPlan(f, flags) {
   const ctx = loadCtx({ dbPath: flags.db });
   let signals;
   if (flags["self-test"]) {
-    const probe = probeProject(path.dirname(new URL(import.meta.url).pathname));
+    const probe = probeProject(path.dirname(fileURLToPath(import.meta.url)));
     signals = inferSignals(probe);
   } else if (exists(project) && !flags.taskType) {
     const probe = probeProject(project);

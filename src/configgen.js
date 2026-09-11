@@ -202,7 +202,7 @@ ${priceLine}
 ${a.agent === "codex" ? `This agent runs via **codex-plugin-cc**. From Claude Code:
 
 \`\`\`bash
-node "$CLAUDE_PLUGIN_ROOT/scripts/codex-companion.mjs" review --wait
+mawf review --force --project .
 \`\`\`
 
 or use the slash command \`/codex:review\` (review-only). For adversarial review use \`/codex:adversarial-review\`.` : (plan.hostApp === "pi" || a.agent === "pi") ? `This agent runs via **pi-subagents**. Spawn it from the orchestrator with the native \`trellis_subagent\` tool (single/parallel/chain) or the \`/agents\` command, pointing at the pi agent file \`.pi/agents/maw-${slug(a.role)}.md\`:

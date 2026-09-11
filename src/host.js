@@ -7,7 +7,7 @@
 // (dsh) (project policy). Other agent software (Gemini CLI, opencode, …) is
 // NOT supported; their cc-switch pricing data may still be READ for cost
 // estimates.
-import { execSync } from "node:child_process";
+import { findExecutable } from "./platform/index.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -44,13 +44,6 @@ function home() {
  * Run a shell command, returning trimmed stdout or "" on failure.
  * @param {string} cmd
  */
-function sh(cmd) {
-  try {
-    return execSync(cmd, { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim();
-  } catch {
-    return "";
-  }
-}
 
 /**
  * Detect installed host agent software and its capabilities.
@@ -90,7 +83,7 @@ export function detectHost(opts = {}) {
   // Supported hosts are Claude Code, Codex, and Pi Agent. Gemini CLI /
   // opencode / others are intentionally NOT detected as supported (they may
   // still be read for pricing).
-  const codexBinary = sh("command -v codex 2>/dev/null || which codex 2>/dev/null") || null;
+  const codexBinary = findExecutable("codex");
   if (exists(codexDir)) {
     detected.push(`Codex home at ${codexDir}`);
     if (envHost !== "pi" && app === "unknown") { app = "codex"; homeDir = codexDir; }
@@ -123,7 +116,7 @@ export function detectHost(opts = {}) {
   // role specs stay portable under .mawf/agents/. MAW_HOST=dsh forces app=dsh
   // even when Claude Code/Codex/Pi are also installed (otherwise dsh joins
   // last in precedence — it only claims the host when nothing else did).
-  const dshBinary = sh("command -v dsh 2>/dev/null || which dsh 2>/dev/null") || null;
+  const dshBinary = findExecutable("dsh");
   const dshPresent = exists(path.join(dshHome, "settings.yaml")) || exists(path.join(dshHome, "profiles"));
   let dshDetected = "";
   if (dshPresent) {

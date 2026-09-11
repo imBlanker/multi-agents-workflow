@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // cc-switch schema v17 (v3.20.0 GUI / v5.10.2 CLI) compatibility + pi-managed
 // worldview. See task 08-21-ccswitch-v3.20-cli-v5.10.2-followup prd.md R1/R2.

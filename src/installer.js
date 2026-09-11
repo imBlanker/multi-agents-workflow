@@ -1,3 +1,5 @@
+import { materializePluginAssets } from "./pluginassets.js";
+import { fileURLToPath } from "node:url";
 // @ts-check
 // Installer: copies the MAW plugin (commands/agents/hooks/skills) into the host
 // agent software's directories, writes an install manifest, and runs an env
@@ -10,7 +12,7 @@ import { exists, isFile, ensureDir, writeJson, readJson, writeText } from "./uti
 import { detectHost, hostCapabilities } from "./host.js";
 import { removeManagedBlocks } from "./injectblock.js";
 
-const PKG_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
  * Prune directories that became empty — ONLY ancestors of removed paths,
@@ -197,6 +199,7 @@ export function install(opts = {}) {
     copied.push(`${dshDir} (dsh home)`);
   }
 
+  materializePluginAssets(written, PKG_ROOT);
   const pkg = readJson(path.join(PKG_ROOT, "package.json"), { version: "0.0.0" });
 
   // Stale-asset cleanup (0.4.1): an older manifest may record files this

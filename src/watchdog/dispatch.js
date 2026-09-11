@@ -7,7 +7,7 @@
 //
 // Stable machine footer (precedent: ADVISE-DONE) — rescues MUST end with:
 //   RESCUE-DONE outcome=resolved|failed|blocked
-import { spawnSync } from "node:child_process";
+import { run as spawnSync } from "../platform/index.js";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";

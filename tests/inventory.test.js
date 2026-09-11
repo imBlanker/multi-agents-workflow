@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Tests for cross-host inventory scanning (src/inventory.js).
 // All host dirs are injected via opts — fixtures NEVER touch the real ~.
@@ -30,6 +31,7 @@ function fullFixture() {
   const dshHome = mk(path.join(root, "h", ".dsh"));
   const claudeJson = path.join(root, "h", ".claude.json");
   const projectDir = mk(path.join(root, "proj"));
+  mk(path.join(projectDir, ".git")); // stop ancestor discovery before the real user profile
 
   // claude: skills + plugins + global prompt
   w(path.join(claudeDir, "skills", "grilling", "SKILL.md"), `---\nname: grilling\ndescription: "Grill the user relentlessly"\n---\n# Grilling\nbody\n`);
@@ -55,8 +57,8 @@ function fullFixture() {
   // pi global standard skills dir (~/.agents/skills in production)
   w(path.join(root, "h", ".agents", "skills", "caveman", "SKILL.md"), "---\ndescription: ultra-compressed communication mode\n---\nx\n");
   mk(path.join(piDir, "skills"));
-  fs.symlinkSync(realSkill, path.join(piDir, "skills", "alias-a"));
-  fs.symlinkSync(realSkill, path.join(piDir, "skills", "alias-b"));
+  fs.symlinkSync(realSkill, path.join(piDir, "skills", "alias-a"), process.platform === "win32" ? "junction" : "dir");
+  fs.symlinkSync(realSkill, path.join(piDir, "skills", "alias-b"), process.platform === "win32" ? "junction" : "dir");
   w(path.join(piDir, "npm", "package.json"), JSON.stringify({ name: "pi-extensions", dependencies: { "some-pkg": "^1.0.0", "pi-mcp-adapter": "^2.0.0" } }));
   w(path.join(piDir, "npm", "node_modules", "pi-mcp-adapter", "package.json"), JSON.stringify({ name: "pi-mcp-adapter", pi: { skills: ["./skills"] } }));
   w(path.join(piDir, "npm", "node_modules", "pi-mcp-adapter", "skills", "mcp-scripting", "SKILL.md"), `---\ndescription: Write mcpScript JavaScript\n---\nx\n`);
@@ -299,6 +301,7 @@ test("codex 0.151.0: project .codex/config.toml + .codex/skills scanned, deduped
   const codexDir = mk(path.join(root, "h", ".codex"));
   w(path.join(codexDir, "config.toml"), `[plugins."global@market"]\nenabled = true\n\n[mcp_servers.global-srv]\ncommand = "npx"\n`);
   const projectDir = mk(path.join(root, "proj"));
+  mk(path.join(projectDir, ".git")); // stop ancestor discovery before the real user profile
   w(path.join(projectDir, ".codex", "config.toml"), `[plugins."proj-plug@market"]\nenabled = true\n\n[mcp_servers."proj-srv"]\ncommand = "x"\n\n[mcp_servers.global-srv]\ncommand = "dup"\n`);
   w(path.join(projectDir, ".codex", "skills", "proj-codex-skill", "SKILL.md"), "---\ndescription: p\n---\nx\n");
   const none = path.join(root, "none");
@@ -439,4 +442,20 @@ test("dsh 0.1.2-alpha.2 legacy fixture keeps pre-rename plugin-name shapes parsi
   assert.ok(origins.some((o) => o.includes("@deepseek-ai/dsh-plugin-console")), "old console git name present (legacy)");
   assert.ok(names.some((n) => n.includes("@linxin666/dsh-client-ui-web-ui-settings")), "flat pre-namespacing client-ui name parses (legacy)");
   assert.ok(names.some((n) => n.includes("dsh-tool-subagent-report")), "report tool present pre-rc.1 (legacy)");
+});
+
+test("dsh dump plugin inventory is identical for LF and CRLF", () => {
+  const raw = fs.readFileSync(new URL("./fixtures/dsh-dump-0.1.2rc1.txt", import.meta.url), "utf8");
+  const lf = raw.replace(/\r\n/g, "\n");
+  const linux = scanDshFixture(lf).plugins;
+  const windows = scanDshFixture(lf.replace(/\n/g, "\r\n")).plugins;
+  assert.ok(linux.length >= 170, "both inputs must retain the full plugin table");
+  assert.deepEqual(windows, linux);
+});
+
+test("inventory does not discover skills above a project that is itself the git root", () => {
+  const fx = fullFixture();
+  w(path.join(fx.root, ".agents", "skills", "outside-repo", "SKILL.md"), "# outside\n");
+  const pi = scanOf(fx).hosts.find((h) => h.app === "pi");
+  assert.ok(!pi.skills.some((skill) => skill.name === "outside-repo"));
 });

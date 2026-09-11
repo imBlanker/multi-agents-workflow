@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/../bin/mawf.js\" guard --project \"$(pwd)\" 2>/dev/null | grep -q '^ALLOW' || (echo 'MAW cost guard: deny (per-agent or total cost-rate limit, or max concurrency reached). See `mawf cost`.' >&2 && exit 2)"
+            "command": "node --input-type=commonjs -e \"Promise.resolve().then(()=>import(require('node:url').pathToFileURL(require('node:path').resolve(process.env.CLAUDE_PLUGIN_ROOT,'../bin/guard.mjs')).href)).then(m=>m.main()).catch(()=>process.exit(2))\""
           }
         ]
       }

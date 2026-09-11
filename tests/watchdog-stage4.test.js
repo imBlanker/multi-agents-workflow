@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Watchdog Stage 4: knowledge base, budget attribution, snapshot reconcile.
 import { test } from "node:test";
@@ -166,7 +167,7 @@ test("postWebhook: POSTs JSON, never throws; scan wiring fires on incidents", as
   const dir = tmpProject();
   fs.writeFileSync(path.join(dir, ".mawf", "config.yaml"), "watchdog:\n  webhookUrl: http://example.invalid/hook\n");
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-s4w-"));
-  const claudeSlug = "-" + dir.replace(/\//g, "-").replace(/^-+/, "");
+  const claudeSlug = process.platform === "win32" ? dir.replace(/[^a-zA-Z0-9]/g, "-") : "-" + dir.replace(/\//g, "-").replace(/^-+/, "");
   const claudeSess = path.join(home, ".claude", "projects", claudeSlug);
   fs.mkdirSync(claudeSess, { recursive: true });
   fs.writeFileSync(path.join(claudeSess, "b1.jsonl"), [1, 2, 3].map((i) => JSON.stringify({ type: "tool_result", is_error: true, content: `boom ${i}`, sessionId: "b1", timestamp: new Date((Date.now() / 1000 - 60 * i) * 1000).toISOString() })).join("\n"));

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 // @ts-check
 // `mawf upgrade` — self-upgrade (trellis-upgrade parity, fork-first aware).
 //
@@ -20,12 +21,12 @@
 //   name `multi-agent-workflow` on npm is an unrelated third-party package
 //   (squatted), so legacy installs under that name are REPORTED, not
 //   upgraded. Publishes must use a different (scoped or new) name.
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile as execFileSync, run as spawnSync } from "./platform/index.js";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { readJson, exists } from "./util.js";
-const PKG_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** @returns {string} */
 function sh(cmd, args, opts = {}) {

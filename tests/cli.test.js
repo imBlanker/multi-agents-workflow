@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { fixtureEnv } from "./fixtures/test-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -16,17 +18,17 @@ fs.writeFileSync(path.join(project, "c.py"), "print(1)\n");
 const dbPath = path.join(tmp, "cc-switch.db");
 makeFixtureDb(dbPath, { withLogs: true });
 
-const BIN = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "bin", "mawf.js");
+const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "bin", "mawf.js");
 
 /** @param {string[]} args @param {object} [opts] */
 function run(args, opts = {}) {
   const { env: envOver, ...rest } = opts;
-  return execFileSync("node", [BIN, ...args], {
+  return execFileSync(process.execPath, [BIN, ...args], {
     cwd: project,
     encoding: "utf8",
     // DSH_HOME points at a nonexistent dir so tests never depend on a real
     // ~/.dsh (the dsh-specific tests override it with a fixture)
-    env: { ...process.env, CC_SWITCH_DB: dbPath, HOME: os.homedir(), DSH_HOME: path.join(tmp, "no-dsh"), MAW_WATCHDOG_REGISTRY: path.join(tmp, "projects.json"), ...(envOver ?? {}) },
+    env: fixtureEnv(tmp, { CC_SWITCH_DB: dbPath, DSH_HOME: path.join(tmp, "no-dsh"), MAW_WATCHDOG_REGISTRY: path.join(tmp, "projects.json"), ...(envOver ?? {}) }),
     maxBuffer: 8 * 1024 * 1024,
     ...rest,
   });

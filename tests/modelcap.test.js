@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { classifyModel, capabilityScore, selectModelForRole, candidatesForAppType, providerModels, baseRole, ROLE_REQUIREMENTS } from "../src/modelcap.js";

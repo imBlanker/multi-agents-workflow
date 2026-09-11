@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 // @ts-check
 // Grill-brainstorm swap (task 08-21-grill-brainstorm-swap): in mawf-initialized
 // workspaces, trellis-brainstorm is replaced by a wrapper running the vendored
@@ -22,7 +23,7 @@ import { exists, readText, writeText, ensureDir } from "./util.js";
 
 /** @param {string} [pkgRoot] repo/package root holding skills/ */
 export function grillAssetsRoot(pkgRoot) {
-  return pkgRoot ?? path.join(path.dirname(new URL(import.meta.url).pathname), "..");
+  return pkgRoot ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 }
 
 const VENDORED = ["grilling", "grill-with-docs", "domain-modeling"];

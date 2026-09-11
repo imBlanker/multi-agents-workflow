@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Watchdog Stage 1: signal classifiers (pure) + registry merge.
 // Fixture transcripts mirror real host formats (verified 2026-08-21, see
@@ -113,10 +114,10 @@ test("discoverSessionFiles: claude + pi slugs from cwd; codex walk; dsh none", (
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "maw-disc-"));
   const proj = path.join(tmp, "work", "myproj");
   fs.mkdirSync(proj, { recursive: true });
-  const claudeSlug = "-" + proj.replace(/\//g, "-").replace(/^-+/, "");
+  const claudeSlug = process.platform === "win32" ? proj.replace(/[^a-zA-Z0-9]/g, "-") : "-" + proj.replace(/\//g, "-").replace(/^-+/, "");
   fs.mkdirSync(path.join(tmp, "claude", "projects", claudeSlug), { recursive: true });
   fs.writeFileSync(path.join(tmp, "claude", "projects", claudeSlug, "abc-123.jsonl"), "{}\n");
-  const piSlug = "--" + proj.replace(/\//g, "-").replace(/^-+/, "").replace(/-+$/, "") + "--";
+  const piSlug = "--" + proj.replace(/[:/\\]/g, "-").replace(/^-+/, "").replace(/-+$/, "") + "--";
   const piSess = path.join(tmp, "pi", "sessions", piSlug);
   fs.mkdirSync(piSess, { recursive: true });
   fs.writeFileSync(path.join(piSess, "2026-08-21T10-00-00_uuid-1.jsonl"), "{}\n");

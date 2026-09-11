@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { execFileSync } from "node:child_process";
+import { projectProcessAlive } from "../platform/index.js";
 import { readJson, writeJson, ensureDir, nowSec, readText, parseYamlSubset } from "../util.js";
 import { perSessionRate } from "../ccswitch.js";
 import { discoverSessionFiles, parseTail, evaluateSignals, DEFAULT_THRESHOLDS } from "./signals.js";
@@ -37,10 +37,7 @@ function readTail(file, bytes = TAIL_BYTES) {
 
 /** Default process-alive probe: any process whose cmdline mentions the dir. */
 function processAliveDefault(dir) {
-  try {
-    const out = execFileSync("pgrep", ["-f", dir], { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8", timeout: 5000 });
-    return out.trim().length > 0;
-  } catch { return false; } // pgrep exit 1 = no match; missing binary = same
+  return projectProcessAlive(dir);
 }
 
 /**

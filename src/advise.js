@@ -11,7 +11,7 @@
 //        (the only exec is PID resolution for port 3080, injectable/mocked).
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { portOwner, dshLaunch } from "./platform/index.js";
 import { exists, isFile, readJson, writeJson, ensureDir, readText } from "./util.js";
 import { parseYamlSubset } from "./util.js";
 import { scanInventory } from "./inventory.js";
@@ -213,16 +213,7 @@ function scoreCostFit(host, suitable) {
  * @param {() => string|null} [resolver]
  */
 export function resolveDshPid(resolver) {
-  if (resolver) return resolver();
-  const sh = (cmd) => {
-    try { return execSync(cmd, { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim(); }
-    catch { return ""; }
-  };
-  const lsof = sh("lsof -ti tcp:3080 2>/dev/null");
-  if (lsof && /^\d+$/.test(lsof.split("\n")[0])) return lsof.split("\n")[0];
-  const ss = sh("ss -ltnp 2>/dev/null | grep ':3080 '");
-  const m = ss.match(/pid=(\d+)/);
-  return m ? m[1] : null;
+  return resolver ? resolver() : portOwner(3080);
 }
 
 /**
@@ -233,8 +224,8 @@ function launchFor(targetHost, pidResolver) {
   if (!targetHost || LAUNCH_BINARIES[targetHost] === undefined) return null;
   if (targetHost === "dsh") {
     const pid = resolveDshPid(pidResolver);
-    if (pid) return { command: `kill -9 ${pid} && dsh web`, note: `old dsh instance holds 127.0.0.1:3080 (pid ${pid}) — kill it, then start fresh` };
-    return { command: "kill -9 $(lsof -ti tcp:3080) && dsh web", note: "PID unresolved — template form; old dsh instance holds 127.0.0.1:3080" };
+    if (pid) return { command: dshLaunch(pid), note: `old dsh instance holds 127.0.0.1:3080 (pid ${pid}) — kill it, then start fresh` };
+    return { command: dshLaunch(null), note: "PID unresolved — template form; old dsh instance holds 127.0.0.1:3080" };
   }
   return { command: LAUNCH_BINARIES[targetHost], note: `run in the project directory` };
 }

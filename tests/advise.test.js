@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Tests for the deterministic cross-host advising engine (src/advise.js).
 // All host data is injected via `inventory` opts — no real ~ access, no exec.
@@ -127,7 +128,7 @@ test("adviseTask: switch fires when margin ≥ 10; handoff created; launch prese
   assert.match(rendered, /do NOT treat the switch as ready before the user responds/i);
 });
 
-test("adviseTask: dsh launch = kill -9 <resolved pid> && dsh web; template fallback", () => {
+test("adviseTask: dsh launch uses the native shell; template fallback", () => {
   // lopsided so the winner is ALWAYS dsh: claude-code stripped, dsh rich
   const mkInv = () => {
     const inv = fixtureInventory();
@@ -141,10 +142,10 @@ test("adviseTask: dsh launch = kill -9 <resolved pid> && dsh web; template fallb
   };
   const a = adviseTask(OPTS({ currentHost: "claude-code", task: "research 调研 repos report", difficulty: 4, inventory: mkInv(), pidResolver: () => "4242" }));
   assert.equal(a.target, "dsh", `expected dsh target, got ${a.target}`);
-  assert.equal(a.launch.command, "kill -9 4242 && dsh web");
+  assert.equal(a.launch.command, process.platform === "win32" ? "Stop-Process -Id 4242 -Force; dsh web" : "kill -9 4242 && dsh web");
   assert.ok(a.launch.note.includes("3080"));
   const b = adviseTask(OPTS({ currentHost: "claude-code", task: "research 调研 repos report", difficulty: 4, inventory: mkInv(), pidResolver: () => null }));
-  assert.equal(b.launch.command, "kill -9 $(lsof -ti tcp:3080) && dsh web");
+  assert.equal(b.launch.command, process.platform === "win32" ? "Get-NetTCPConnection -LocalPort 3080 -State Listen | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force }; dsh web" : "kill -9 $(lsof -ti tcp:3080) && dsh web");
   assert.ok(b.launch.note.includes("template"));
 });
 

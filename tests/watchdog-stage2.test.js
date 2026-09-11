@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Watchdog Stage 2: incident state machine + scanOnce orchestration.
 import { test } from "node:test";
@@ -84,7 +85,7 @@ test("scanOnce: blocked session opens an incident; recovery closes it (fixture t
   const dir = tmpProject();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-home-"));
   // claude transcript with 3 consecutive errors
-  const claudeSlug = "-" + dir.replace(/\//g, "-").replace(/^-+/, "");
+  const claudeSlug = process.platform === "win32" ? dir.replace(/[^a-zA-Z0-9]/g, "-") : "-" + dir.replace(/\//g, "-").replace(/^-+/, "");
   const claudeSess = path.join(home, ".claude", "projects", claudeSlug);
   fs.mkdirSync(claudeSess, { recursive: true });
   const blocked = [

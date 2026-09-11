@@ -1,3 +1,4 @@
+import "./fixtures/test-env.mjs";
 // @ts-check
 // Tests for host detection (Claude Code / Codex / Pi Agent / DeepSeek Harness)
 // and capability flags.

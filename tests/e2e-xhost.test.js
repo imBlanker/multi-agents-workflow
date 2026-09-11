@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+import { fixtureEnv } from "./fixtures/test-env.mjs";
 // @ts-check
 // End-to-end CLI test: the full proactive cross-host chain in ONE fixture
 // project — init (blocks + inventory) → advise (state + switch handoff) →
@@ -10,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function run(args, env) {
   return execFileSync(process.execPath, [path.join(REPO, "bin", "mawf.js"), ...args], {
@@ -23,13 +25,13 @@ function run(args, env) {
 test("e2e: init → inventory → advise (switch + handoff) → uninstall purge, all under .mawf", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-e2e-home-"));
   const proj = fs.mkdtempSync(path.join(os.tmpdir(), "maw-e2e-proj-"));
-  const env = { HOME: home, PI_AGENT_DIR: path.join(home, ".pi", "agent"), DSH_HOME: path.join(home, ".dsh") };
+  const env = fixtureEnv(home);
   const BLOCK = "<!-- mawf:cross-host-advise BEGIN -->";
   try {
     // 1) init: .mawf workspace + managed blocks in AGENTS.md + CLAUDE.md +
     //    inventory artifacts (no hosts installed in this tmp HOME — the scan
     //    must still succeed with zero hosts, proving graceful degradation)
-    const init = run(["init", "-u", "tester", "--project", proj, "--allow-pricey"], env);
+    const init = run(["init", "-u", "tester", "--no-trellis", "--project", proj, "--allow-pricey"], env);
     assert.match(init, /Initialized \.mawf\//);
     assert.ok(fs.existsSync(path.join(proj, ".mawf", "config.yaml")));
     assert.ok(fs.existsSync(path.join(proj, ".mawf", "inventory.json")));
@@ -57,7 +59,7 @@ test("e2e: init → inventory → advise (switch + handoff) → uninstall purge,
     assert.match(run(["advise", "--project", proj, "--check-fresh"], env), /ADVISED_TODAY/);
 
     // 5) re-init idempotent: still exactly one block per file
-    run(["init", "-u", "tester", "--project", proj, "--allow-pricey"], env);
+    run(["init", "-u", "tester", "--no-trellis", "--project", proj, "--allow-pricey"], env);
     for (const f of ["AGENTS.md", "CLAUDE.md"]) {
       assert.equal(fs.readFileSync(path.join(proj, f), "utf8").split(BLOCK).length - 1, 1);
     }
@@ -80,7 +82,7 @@ test("e2e: init → inventory → advise (switch + handoff) → uninstall purge,
 test("e2e: legacy .maw project auto-migrates to .mawf on first command", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-e2e-mig-home-"));
   const proj = fs.mkdtempSync(path.join(os.tmpdir(), "maw-e2e-mig-proj-"));
-  const env = { HOME: home, PI_AGENT_DIR: path.join(home, ".pi", "agent"), DSH_HOME: path.join(home, ".dsh") };
+  const env = fixtureEnv(home);
   try {
     fs.mkdirSync(path.join(proj, ".maw"), { recursive: true });
     fs.writeFileSync(path.join(proj, ".maw", "config.yaml"), "workflow: {}\n");

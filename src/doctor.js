@@ -1,6 +1,7 @@
+import { fileURLToPath } from "node:url";
 // @ts-check
 // `mawf doctor` — environment + capability + policy report.
-import { execFileSync } from "node:child_process";
+import { execFile as execFileSync } from "./platform/index.js";
 import fs from "node:fs";
 import { exists, readJson } from "./util.js";
 import { readCcSwitch, findDb, readRouting, routingPolicy, SUPPORTED_CC_SCHEMA, piManagedByCcSwitch, mawfSkillsUnderCcSwitch } from "./ccswitch.js";
@@ -14,7 +15,7 @@ import { loadCatalog, catalogProblems, readPoolState, poolCadenceIssues } from "
 import path from "node:path";
 import os from "node:os";
 
-const PKG_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SUPPORTED = ["claude-code", "codex", "pi", "dsh"]; // supported host agents (pi/dsh per MAW support-surface policy)
 
 /** cc-switch synced model-pricing.json + its lastSyncAt, or {error}. */

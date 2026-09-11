@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 // @ts-check
 // Project plugin-pool: stage-gated add/keep/remove judgments for project-level
 // MCP servers / skills / plugins across supported hosts (task
@@ -50,7 +51,7 @@ export function tokenizeP(text) {
  * @returns {{ schemaVersion: number, components: any[], warning?: string }}
  */
 export function loadCatalog(catalogPath) {
-  const file = catalogPath || path.join(path.dirname(new URL(import.meta.url).pathname), "..", "defaults", "pool-catalog.json");
+  const file = catalogPath || path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "defaults", "pool-catalog.json");
   const raw = readJson(file, null);
   if (!raw || !Array.isArray(raw.components)) return { schemaVersion: POOL_SCHEMA_KNOWN, components: [], warning: "pool catalog missing or unreadable" };
   const warning = raw.schemaVersion > POOL_SCHEMA_KNOWN ? `pool catalog schema v${raw.schemaVersion} > known v${POOL_SCHEMA_KNOWN} — best-effort` : undefined;

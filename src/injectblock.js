@@ -1,3 +1,4 @@
+import { dshLaunch } from "./platform/index.js";
 // @ts-check
 // Project-level proactive advising injection: an idempotent managed block in
 // the project root AGENTS.md + CLAUDE.md (both are always-loaded surfaces for
@@ -43,7 +44,7 @@ export function blockText() {
     "   differences from the brief + `.mawf/inventory-digest.md`, and ask/grill only unresolved",
     "   model/workflow decisions.",
     "4. Do NOT treat the switch as ready before the user responds; then present the recommendation +",
-    "   reasons and the exact launch command (dsh: `kill -9 $(lsof -ti tcp:3080) && dsh web`).",
+    `   reasons and the exact launch command (dsh: \`${dshLaunch(null)}\`).`,
     "   NEVER execute the launch command yourself — the human runs it.",
     "5. Session start: if `.mawf/handoff/` has a brief newer than 48h, offer to continue it.",
     "6. Before claiming a tool/model/skill is missing on this machine, check `.mawf/inventory-digest.md`",
