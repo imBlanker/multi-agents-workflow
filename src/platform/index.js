@@ -3,7 +3,7 @@ import * as windows from "./windows.js";
 
 // Preserve the previous POSIX behavior on other OSes without certifying them.
 export const platformFor = (os = process.platform) => os === "win32" ? windows : linux;
-export const { findExecutable, run, projectProcessAlive, portOwner, dshLaunch, commandText, sessionSlugs } = platformFor();
+export const { findExecutable, run, projectProcessAlive, portOwner, dshLaunch, commandText, sessionSlugs, pythonCommand } = platformFor();
 
 /** execFileSync-compatible throwing wrapper for consumers that expect stdout. */
 export function execFile(command, args = [], options = {}) {

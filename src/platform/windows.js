@@ -92,3 +92,10 @@ export function sessionSlugs(cwd) {
     pi: "--" + (cwd.replace(/[:/\\]/g, "-").replace(/^-+|-+$/g, "") || "root") + "--",
   };
 }
+
+export function pythonCommand(args, find = findExecutable) {
+  const interpreter = find("python") || find("python3");
+  if (interpreter) return commandText(interpreter, args);
+  const launcher = find("py");
+  return launcher ? commandText(launcher, ["-3", ...args]) : commandText("python", args);
+}

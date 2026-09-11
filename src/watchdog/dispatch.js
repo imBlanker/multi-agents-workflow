@@ -7,7 +7,7 @@
 //
 // Stable machine footer (precedent: ADVISE-DONE) — rescues MUST end with:
 //   RESCUE-DONE outcome=resolved|failed|blocked
-import { run as spawnSync } from "../platform/index.js";
+import { run as spawnSync, pythonCommand } from "../platform/index.js";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
@@ -115,7 +115,7 @@ export function buildPhaseBPrompt(args) {
     lines.push(
       ``,
       `This is a mawf+trellis workspace. Respect the trellis discipline:`,
-      `- Check the active task: python3 ${path.join(inc.projectDir, ".trellis", "scripts", "task.py")} current`,
+      `- Check the active task: ${pythonCommand([path.join(inc.projectDir, ".trellis", "scripts", "task.py"), "current"])}`,
       `- Planning gates apply: never implement before the task is started (task.py start); follow its prd.md/design.md/implement.md.`,
       `- Record progress in the task's own artifacts, not ad-hoc files.`
     );

@@ -19,7 +19,10 @@ import { exists, isFile, readJson, readText, writeJson, writeText, ensureDir } f
 import { loadCatalog, detectPool } from "./pool.js";
 import { detectHost, hostCapabilities } from "./host.js";
 import { readCcSwitch, piManagedByCcSwitch, piSessionUsagePresent } from "./ccswitch.js";
-import { readPiAsCc } from "./piprovider.js";
+import { readPiAsCc, resolvePiAgentDir } from "./piprovider.js";
+import { readPiResources, readPiMcps } from "./pi-resources.js";
+import { readDshSkills, readDshPresets } from "./dsh-resources.js";
+import { parseDshPlugins } from "./dsh-plugin-inventory.js";
 import { readDshAsCc } from "./dshprovider.js";
 import { candidatesForAppType, classifyModel } from "./modelcap.js";
 import { resolvePrice } from "./pricing.js";
@@ -96,36 +99,6 @@ function applyMcpStatus(mcps, probeMap, cliSource) {
 
 /** @returns {string} */
 function home() { return os.homedir(); }
-
-/** Parse dsh --dump-config component blocks → plugin entries.
- *  dsh is everything-as-a-plugin: every component (ui/tool/session/skill/...)
- *  is a plugin. The dump lists active-profile components; the dsh web UI
- *  remains the FULL plugin truth (it can show more than the dump). */
-function parseDshPlugins(dump) {
-  const out = [];
-  const text = String(dump).replace(/\r\n/g, "\n");
-  const originRe = /^# == ([^\n]+)/m;
-  // iterate entries; `disabled: true` counts ONLY when it appears inside THIS
-  // entry's block (before the next `- id:` or `# ==` line)
-  const entries = [...text.matchAll(/^- id: ([\w-]+)\n\s+name: '?([^'\n]+)'?/gm)];
-  for (let i = 0; i < entries.length; i++) {
-    const m = entries[i];
-    const blockEnd = i + 1 < entries.length ? entries[i + 1].index : text.length;
-    // block start: last `# ==` comment line before this entry
-    const before = text.slice(Math.max(0, m.index - 200), m.index);
-    const originMatches = [...before.matchAll(/^# == ([^\n]+)$/gm)];
-    const origin = originMatches.length ? originMatches[originMatches.length - 1][1].trim() : "";
-    const block = text.slice(m.index, blockEnd);
-    out.push({
-      id: m[1],
-      name: m[2].trim(),
-      status: /disabled:\s*true/.test(block) ? "disabled" : "active",
-      origin,
-      source: "dump-config",
-    });
-  }
-  return out;
-}
 
 /**
  * Scan one skills directory: every child dir containing SKILL.md becomes an
@@ -338,7 +311,7 @@ function ancestorAgentsSkillsDirs(projectDir) {
  * @param {object} [opts]
  * @param {string} [opts.claudeDir]   default ~/.claude
  * @param {string} [opts.codexDir]    default ~/.codex
- * @param {string} [opts.piDir]       default $PI_AGENT_DIR | ~/.pi/agent
+ * @param {string} [opts.piDir]       default $PI_CODING_AGENT_DIR | $PI_AGENT_DIR | ~/.pi/agent
  * @param {string} [opts.dshHome]     default $DSH_HOME | ~/.dsh
  * @param {string} [opts.claudeJson]  default ~/.claude.json (mcpServers + projects)
  * @param {string} [opts.agentsSkillsDir] default ~/.agents/skills (pi global standard skills dir)
@@ -352,7 +325,7 @@ function ancestorAgentsSkillsDirs(projectDir) {
 export function scanInventory(opts = {}) {
   const claudeDir = opts.claudeDir ?? path.join(home(), ".claude");
   const codexDir = opts.codexDir ?? path.join(home(), ".codex");
-  const piDir = opts.piDir ?? (process.env.PI_AGENT_DIR || path.join(home(), ".pi", "agent"));
+  const piDir = resolvePiAgentDir(opts.piDir);
   const dshHome = opts.dshHome ?? (process.env.DSH_HOME || path.join(home(), ".dsh"));
   const claudeJson = opts.claudeJson ?? path.join(home(), ".claude.json");
   const projectDir = path.resolve(opts.projectDir ?? process.cwd());
@@ -538,41 +511,37 @@ function scanPi(o) {
   for (const anc of ancestorAgentsSkillsDirs(o.projectDir)) {
     skillDirs.push([anc, "project-ancestor"]);
   }
-  const nmDir = path.join(o.piDir, "npm", "node_modules");
-  if (exists(nmDir)) {
-    try {
-      for (const e of fs.readdirSync(nmDir, { withFileTypes: true })) {
-        if (e.isDirectory() && exists(path.join(nmDir, e.name, "skills"))) {
-          skillDirs.push([path.join(nmDir, e.name, "skills"), "npm-package"]);
-        }
-      }
-    } catch {}
+  const discovery = readPiResources({ piDir: o.piDir, projectDir: o.projectDir });
+  const skillFiles = discovery.resources.filter(r => r.type === "skills");
+  const canonical = (file) => { try { return fs.realpathSync(file); } catch { return file; } };
+  const skillFile = (entry) => isFile(entry.path) ? entry.path : path.join(entry.path, "SKILL.md");
+  const disabled = new Set(skillFiles.filter(r => r.status === "disabled").map(r => r.realPath));
+  const skills = listSkills(skillDirs).filter(s => !disabled.has(canonical(skillFile(s))))
+    .map(s => ({ ...s, status: "discovered", loaded: null }));
+  const known = new Set(skills.map(s => canonical(skillFile(s))));
+  for (const resource of skillFiles) {
+    if (resource.status === "disabled" || known.has(resource.realPath)) continue;
+    known.add(resource.realPath);
+    const bundle = path.basename(resource.path) === "SKILL.md";
+    const skillPath = bundle ? path.dirname(resource.path) : resource.path;
+    skills.push({ ...resource, path: skillPath, realPath: canonical(skillPath),
+      origin: resource.origin === "global-npm" ? "npm-package" : resource.origin,
+      description: readSkillDescription(resource.path), loaded: null });
   }
-  const skills = listSkills(skillDirs);
-  const plugins = [];
-  // pi's npm surface is ONE workspace-style package.json whose dependencies
-  // are the installed extensions/plugins (verified on a real install).
-  const npmPkg = readJson(path.join(o.piDir, "npm", "package.json"), null);
-  const deps = npmPkg?.dependencies && typeof npmPkg.dependencies === "object" ? npmPkg.dependencies : null;
-  if (deps) for (const k of Object.keys(deps)) plugins.push({ name: k, source: "npm" });
-  const extDir = path.join(o.piDir, "extensions");
-  if (exists(extDir)) {
-    try {
-      for (const e of fs.readdirSync(extDir, { withFileTypes: true })) {
-        if ((e.isDirectory() || e.isFile()) && !plugins.some((p) => p.name === e.name)) plugins.push({ name: e.name, source: "extension" });
-      }
-    } catch {}
-  }
-  // MCP: pi's real server list lives in ~/.pi/agent/mcp.json (verified: exa,
-  // context7, searchcode, zai-mcp-server, web-search-prime, web-reader, zread)
-  const mcps = mcpFromJson(path.join(o.piDir, "mcp.json"), "pi-mcp.json");
+  const plugins = discovery.plugins.map(p => ({ ...p, packageSource: p.source,
+    name: p.source === "extension" ? (/^index\.(ts|js)$/.test(path.basename(p.path)) ? path.basename(path.dirname(p.path)) : path.basename(p.path)) : p.name,
+    source: p.source.startsWith("npm:") ? "npm" : p.source,
+    loaded: null }));
+  const mcps = readPiMcps({ piDir: o.piDir, projectDir: o.projectDir }).map(m => ({ ...m,
+    source: m.source === "pi-global" ? "pi-mcp.json" : m.source }));
+  const harnessNote = ["Static resource evidence only: configured/discovered does not prove a tool is loaded; project resources require Pi trust.", ...discovery.notes].join(" ");
   const global = isFile(path.join(o.piDir, "AGENTS.md")) ? path.join(o.piDir, "AGENTS.md") : null;
   const piAsCc = readPiAsCc({ piDir: o.piDir, ccSwitch: { modelPricing: o.cc?.modelPricing }, piManaged: piManagedByCcSwitch(o.cc), piSpendMeasured: piSessionUsagePresent({ dbPath: o.cc?.dbPath }) });
   return {
     app, homeDir: o.piDir,
     detected: o.hostInfo.detected.filter((d) => /pi agent/i.test(d)),
     capabilities: hostCapabilities({ ...o.hostInfo, app: "pi" }),
-    skills, plugins, marketplaces: [], mcps,
+    skills, plugins, marketplaces: [], mcps, resources: discovery.resources, harnessNote, subagentRunner: o.hostInfo.subagentRunner,
     prompts: { global, project: projectPromptSurfaces(o.projectDir, ["AGENTS.md"]) },
     models: modelsForAppType(piAsCc, APP_TYPES[app]),
     workflowsHarnesses: projectWorkflows(o.projectDir),
@@ -584,7 +553,9 @@ function scanPi(o) {
  */
 function scanDsh(o) {
   const app = "dsh";
-  const skills = listSkills([[path.join(o.dshHome, "skills"), "user-global"]]);
+  const skillResources = readDshSkills({ dshHome: o.dshHome, projectDir: o.projectDir });
+  const skills = skillResources.filter(s => s.status === "discovered");
+  const presets = readDshPresets({ dshHome: o.dshHome });
   // everything-as-a-plugin: probe mode parses --dump-config into the plugin
   // list (active/disabled per component). Static mode: [] + note. The dsh web
   // UI is the FULL plugin truth (may show more than the dump).
@@ -607,21 +578,16 @@ function scanDsh(o) {
       mcps.push({ name, source: "dsh-mcp-client" });
     }
   } catch {}
-  const presets = path.join(o.dshHome, "agent-presets");
-  if (exists(presets)) {
-    try {
-      for (const e of fs.readdirSync(presets, { withFileTypes: true })) {
-        if (e.isDirectory()) plugins.push({ name: e.name, source: "agent-preset" });
-      }
-    } catch {}
-  }
+  harnessNote += "; skill inventory covers static default roots only; custom composed roots and live loading remain unverified. Preset library entries are staged, not enabled agents.";
   const global = isFile(path.join(o.dshHome, "AGENTS.md")) ? path.join(o.dshHome, "AGENTS.md") : null;
   const dshAsCc = readDshAsCc({ dshHome: o.dshHome, ccSwitch: { modelPricing: o.cc?.modelPricing }, dumpConfig: dump });
   return {
     app, homeDir: o.dshHome,
     detected: o.hostInfo.detected.filter((d) => /dsh|deepseek/i.test(d)),
     capabilities: hostCapabilities({ ...o.hostInfo, app: "dsh" }),
-    skills, plugins, marketplaces: [], mcps, harnessNote,
+    skills, skillResources, presets, plugins, marketplaces: [], mcps, harnessNote,
+    defaultSelection: dshAsCc?.defaultSelection ?? null, defaultSelectionSource: dshAsCc?.defaultSelectionSource ?? null,
+    unresolvedSelection: dshAsCc?.unresolvedSelection ?? null, catalogComplete: dshAsCc?.catalogComplete ?? false,
     prompts: { global, project: projectPromptSurfaces(o.projectDir, ["AGENTS.md"]) },
     models: modelsForAppType(dshAsCc, APP_TYPES[app]),
     workflowsHarnesses: projectWorkflows(o.projectDir),
@@ -694,12 +660,13 @@ export function renderDigest(report) {
     lines.push(`## ${h.app} — caps: ${(h.capabilities || []).join(", ") || "none"}`);
     lines.push(`- home: ${h.homeDir}`);
     lines.push(`- skills (${h.skills.length}): ${nameList(h.skills.map((s) => s.name))}`);
-    lines.push(`- plugins (${h.plugins.length}): ${nameList(h.plugins.map((p) => p.name))}`);
+    lines.push(`- plugins (${h.plugins.length}): ${nameList(h.plugins.map((p) => `${p.name}${["disabled", "missing", "staged"].includes(p.status) ? ` (${p.status})` : ""}`))}`);
     const mcpNames = (h.mcps || []).map((m) => `${m.name}${m.status === "connected" ? "✓" : m.status === "failed" ? "✗" : m.status === "pending-approval" ? "⏸" : m.status === "unsupported" ? "⚠" : m.status === "disabled" ? "⊘" : ""}`);
     lines.push(`- mcp (${h.mcps.length}): ${nameList(mcpNames)}`);
     if (h.marketplaces?.length) lines.push(`- marketplaces (${h.marketplaces.length}): ${nameList(h.marketplaces)}`);
     if (h.mcpNote) lines.push(`- mcp note: ${h.mcpNote}`);
     if (h.harnessNote) lines.push(`- harness: ${h.harnessNote}`);
+    if (h.presets?.length) lines.push(`- preset library (staged): ${nameList(h.presets.map(p => p.name))}`);
     const models = (h.models || []).map((m) => {
       const tags = m.tags?.length ? ` [${m.tags.join(",")}]` : "";
       const price = m.price ? ` ($${m.price.input_per_m}/$${m.price.output_per_m} per M${m.price.estimated ? " est." : ""})` : "";

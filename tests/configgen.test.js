@@ -98,7 +98,7 @@ test("pi host materializes .pi/agents/maw-*.md and advertises pi-subagents invoc
   const gen = generateConfigs(proj, plan, cc);
   assert.equal(plan.hostApp, "pi");
   assert.ok(gen.files.some((f) => f.includes(path.join(".pi", "agents"))), "pi agent files must be in the generated list");
-  for (const a of plan.agents) {
+  for (const a of plan.agents.filter((a) => a.appType === "pi" || a.agent === "pi")) {
     const f = path.join(proj, ".pi", "agents", `maw-${a.role}.md`);
     assert.ok(exists(f), `missing pi agent file ${f}`);
     const md = fs.readFileSync(f, "utf8");
@@ -125,7 +125,7 @@ test("pi materialization prunes stale maw-* pi files but never trellis-*", () =>
   generateConfigs(proj, small, cc);
   const files = fs.readdirSync(piAgents).filter((f) => f.endsWith(".md"));
   assert.ok(files.includes("trellis-implement.md"), "trellis-* must be preserved");
-  for (const a of small.agents) assert.ok(files.includes(`maw-${a.role}.md`), `expected maw-${a.role}.md`);
+  for (const a of small.agents.filter((a) => a.appType === "pi" || a.agent === "pi")) assert.ok(files.includes(`maw-${a.role}.md`), `expected maw-${a.role}.md`);
   fs.rmSync(proj, { recursive: true, force: true });
 });
 
@@ -152,4 +152,34 @@ test("dsh host: portable specs are the payload, nothing materialized under .dsh/
   assert.match(planMd, /Host notes — DeepSeek Harness \(dsh\)/);
   assert.match(planMd, /\.agents\/skills\//);
   fs.rmSync(proj, { recursive: true, force: true });
+});
+
+test("Pi generated Agent frontmatter preserves tools/model selection and external Codex routing", (t) => {
+  const proj = mkTmpProject();
+  t.after(() => fs.rmSync(proj, { recursive: true, force: true }));
+  const plan = planWorkflow({ files: 30, parallelizableSubtasks: 4, risk: "high", contextNeed: "large", valuePerRun: "high", taskType: "coding" }, { host: { ...host, app: "pi" }, ccSwitch: cc });
+  const impl = plan.agents.find((a) => a.role === "implementer");
+  impl.model = "model-id"; impl.modelChoice = { provider: "Provider display label", providerId: "custom-provider" }; impl.modelReasoningEffort = "low";
+  impl.tools = ["Read", "Bash", "Edit", "Write", "Grep", "Glob", "Task", "Agent", "custom_tool"];
+  plan.name = 'workflow: "quoted"';
+  fs.mkdirSync(path.join(proj, ".pi", "agents"), { recursive: true });
+  fs.writeFileSync(path.join(proj, ".pi", "agents", "maw-reviewer.md"), "Stale incorrectly materialized Codex reviewer");
+  generateConfigs(proj, plan, cc);
+  const native = fs.readFileSync(path.join(proj, ".pi", "agents", "maw-implementer.md"), "utf8");
+  const field = (name) => JSON.parse(native.match(new RegExp(`^${name}: (.+)$`, "m"))[1]);
+  assert.deepEqual(field("tools"), ["read", "bash", "edit", "write", "grep", "find", "custom_tool"]);
+  assert.equal(field("model"), "custom-provider/model-id");
+  assert.equal(field("thinking"), "low");
+  assert.ok(field("description").includes(plan.name));
+  const portable = fs.readFileSync(path.join(proj, ".mawf", "agents", "implementer.md"), "utf8");
+  assert.match(portable, /Agent/);
+  assert.doesNotMatch(portable, /trellis_subagent/);
+  assert.match(portable, /confirming the extension/);
+  assert.match(portable, /does not allow child agents to spawn/);
+  assert.ok(portable.includes("Pi (Session)"));
+  assert.doesNotMatch(portable, /real-spend is not measured/);
+  const reviewer = plan.agents.find((a) => a.agent === "codex");
+  assert.ok(reviewer);
+  assert.ok(!exists(path.join(proj, ".pi", "agents", `maw-${reviewer.role}.md`)));
+  assert.match(fs.readFileSync(path.join(proj, ".mawf", "agents", `${reviewer.role}.md`), "utf8"), /codex-plugin-cc/);
 });

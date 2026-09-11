@@ -1,3 +1,8 @@
+---
+name: mawf-orchestration
+description: "Plan and coordinate cost-bounded multi-agent workflows for complex projects using mawf."
+---
+
 # MAW Orchestration (skill)
 
 > Use when planning or running a multi-agent workflow for a complex codebase.

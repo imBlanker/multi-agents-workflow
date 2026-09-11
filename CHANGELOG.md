@@ -15,6 +15,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 - Expand CI to Ubuntu and Windows on Node 22 and 24 without installing mawf or dependencies. Native CI and external-host verification remain release gates, not implied test results.
 - Document source-only development, platform boundaries, prerequisites, and synchronized releases in [Cross-platform development](docs/CROSS_PLATFORM.md).
 
+### Fixed — upstream host compatibility
+
+- Add required descriptions and names to the five shared mawf skills, with source and Pi installer/update regressions for both operating systems.
+- Honor Pi's canonical agent directory and generate supported Agent role metadata; inventory configured package/MCP resources with provenance, filters, disabled/trust state, and redacted Git credentials.
+- Read dsh versioned credential names and saved default selections correctly; report current DeepSeek adapter/model evidence, shadowed skills and staged presets without fabricated prices or live-readiness claims.
+- Match Claude `Agent` and legacy `Task` spawns in the cost guard; quote watchdog Python advice for native Windows and Linux.
+- Verify cc-switch schema 18 while preserving older schemas, cost attribution, future-version diagnostics and database write protections.
+- Record current upstream contracts and explicitly deferred live checks in [Upstream compatibility](docs/UPSTREAM_COMPATIBILITY.md).
+
 ## [0.7.3] - 2026-09-05
 
 ### Fixed

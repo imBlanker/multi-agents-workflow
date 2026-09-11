@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { beforeEach, afterEach } from "node:test";
 
-const controlled = /^(?:HOME|USERPROFILE|CODEX_HOME|CLAUDE_CONFIG_DIR|PI_AGENT_DIR|DSH_HOME|CC_SWITCH_DB|TRELLIS_BIN|MAW_.*|CLAUDECODE|CODEX_THREAD_ID)$/i;
+const controlled = /^(?:HOME|USERPROFILE|CODEX_HOME|CLAUDE_CONFIG_DIR|PI_CODING_AGENT_DIR|PI_AGENT_DIR|DSH_HOME|DSH_AGENTS_HOME|DSH_BUNDLED_SKILL_DIR|CC_SWITCH_DB|TRELLIS_BIN|MAW_.*|CLAUDECODE|CODEX_THREAD_ID)$/i;
 export function fixtureEnv(home, overrides = {}, base = process.env) {
   const env = Object.fromEntries(Object.entries(base).filter(([key]) => !controlled.test(key)));
   return { ...env, HOME: home, USERPROFILE: home,
     CODEX_HOME: path.join(home, ".codex"), CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
-    PI_AGENT_DIR: path.join(home, ".pi", "agent"), DSH_HOME: path.join(home, ".dsh"),
+    PI_CODING_AGENT_DIR: path.join(home, ".pi", "agent"), PI_AGENT_DIR: path.join(home, ".pi", "agent"), DSH_HOME: path.join(home, ".dsh"),
     CC_SWITCH_DB: path.join(home, ".cc-switch", "cc-switch.db"),
     MAW_WATCHDOG_REGISTRY: path.join(home, ".mawf", "projects.json"), ...overrides };
 }

@@ -1,3 +1,8 @@
+---
+name: mawf-cost-guard
+description: "Check real-spend cost limits and concurrency before spawning agents or continuing a mawf workflow."
+---
+
 # MAW Cost Guard (skill)
 
 > Use before spawning any subagent. Enforces real-spend cost-rate limits.

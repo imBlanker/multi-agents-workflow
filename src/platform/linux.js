@@ -38,3 +38,8 @@ export function sessionSlugs(cwd) {
   const encoded = cwd.replace(/[/\\]/g, "-");
   return { claude: "-" + encoded.replace(/^-+/, ""), pi: "--" + (encoded.replace(/^-+|-+$/g, "") || "root") + "--" };
 }
+
+export function pythonCommand(args, find = findExecutable) {
+  const interpreter = find("python3") || find("python") || "python3";
+  return commandText(interpreter, args);
+}

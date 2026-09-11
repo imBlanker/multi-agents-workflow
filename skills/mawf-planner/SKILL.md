@@ -1,3 +1,8 @@
+---
+name: mawf-planner
+description: "Choose an agent architecture from project signals, host capabilities, risk, parallelism, and cost constraints."
+---
+
 # MAW Planner (skill)
 
 > Use when deciding *which* agent architecture fits a task.

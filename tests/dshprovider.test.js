@@ -190,3 +190,127 @@ test("listDshProfiles returns real profile dirs only (skips node_modules, dot-di
   // missing profiles dir / missing home
   assert.deepEqual(listDshProfiles(path.join(dir, "nonexistent")), []);
 });
+
+test("versioned credentials report refs only, including multiline CRLF; no record payloads", () => {
+  const dir = mkDshHome();
+  fs.writeFileSync(path.join(dir, ".credentials.yaml"), [
+    "version: 1", "refs:", "  DEEPSEEK_API_KEY: sk-SENTINEL", "  MULTILINE: |-", "    secret: SENTINEL-two", "    other", "records:", "  llm-pi-ai/openai-codex:", "    kind: grant", "    payload:", "      access: SENTINEL-three",
+  ].join("\r\n"));
+  assert.deepEqual(readCredentialKeys(dir), ["DEEPSEEK_API_KEY", "MULTILINE"]);
+  assert.doesNotMatch(JSON.stringify(readDshAsCc({ dshHome: dir, dumpConfig: "" })), /SENTINEL|payload|openai-codex/);
+  for (const contents of ["version: 1\nrecords:\n  llm-pi-ai/openai-codex:\n    kind: grant\n", "version: 2\nrefs:\n  KEY: value\n", "refs:\n  KEY: value\n", "version: 1\nrefs:\n  KEY: ''\n", "version: 1\nrefs:\n  KEY: [bad]\n", "version: 1\nrefs:\n  KEY: 'unclosed\n", "version: 1\nrefs:\n  KEY: first\n  KEY: second\n"]) {
+    fs.writeFileSync(path.join(dir, ".credentials.yaml"), contents);
+    assert.deepEqual(readCredentialKeys(dir), []);
+  }
+});
+
+test("saved default wins and observes subsequent writes and other homes/profiles", () => {
+  const dir = mkDshHome();
+  const other = mkDshHome();
+  const dumpConfig = "- id: agent-default-model\n  config:\n    provider: composed\n    model: model-c\n";
+  const set = (root, model) => fs.appendFileSync(path.join(root, "settings.yaml"), `agent-default-model:\n  provider: saved\n  model: ${model}\n`);
+  set(dir, "model-a");
+  set(other, "model-b");
+  assert.deepEqual(dshDefaultModel({ dshHome: dir, profile: "web", dumpConfig }), { provider: "saved", model: "model-a" });
+  assert.equal(dshDefaultModel({ dshHome: other, profile: "headless", dumpConfig }).model, "model-b");
+  fs.writeFileSync(path.join(dir, "settings.yaml"), fs.readFileSync(path.join(dir, "settings.yaml"), "utf8").replace("model: model-a", "model: model-new"));
+  assert.equal(dshDefaultModel({ dshHome: dir, dumpConfig }).model, "model-new");
+  fs.writeFileSync(path.join(dir, "settings.yaml"), "agent-default-model:\n  provider: saved\n  model: ''\n");
+  assert.equal(dshDefaultModel({ dshHome: dir, dumpConfig }).model, "model-c");
+});
+
+test("composition parser is bounded, supports quoted CRLF and ignores disabled rows and JS tags", () => {
+  const dir = mkDshHome();
+  for (const dumpConfig of [
+    "- id: agent-default-model\n  config:\n    provider: wrong\n- id: unrelated\n  config:\n    model: stolen\n",
+    "- id: agent-default-model\n  disabled: true\n  config:\n    provider: x\n    model: y\n",
+    "- id: agent-default-model\n  config:\n    provider: !!js process.env.SECRET\n    model: y\n",
+  ]) assert.equal(dshDefaultModel({ dshHome: dir, dumpConfig }), null);
+  assert.deepEqual(dshDefaultModel({ dshHome: dir, dumpConfig: "- id: agent-default-model\r\n  config:\r\n    model: \"deepseek-flash\"\r\n    provider: 'deepseek-official'\r\n" }), { provider: "deepseek-official", model: "deepseek-flash" });
+});
+
+test("direct provider needs evidence; unresolved selected provider never switches to a custom route", () => {
+  const dir = mkDshHome();
+  const dumpConfig = "- id: agent-default-model\n  config:\n    provider: deepseek-official\n    model: deepseek-flash\n";
+  const unresolved = readDshAsCc({ dshHome: dir, dumpConfig });
+  assert.equal(unresolved.currentProviders.dsh, undefined);
+  assert.equal(unresolved.unresolvedSelection.provider, "deepseek-official");
+  const direct = readDshAsCc({ dshHome: dir, dumpConfig: dumpConfig + "- id: llm-deepseek\n  config:\n    apiKeyEnv: DEEPSEEK_API_KEY\n" });
+  assert.equal(direct.currentProviders.dsh.id, "deepseek-official");
+  assert.equal(direct.currentProviders.dsh.settings_config.model, "deepseek-flash");
+  assert.equal(direct.modelPricing["deepseek-flash"], undefined);
+  assert.equal(direct.catalogComplete, false);
+  assert.equal(direct.unresolvedSelection, null);
+  assert.equal(readDshAsCc({ dshHome: dir, dumpConfig: dumpConfig + "- id: llm-deepseek\n  disabled: true\n" }).currentProviders.dsh, undefined);
+});
+
+test("direct settings catalog and catalog-backed routes preserve explicit metadata and incompleteness", () => {
+  const dir = mkDshHome();
+  fs.writeFileSync(path.join(dir, "settings.yaml"), `llm-deepseek:
+  models:
+    - id: deepseek-flash
+      contextWindow: 1000000
+      input: [text, image]
+agent-default-model:
+  provider: deepseek-official
+  model: deepseek-flash
+llm-pi-ai:
+  providers:
+    openai:
+      modelOverrides:
+        gpt-test:
+          contextWindow: 123
+`);
+  const cc = readDshAsCc({ dshHome: dir, dumpConfig: "" });
+  assert.equal(cc.defaultSelectionSource, "settings.yaml");
+  assert.equal(cc.currentProviders.dsh.catalogComplete, true);
+  assert.deepEqual(cc.currentProviders.dsh.settings_config._dshModels, ["deepseek-flash"]);
+  assert.deepEqual(cc.currentProviders.dsh.settings_config._dshModelMeta[0].input, ["text", "image"]);
+  const openai = cc.allProviders.find((p) => p.id === "openai");
+  assert.equal(openai.catalogComplete, false);
+  assert.deepEqual(openai.catalogOverrideIds, ["gpt-test"]);
+  assert.deepEqual(openai.settings_config._dshModels, []);
+});
+
+test("composition ignores YAML inside scripts and reads row metadata regardless of property order", () => {
+  const dir = mkDshHome();
+  assert.equal(dshDefaultModel({ dshHome: dir, dumpConfig: "- id: unrelated\n  config:\n    script: !!js |\n      - id: agent-default-model\n        config:\n          provider: fake\n          model: fake\n" }), null);
+  assert.equal(dshDefaultModel({ dshHome: dir, dumpConfig: "- name: '@deepseek-ai/dsh-agent-default-model'\n  disabled: true\n  id: agent-default-model\n  config:\n    provider: fake\n    model: fake\n" }), null);
+});
+
+test("composed pi-ai providers merge saved fields; disabled adapter suppresses configured rows", () => {
+  const dir = mkDshHome();
+  fs.writeFileSync(path.join(dir, "settings.yaml"), "llm-pi-ai:\n  providers:\n    gateway:\n      apiKeyEnv: SAVED_KEY\n");
+  const dumpConfig = "- id: llm-pi-ai\n  config:\n    providers:\n      gateway:\n        api: openai-completions\n        baseURL: https://example.test/v1\n        models:\n          - id: selected\n- id: agent-default-model\n  config:\n    provider: gateway\n    model: selected\n";
+  const cc = readDshAsCc({ dshHome: dir, dumpConfig });
+  assert.equal(cc.currentProviders.dsh.apiKeyEnv, "SAVED_KEY");
+  assert.deepEqual(cc.currentProviders.dsh.settings_config._dshModels, ["selected"]);
+  assert.equal(readDshAsCc({ dshHome: dir, dumpConfig: dumpConfig.replace("- id: llm-pi-ai\n", "- id: llm-pi-ai\n  disabled: true\n") }).allProviders.length, 0);
+});
+
+
+test("malformed provider entries do not invent configured routes or complete catalogs", () => {
+  const dir = mkDshHome();
+  fs.writeFileSync(path.join(dir, "settings.yaml"), `llm-pi-ai:
+  providers:
+    invalid: null
+llm-deepseek: []
+`);
+  const empty = readDshAsCc({ dshHome: dir, dumpConfig: "" });
+  assert.deepEqual(empty.allProviders, []);
+  assert.equal(empty.catalogComplete, false);
+  fs.writeFileSync(path.join(dir, "settings.yaml"), `llm-pi-ai:
+  providers:
+    valid:
+      models:
+        - id: valid-model
+        - id:
+            secret: SENTINEL_INVALID_ID
+        - null
+`);
+  const cc = readDshAsCc({ dshHome: dir, dumpConfig: "" });
+  assert.deepEqual(cc.allProviders[0].settings_config._dshModels, ["valid-model"]);
+  assert.equal(cc.catalogComplete, false);
+  assert.doesNotMatch(JSON.stringify(cc), /SENTINEL_INVALID_ID/);
+  assert.doesNotThrow(() => candidatesForAppType(cc, "dsh"));
+});

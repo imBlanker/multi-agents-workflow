@@ -12,6 +12,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { exists, readJson } from "./util.js";
+import { resolvePiAgentDir } from "./piprovider.js";
+import { readPiRunner } from "./pi-resources.js";
 
 /**
  * @typedef {"claude-code"|"codex"|"pi"|"dsh"|"unknown"} HostApp
@@ -59,7 +61,7 @@ export function detectHost(opts = {}) {
   const detected = [];
   const claudeDir = opts.claudeDir ?? path.join(home(), ".claude");
   const codexDir = opts.codexDir ?? path.join(home(), ".codex");
-  const piDir = opts.piDir ?? (process.env.PI_AGENT_DIR || path.join(home(), ".pi", "agent"));
+  const piDir = resolvePiAgentDir(opts.piDir);
   const dshHome = opts.dshHome ?? (process.env.DSH_HOME || path.join(home(), ".dsh"));
   const projectDir = opts.projectDir ?? process.cwd();
   const envHost = (process.env.MAW_HOST || "").toLowerCase();
@@ -150,6 +152,8 @@ export function detectHost(opts = {}) {
     app,
     homeDir,
     piDir: exists(piDir) ? piDir : null,
+    // Static discovery does not establish that an optional runner is loaded.
+    subagentRunner: app === "pi" ? readPiRunner({ piDir, projectDir }) : null,
     hasSubagents,
     hasMultiAgent,
     hasDynamicWorkflow,

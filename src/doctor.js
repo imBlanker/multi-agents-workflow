@@ -9,7 +9,7 @@ import { grillSwapStatus } from "./grillswap.js";
 import { detectHost, hostCapabilities } from "./host.js";
 import { status as codexStatus } from "./codex.js";
 import { detectTrellis } from "./trellis.js";
-import { readDshConfig, readDshAsCc, readCredentialKeys, dshDefaultModel, dshCostRateNote, readCcPricingJson, listDshProfiles } from "./dshprovider.js";
+import { readDshConfig, readDshAsCc, readCredentialKeys, dshCostRateNote, readCcPricingJson, listDshProfiles } from "./dshprovider.js";
 import { detectInstallMode } from "./upgrade.js";
 import { loadCatalog, catalogProblems, readPoolState, poolCadenceIssues } from "./pool.js";
 import path from "node:path";
@@ -186,14 +186,14 @@ export function doctor(opts = {}) {
     const profiles = listDshProfiles(dshHome);
     checks.push({ name: "DeepSeek Harness (dsh) config", status: "ok", detail: `${dshHome}${version !== "?" ? `; dsh ${version}` : ""}; profiles: ${profiles.join(", ") || "none"}` });
     checks.push({
-      name: "dsh providers (settings.yaml)",
+      name: "dsh providers (config evidence)",
       status: provs.length ? "ok" : "warn",
       detail: provs.length
-        ? `${provs.length} provider(s): ${provs.map((p) => `${p.id} (${p.settings_config._dshModels.length} models)`).join(", ")}`
-        : "no llm-pi-ai.providers configured — open dsh web → Settings → Models",
+        ? `${provs.length} provider(s): ${provs.map((p) => `${p.id} (${p.settings_config._dshModels.length} declared models${p.catalogComplete ? "" : "; catalog incomplete"})`).join(", ")}`
+        : "no supported provider evidence found — inspect dsh Settings → Models and composed config",
     });
-    const def = dshDefaultModel({ profile: "web" });
-    checks.push({ name: "dsh default model", status: "ok", detail: def ? `${def.provider} / ${def.model} (composed agent-default-model)` : (cc?.currentProviders?.dsh ? `${cc.currentProviders.dsh.id} / ${cc.currentProviders.dsh.settings_config.model} (first provider fallback)` : "unknown") });
+    const def = cc?.defaultSelection;
+    checks.push({ name: "dsh default model", status: def && !cc?.unresolvedSelection ? "ok" : "warn", detail: def ? `${def.provider} / ${def.model} (${cc.defaultSelectionSource})${cc.unresolvedSelection ? "; provider unresolved in local evidence" : "; availability not probed"}` : "unknown; any first-provider fallback is not a saved or composed default" });
     const credKeys = readCredentialKeys(dshHome);
     const envSatisfied = provs.filter((p) => p.apiKeyEnv && process.env[p.apiKeyEnv]).map((p) => p.id);
     checks.push({ name: "dsh credentials", status: "ok", detail: `${credKeys.length} key(s) in .credentials.yaml (${credKeys.join(", ") || "none"}); apiKeyEnv satisfied for: ${envSatisfied.join(", ") || "none (keys resolve inside dsh per request)"}` });

@@ -13,6 +13,7 @@ import {
   readPiConfig,
   readPiAsCc,
   findPiAgentDir,
+  resolvePiAgentDir,
   piCostRateNote,
 } from "../src/piprovider.js";
 import { candidatesForAppType, selectModelForRole, providerModels } from "../src/modelcap.js";
@@ -207,4 +208,26 @@ test("piCostRateNote explains concurrency-only enforcement", () => {
 
 test("readPiAsCc returns null when pi home is absent", () => {
   assert.equal(readPiAsCc({ piDir: "/nonexistent-maw-pi-test-xyz" }), null);
+});
+
+test("Pi directory precedence is explicit > canonical > legacy > home, including absent chosen roots", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mawf pi homes "));
+  const keys = ["PI_CODING_AGENT_DIR", "PI_AGENT_DIR"];
+  const previous = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  t.after(() => { for (const k of keys) { if (previous[k] === undefined) delete process.env[k]; else process.env[k] = previous[k]; } fs.rmSync(root, { recursive: true, force: true }); });
+  const dirs = ["explicit", "canonical", "legacy"].map((n) => path.join(root, n));
+  for (const [i, d] of dirs.entries()) { fs.mkdirSync(d); fs.writeFileSync(path.join(d, "settings.json"), JSON.stringify({ defaultProvider: `provider-${i}` })); }
+  process.env.PI_CODING_AGENT_DIR = dirs[1]; process.env.PI_AGENT_DIR = dirs[2];
+  assert.equal(findPiAgentDir(dirs[0]), dirs[0]);
+  assert.equal(readPiConfig(dirs[0]).settings.defaultProvider, "provider-0");
+  assert.equal(findPiAgentDir(), dirs[1]);
+  assert.equal(readPiConfig().settings.defaultProvider, "provider-1");
+  assert.equal(findPiAgentDir(path.join(root, "absent")), "");
+  assert.equal(readPiConfig(path.join(root, "absent")), null);
+  process.env.PI_CODING_AGENT_DIR = path.join(root, "absent-canonical");
+  assert.equal(findPiAgentDir(), "", "never fall back from missing explicitly selected canonical home");
+  delete process.env.PI_CODING_AGENT_DIR;
+  assert.equal(findPiAgentDir(), dirs[2]);
+  delete process.env.PI_AGENT_DIR;
+  assert.equal(resolvePiAgentDir(), path.join(os.homedir(), ".pi", "agent"));
 });

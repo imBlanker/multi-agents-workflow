@@ -101,22 +101,53 @@ export function listDshProfiles(dshHome) {
 }
 
 /**
- * Credential KEY NAMES present in $DSH_HOME/.credentials.yaml — names only,
- * values are never read or copied (they are write-only secrets).
+ * Names-only view of the credential reference space. Records contain opaque
+ * OAuth payloads, not reference names. Unsupported layouts return no claims.
+ * Values are read as text but never returned, logged, or included in errors.
  * @param {string} [dshHome]
  * @returns {string[]}
  */
 export function readCredentialKeys(dshHome) {
   const dir = dshHome || findDshHome();
   if (!dir) return [];
-  const file = path.join(dir, ".credentials.yaml");
-  if (!exists(file)) return [];
   try {
+    const lines = readText(path.join(dir, ".credentials.yaml")).split(/\r?\n/);
+    const top = lines.filter((l) => l.trim() && !/^\s|^#/.test(l));
+    const keyName = (line) => { const m = line.match(/^(?:"([\w.-]+)"|'([\w.-]+)'|([\w.-]+)):/); return m ? m[1] || m[2] || m[3] : null; };
+    const versioned = top.some((l) => keyName(l) === "version");
+    if (versioned && !top.some((l) => /^version:\s*1\s*(?:#.*)?$/.test(l))) return [];
+    if (versioned && top.some((l) => !/^(?:version|refs|records):/.test(l))) return [];
+    if (!versioned && top.some((l) => /^(?:refs|records):/.test(l))) return [];
     const keys = [];
-    for (const line of readText(file).split(/\r?\n/)) {
-      // top-level `key:` line — capture the KEY only, never the value
-      const m = line.match(/^([A-Za-z0-9_.-]+):/);
-      if (m && !/^\s/.test(line)) keys.push(m[1]);
+    const topKeys = new Set();
+    let inRefs = !versioned;
+    let valueIndent = null;
+    for (const line of lines) {
+      if (!line.trim() || /^\s*#/.test(line)) continue;
+      if (/\t/.test(line.match(/^\s*/)[0])) return [];
+      const indent = line.match(/^ */)[0].length;
+      if (valueIndent !== null && indent > valueIndent) continue;
+      valueIndent = null;
+      if (!indent) {
+        const key = keyName(line);
+        if (!key || topKeys.has(key)) return [];
+        topKeys.add(key);
+        if (versioned) {
+          inRefs = key === "refs";
+          if (inRefs && !/^refs:\s*(?:\{\})?\s*(?:#.*)?$/.test(line)) return [];
+          continue;
+        }
+      }
+      if (!inRefs) continue;
+      if (indent !== (versioned ? 2 : 0)) return [];
+      const m = line.trim().match(/^(?:"([A-Za-z0-9_.-]+)"|'([A-Za-z0-9_.-]+)'|([A-Za-z0-9_.-]+)):\s+(.+)$/);
+      if (!m) return [];
+      const key = m[1] || m[2] || m[3];
+      const value = m[4].trim();
+      if (keys.includes(key) || /^(?:null|~|true|false|\d+)(?:\s+#.*)?$/.test(value) || /^[!&*[{]/.test(value)) return [];
+      if (/^[|>][-+]?\s*(?:#.*)?$/.test(value)) valueIndent = indent;
+      else if (/^["']/.test(value) && !/^(?:"(?:[^"\\]|\\.)+"|'(?:[^']|'')+')(?:\s+#.*)?$/.test(value)) return [];
+      keys.push(key);
     }
     return keys;
   } catch {
@@ -125,44 +156,85 @@ export function readCredentialKeys(dshHome) {
 }
 
 /**
- * Best-effort default {provider, model} from the composed
- * `agent-default-model` row, extracted from `dsh --profile <p> --dump-config`
- * output (zero-parse regex; the full dump is JS-tagged YAML we must not
- * parse). Cached in-memory per profile. opts.dumpConfig overrides the
- * subprocess for tests. Returns null on any failure.
- * @param {{ profile?: string, dumpConfig?: string }} [opts]
- * @returns {{ provider: string, model: string } | null}
+ * Bounded extraction of one ordinary component config from JS-tagged YAML.
+ * Never evaluate tags; unsupported component configs yield null. Sibling
+ * rows cannot supply a missing field, and disabled rows cannot select models.
+ * @param {string} dump
+ * @param {string} id
  */
-let _dumpCache = /** @type {Record<string, any>} */ ({});
-export function dshDefaultModel(opts = {}) {
-  const profile = opts.profile || "web";
-  if (opts.dumpConfig !== undefined) {
-    return extractDefaultModel(opts.dumpConfig);
+export function extractDshComponent(dump, id) {
+  const lines = String(dump).split(/\r?\n/);
+  // Remove block-scalar bodies before looking for row headers. An embedded
+  // script/string that happens to contain YAML must never create a component.
+  let scalarIndent = null;
+  for (let n = 0; n < lines.length; n++) {
+    const indent = lines[n].match(/^ */)[0].length;
+    if (scalarIndent !== null && (!lines[n].trim() || indent > scalarIndent)) {
+      lines[n] = "";
+      continue;
+    }
+    scalarIndent = null;
+    if (/^\s*(?:- )?[\w-]+:\s*(?:![^\s]+\s+)?[|>][-+]?\s*(?:#.*)?$/.test(lines[n])) scalarIndent = indent;
   }
-  if (profile in _dumpCache) return _dumpCache[profile];
-  let out = null;
-  try {
-    const dump = execFile("dsh", ["--profile", profile, "--dump-config"], {
-      stdio: ["ignore", "pipe", "ignore"],
-      encoding: "utf8",
-      timeout: 15000,
+  for (let i = 0; i < lines.length; i++) {
+    const header = lines[i].match(/^( *)- ([\w-]+):/);
+    if (!header) continue;
+    const depth = header[1].length + 2;
+    let end = i + 1;
+    while (end < lines.length) {
+      const line = lines[end];
+      if (line.trim() && !/^\s*#/.test(line) && line.match(/^ */)[0].length < depth) break;
+      end++;
+    }
+    const body = [" ".repeat(depth) + lines[i].slice(depth), ...lines.slice(i + 1, end)];
+    const fields = body.filter((l) => l.match(/^ */)[0].length === depth);
+    const identity = fields.some((l) => {
+      const m = l.trim().match(/^(id|name):\s*['"]?([^'"\s]+)['"]?\s*(?:#.*)?$/);
+      return m && (m[2] === id || (m[1] === "name" && m[2] === `@deepseek-ai/dsh-${id}`));
     });
-    out = extractDefaultModel(dump);
-  } catch {
-    out = null;
+    if (!identity) continue;
+    if (fields.some((l) => /^disabled:\s*true\s*(?:#.*)?$/.test(l.trim()))) return { disabled: true, config: null };
+    const start = body.findIndex((l) => l.match(/^ */)[0].length === depth && /^config:\s*(?:#.*)?$/.test(l.trim()));
+    if (start < 0) return { disabled: false, config: {} };
+    const config = [];
+    for (const line of body.slice(start + 1)) {
+      if (line.trim() && !/^\s*#/.test(line) && line.match(/^ */)[0].length <= depth) break;
+      config.push(line);
+    }
+    try { return { disabled: false, config: parseYamlSubset(config.join("\n")) }; }
+    catch { return { disabled: false, config: null }; }
   }
-  _dumpCache[profile] = out;
-  return out;
+  return null;
+}
+
+function selection(value) {
+  if (!value || typeof value.provider !== "string" || typeof value.model !== "string") return null;
+  if (!value.provider.trim() || !value.model.trim() || /^[!&*|>]/.test(value.provider.trim()) || /^[!&*|>]/.test(value.model.trim())) return null;
+  return { provider: value.provider.trim(), model: value.model.trim() };
+}
+
+/** Read-only composition probe, always scoped to the requested home/profile. */
+function composedDump(opts) {
+  if (opts.dumpConfig !== undefined) return opts.dumpConfig;
+  try {
+    return execFile("dsh", ["--profile", opts.profile || "web", "--dump-config"], {
+      stdio: ["ignore", "pipe", "ignore"], encoding: "utf8", timeout: 15000,
+      env: { ...process.env, ...(opts.dshHome ? { DSH_HOME: opts.dshHome } : {}) },
+    });
+  } catch { return ""; }
 }
 
 /**
- * Extract {provider, model} from the `agent-default-model` row of a
- * --dump-config listing (zero-parse regex over the JS-tagged YAML).
- * @param {string} dump
+ * Saved settings override composition. No cache: settings are mutable, and
+ * different homes/profiles must never reuse an earlier deployment selection.
+ * @param {{ dshHome?: string, profile?: string, dumpConfig?: string }} [opts]
+ * @returns {{ provider: string, model: string } | null}
  */
-function extractDefaultModel(dump) {
-  const m = dump.match(/id:\s*agent-default-model\b[\s\S]{0,400}?\bprovider:\s*'?([^\s'\n]+)'?[\s\S]{0,200}?\bmodel:\s*'?([^\s'\n]+)'?/);
-  return m ? { provider: m[1], model: m[2] } : null;
+export function dshDefaultModel(opts = {}) {
+  const saved = selection(readDshConfig(opts.dshHome)?.settings?.["agent-default-model"]);
+  if (saved) return saved;
+  const row = extractDshComponent(composedDump(opts), "agent-default-model");
+  return row && !row.disabled ? selection(row.config) : null;
 }
 
 /**
@@ -185,11 +257,30 @@ export function dshCostRateNote() {
  */
 export function readDshAsCc(opts = {}) {
   const cfg = readDshConfig(opts.dshHome);
-  if (!cfg) return null;
-  const settings = cfg.settings || {};
+  if (!cfg && !opts.dumpConfig) return null;
+  const settings = cfg?.settings || {};
+  const dump = composedDump({ ...opts, dshHome: cfg?.dshHome || opts.dshHome });
   const llm = settings["llm-pi-ai"] ?? {};
-  const providersMap =
-    llm && typeof llm.providers === "object" && !Array.isArray(llm.providers) ? llm.providers : {};
+  const piRow = extractDshComponent(dump, "llm-pi-ai");
+  const providersMap = {};
+  const isMap = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+  const asMap = (value) => isMap(value) ? value : {};
+  if (!piRow?.disabled) {
+    const base = asMap(piRow?.config?.providers);
+    const saved = asMap(llm.providers);
+    for (const name of new Set([...Object.keys(base), ...Object.keys(saved)])) {
+      if (isMap(base[name]) || isMap(saved[name])) providersMap[name] = { ...asMap(base[name]), ...asMap(saved[name]) };
+    }
+  }
+  const directRow = extractDshComponent(dump, "llm-deepseek");
+  const directSettings = settings["llm-deepseek"];
+  // Mere home/default-model presence is not evidence of an adapter. Settings
+  // are configured evidence; a supplied disabled composition wins over them.
+  const directEvidence = directRow ? !directRow.disabled && directRow.config !== null : isMap(directSettings);
+  if (directEvidence) {
+    const direct = { ...asMap(directRow?.config), ...asMap(directSettings) };
+    providersMap["deepseek-official"] = { ...direct, api: "deepseek-direct", apiKeyEnv: direct.apiKeyEnv || "DEEPSEEK_API_KEY" };
+  }
 
   // pricing: cc-switch synced JSON first, SQLite cross-ref fills gaps (pi pattern)
   /** @type {Record<string, any>} */
@@ -200,7 +291,7 @@ export function readDshAsCc(opts = {}) {
     }
   }
 
-  const def = dshDefaultModel({ profile: opts.profile, dumpConfig: opts.dumpConfig }) || {};
+  const def = dshDefaultModel({ dshHome: cfg?.dshHome || opts.dshHome, profile: opts.profile, dumpConfig: dump }) || {};
   const entries = Object.entries(providersMap);
   let defaultProvider = def.provider || "";
   if (!defaultProvider && entries.length) defaultProvider = entries[0][0];
@@ -211,7 +302,11 @@ export function readDshAsCc(opts = {}) {
   const currentProviders = {};
   for (const [name, prov] of entries) {
     const p = prov && typeof prov === "object" ? prov : {};
-    const models = Array.isArray(p.models) ? p.models : [];
+    const rawModels = Array.isArray(p.models) ? p.models : [];
+    const models = rawModels.filter((m) => isMap(m) && typeof m.id === "string" && m.id.trim());
+    const catalogComplete = Array.isArray(p.models) && models.length === rawModels.length;
+    // Do not invent the installed pi-ai catalog or infer availability from
+    // modelOverrides. A selected unadvertised model remains visible separately.
     const ids = models.map((m) => m?.id).filter(Boolean);
     const isCurrent = name === defaultProvider;
     const row = {
@@ -221,6 +316,9 @@ export function readDshAsCc(opts = {}) {
       is_current: isCurrent ? 1 : 0,
       provider_type: p.api || "openai-completions",
       cost_multiplier: 1,
+      catalogComplete,
+      catalogOverrideIds: Object.keys(asMap(p.modelOverrides)),
+      evidence: name === "deepseek-official" && directEvidence ? "llm-deepseek-config" : "llm-pi-ai-config",
       baseURL: p.baseURL || null,
       apiKeyEnv: p.apiKeyEnv || null, // env var NAME only — never a secret
       settings_config: {
@@ -239,18 +337,22 @@ export function readDshAsCc(opts = {}) {
     allProviders.push(row);
     if (isCurrent) currentProviders.dsh = row;
   }
-  if (!currentProviders.dsh && allProviders.length) {
+  if (!def.provider && !currentProviders.dsh && allProviders.length) {
     const fb = { ...allProviders[0], is_current: 1 };
     currentProviders.dsh = fb;
     allProviders[0] = fb;
   }
 
   return {
-    dshHome: cfg.dshHome,
+    dshHome: cfg?.dshHome || opts.dshHome || null,
+    defaultSelection: def.provider ? def : null,
+    defaultSelectionSource: selection(settings["agent-default-model"]) ? "settings.yaml" : (def.provider ? "composed agent-default-model" : "first provider fallback"),
+    unresolvedSelection: def.provider && !currentProviders.dsh ? def : null,
+    catalogComplete: allProviders.length > 0 && allProviders.every((p) => p.catalogComplete),
     appTypes: allProviders.length ? ["dsh"] : [],
     currentProviders,
     allProviders,
     modelPricing,
-    credentialKeys: readCredentialKeys(cfg.dshHome),
+    credentialKeys: readCredentialKeys(cfg?.dshHome || opts.dshHome),
   };
 }

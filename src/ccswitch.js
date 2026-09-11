@@ -84,8 +84,9 @@ function sqlStr(s) {
 
 /** Highest cc-switch db schema version MAW's read layer is verified against.
  *  v17 (cc-switch v3.20.0 / cli v5.10.2) adds the `session_usage_dedup`
- *  ledger + pi app management; additive, all MAW read paths verified on it. */
-export const SUPPORTED_CC_SCHEMA = 17;
+ *  ledger + pi app management; v18 adds nullable session-log byte cursors.
+ *  Both retain the provider/usage contracts read by MAW. */
+export const SUPPORTED_CC_SCHEMA = 18;
 
 /**
  * Read everything MAW needs from cc-switch in one shot.

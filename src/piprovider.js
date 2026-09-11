@@ -10,10 +10,17 @@ import path from "node:path";
 import { exists, readJson, home } from "./util.js";
 
 /**
- * @returns {string} ~/.pi/agent (or $PI_AGENT_DIR) when present, else ""
+ * Resolve the chosen Pi home, even before it exists (installer use).
+ * @param {string} [piDir] explicit caller override
+ * @returns {string}
  */
-export function findPiAgentDir() {
-  const dir = process.env.PI_AGENT_DIR || path.join(home(), ".pi", "agent");
+export function resolvePiAgentDir(piDir) {
+  return piDir ?? (process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || path.join(home(), ".pi", "agent"));
+}
+
+/** @param {string} [piDir] @returns {string} chosen Pi home when present, else "" */
+export function findPiAgentDir(piDir) {
+  const dir = resolvePiAgentDir(piDir);
   return exists(dir) ? dir : "";
 }
 
@@ -32,7 +39,7 @@ export function findPiAgentDir() {
  * } | null}
  */
 export function readPiConfig(piDir) {
-  const dir = piDir || findPiAgentDir();
+  const dir = findPiAgentDir(piDir);
   if (!dir || !exists(dir)) return null;
   return {
     settings: readJson(path.join(dir, "settings.json"), {}),

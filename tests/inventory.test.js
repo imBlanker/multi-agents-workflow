@@ -77,7 +77,7 @@ function fullFixture() {
 
   // dsh: settings.yaml (strong marker) + skills + AGENTS.md
   w(path.join(dshHome, "settings.yaml"), `agent-presets:\n  default: liangshen\nllm-pi-ai:\n  providers:\n    zai-coding-cn:\n      baseURL: https://example\n      models:\n        - id: glm-4.5-air\n          name: GLM-4.5-Air\nmcp-client:\n  dsh-layer-a:\n    enabled: true\n`);
-  w(path.join(dshHome, "skills", "dsh-skill", "SKILL.md"), "---\ndescription: dsh skill\n---\nx\n");
+  w(path.join(dshHome, "skills", "dsh-skill", "SKILL.md"), "---\nname: dsh-skill\ndescription: dsh skill\n---\nx\n");
   w(path.join(dshHome, "AGENTS.md"), "# dsh global");
 
   // project: AGENTS.md + .mawf workflows + project .mcp.json + project .claude/skills
@@ -141,7 +141,8 @@ test("scanInventory: full 4-host fixture — all hosts present with expected sur
   assert.ok(pi.plugins.some((p) => p.name === "rtk.ts" && p.source === "extension"));
   assert.ok(pi.mcps.some((m) => m.name === "exa" && m.source === "pi-mcp.json"));
   assert.ok(pi.mcps.some((m) => m.name === "context7" && m.source === "pi-mcp.json"));
-  assert.equal(pi.mcps.length, 2);
+  assert.equal(pi.mcps.length, 3);
+  assert.ok(pi.mcps.some(m => m.name === "proj-mcp" && m.source === "shared-project"));
   assert.ok(pi.models.some((m) => m.id === "glm-4.5-air"), JSON.stringify(pi.models));
   // catalog merge: models-store.json providers join the switchable pool
   assert.equal(pi.models.length, 4, JSON.stringify(pi.models.map((m) => m.id)));
@@ -459,3 +460,80 @@ test("inventory does not discover skills above a project that is itself the git 
   const pi = scanOf(fx).hosts.find((h) => h.app === "pi");
   assert.ok(!pi.skills.some((skill) => skill.name === "outside-repo"));
 });
+
+test("dsh component disabled state belongs to its own top-level row", () => {
+  const dump = `# == @example/first
+- id: active-row
+  name: '@example/active'
+  config:
+    disabled: true
+# == @example/second
+- id: disabled-row
+  disabled: true
+  name: "@example/disabled"
+- id: final-row
+  name: '@example/final'
+  disabled: false
+  config: !js/function '() => { throw new Error("must not execute"); }'
+`;
+  const dsh = scanDshFixture(dump);
+  assert.deepEqual(dsh.plugins.filter(p => p.source === "dump-config").map(p => [p.id,p.name,p.status,p.origin]), [
+    ["active-row","@example/active","active","@example/first"],
+    ["disabled-row","@example/disabled","disabled","@example/second"],
+    ["final-row","@example/final","active","@example/second"],
+  ]);
+});
+
+test("Pi inventory integrates scoped package filters and project MCP state without secrets", () => {
+  const fx = fullFixture();
+  const pkg = path.join(fx.piDir, "npm", "node_modules", "@demo", "tools");
+  w(path.join(pkg, "package.json"), JSON.stringify({ name: "@demo/tools", pi: { skills: ["skills"] } }));
+  for (const name of ["visible", "hidden"]) w(path.join(pkg, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${name} tool\n---\nbody\n`);
+  w(path.join(fx.piDir, "settings.json"), JSON.stringify({ packages: [{ source: "npm:@demo/tools@1.0.0", skills: ["skills/**", "!skills/hidden/**"] }] }));
+  w(path.join(fx.projectDir, ".pi", "mcp.json"), JSON.stringify({ mcpServers: { exa: { disabled: true, headers: { Authorization: "SENTINEL_MCP_SECRET" } } } }));
+  const report = scanOf(fx);
+  const pi = report.hosts.find(h => h.app === "pi");
+  assert.ok(pi.skills.some(s => s.name === "visible"));
+  assert.ok(!pi.skills.some(s => s.name === "hidden"));
+  assert.ok(pi.resources.some(r => r.name === "hidden" && r.status === "disabled"));
+  const exa = pi.mcps.find(m => m.name === "exa");
+  assert.equal(exa.status, "disabled");
+  assert.equal(exa.connected, false);
+  assert.equal(exa.trust, "project-trust-required");
+  assert.ok(exa.provenance.length >= 2);
+  assert.ok(!JSON.stringify(report).includes("SENTINEL_MCP_SECRET"));
+});
+
+test("dsh inventory exposes precedence and staged presets without claiming active agents", () => {
+  const fx = fullFixture();
+  w(path.join(fx.projectDir, ".dsh", "skills", "local", "SKILL.md"), "---\nname: dsh-skill\ndescription: project override\n---\nbody\n");
+  mk(path.join(fx.dshHome, "agent-presets", "queued-preset"));
+  const dsh = scanOf(fx).hosts.find(h => h.app === "dsh");
+  assert.equal(dsh.skills.filter(s => s.name === "dsh-skill").length, 1);
+  assert.equal(dsh.skills.find(s => s.name === "dsh-skill").source, "project-dsh");
+  assert.ok(dsh.skillResources.some(s => s.name === "dsh-skill" && s.status === "shadowed"));
+  assert.ok(dsh.presets.some(p => p.name === "queued-preset" && p.status === "staged" && p.enabled === false));
+  assert.ok(!dsh.plugins.some(p => p.name === "queued-preset"));
+  assert.match(dsh.harnessNote, /static default roots/);
+});
+
+for (const settings of [null, "!unsupported tagged settings"]) {
+  test(`dsh profiles-only inventory preserves resources with ${settings === null ? "missing" : "unsupported"} settings`, () => {
+    const fx = fullFixture();
+    mk(path.join(fx.dshHome, "profiles", "web"));
+    mk(path.join(fx.dshHome, "agent-presets", "staged-only"));
+    const file = path.join(fx.dshHome, "settings.yaml");
+    if (settings === null) fs.unlinkSync(file); else fs.writeFileSync(file, settings);
+    const report = scanOf(fx);
+    const dsh = report.hosts.find(h => h.app === "dsh");
+    assert.ok(dsh, JSON.stringify(report.hosts.map(h => ({ app: h.app, error: h.error }))));
+    assert.equal(dsh.error, undefined);
+    assert.ok(dsh.skills.some(s => s.name === "dsh-skill"));
+    assert.ok(dsh.presets.some(p => p.name === "staged-only" && p.status === "staged"));
+    assert.deepEqual(dsh.models, []);
+    assert.equal(dsh.defaultSelection, null);
+    assert.equal(dsh.unresolvedSelection, null);
+    assert.equal(dsh.catalogComplete, false);
+    assert.ok(renderDigest(report).includes("## dsh"));
+  });
+}

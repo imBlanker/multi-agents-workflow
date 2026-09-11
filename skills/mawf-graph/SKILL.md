@@ -1,3 +1,8 @@
+---
+name: mawf-graph
+description: "Plan and inspect graph workflows with review gates, branching, checkpoints, and persistent execution state."
+---
+
 # MAW Graph Workflow (skill)
 
 > Use when you need predictable, inspectable control: HITL approval, persistence/checkpoints, branching, or high-risk work.

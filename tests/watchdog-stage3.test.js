@@ -86,7 +86,7 @@ test("buildPhaseBPrompt: transcript handoff, trellis discipline when present, sn
   assert.match(plain, /read it, summarize the recent state/);
   assert.doesNotMatch(plain, /trellis/);
   const tr = buildPhaseBPrompt({ incident: inc, trellis: true, snapshotRef: "refs/rescue/inc-9" });
-  assert.match(tr, /task\.py current/);
+  assert.match(tr, /task\.py\' \'current\'/);
   assert.match(tr, /never implement before the task is started/);
   assert.match(tr, /refs\/rescue\/inc-9/);
 });

@@ -69,3 +69,22 @@ test("bundled CLI template resolves plugin root on the native shell and copied t
   delete env.CLAUDE_PLUGIN_ROOT;
   assert.deepEqual(JSON.parse(execSync(rendered, { env, cwd: root, encoding: "utf8", timeout: 10000 })), ["version"]);
 });
+
+test("configured cost hook intercepts Agent and legacy Task before launch", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mawf-matcher-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, "bin"));
+  fs.mkdirSync(path.join(root, "plugin"));
+  const repo = fileURLToPath(new URL("../", import.meta.url));
+  fs.copyFileSync(path.join(repo, "bin", "guard.mjs"), path.join(root, "bin", "guard.mjs"));
+  fs.writeFileSync(path.join(root, "bin", "mawf.js"), "console.log('DENY spawn')");
+  const config = JSON.parse(fs.readFileSync(path.join(repo, "plugin", "hooks", "hooks.json"), "utf8"));
+  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: path.join(root, "plugin"), PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH };
+  for (const toolName of ["Agent", "Task", "Read", "TaskCreate", "AgentExtra"]) {
+    const hooks = config.hooks.PreToolUse.filter(group => new RegExp(group.matcher).test(toolName)).flatMap(group => group.hooks);
+    if (["Agent", "Task"].includes(toolName)) {
+      assert.equal(hooks.length, 1, `${toolName} must reach the guard`);
+      assert.throws(() => execSync(hooks[0].command, { env, cwd: root, input: JSON.stringify({ cwd: root, tool_name: toolName }), encoding: "utf8", timeout: 10000 }), err => err.status === 2);
+    } else assert.equal(hooks.length, 0, `${toolName} is not a spawn`);
+  }
+});

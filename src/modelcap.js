@@ -65,6 +65,11 @@ const RULES = [
   { re: /embed|bge-|e5-/i, family: "embedding",
     caps: { agentic: F, reasoning: F, coding: F, math: F, visionIn: F, imageOut: F, videoOut: F, speech: F } },
 
+  // dsh 0.1.5 direct catalog: text/image input, tools and reasoning.
+  // No comparative coding/math evidence or exact price is implied.
+  { re: /^deepseek-flash$/i, family: "multimodal-generalist",
+    caps: { agentic: T, reasoning: T, coding: "unknown", math: "unknown", visionIn: T, imageOut: F, videoOut: F, speech: F } },
+
   // --- text-only agentic reasoners (multi-turn reasoning + dialogue, no vision) ---
   { re: /^deepseek-r|reasoner/i, family: "reasoner-text-only",
     caps: { agentic: T, reasoning: T, coding: T, math: T, visionIn: F, imageOut: F, videoOut: F, speech: F } },

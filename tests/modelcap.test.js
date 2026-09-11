@@ -133,3 +133,18 @@ test("classifyModel: deepseek vision variants are multimodal, generic deepseek-v
   assert.equal(t.family, "agentic-text-only");
   assert.equal(t.caps.visionIn, false);
 });
+
+test("exact deepseek-flash alias uses only evidenced capabilities and preserves unknown prices", () => {
+  const cls = classifyModel("deepseek-flash");
+  assert.equal(cls.caps.agentic, true);
+  assert.equal(cls.caps.reasoning, true);
+  assert.equal(cls.caps.visionIn, true);
+  assert.equal(cls.caps.coding, "unknown");
+  assert.equal(cls.caps.math, "unknown");
+  assert.equal(classifyModel("deepseek-flash-future").family, "unknown");
+  const choice = selectModelForRole({ role: "orchestrator", appType: "dsh", cc: {
+    allProviders: [{ id: "deepseek-official", app_type: "dsh", settings_config: { model: "deepseek-flash" } }],
+    modelPricing: { "deepseek-v4-flash": { input_per_m: 0.1, output_per_m: 0.2 } },
+  } });
+  assert.equal(choice.price, null);
+});

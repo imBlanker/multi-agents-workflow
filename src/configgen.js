@@ -111,7 +111,7 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
     // When the host is pi (or this specific agent is pi-native), also
     // materialize the native pi agent file so pi-subagents can spawn it
     // directly. Non-destructive: only `maw-*` files are managed (pruned below).
-    if (plan.hostApp === "pi" || a.agent === "pi") {
+    if (a.appType === "pi" || a.agent === "pi") {
       const piAgentsDir = path.join(projectRoot, ".pi", "agents");
       files.push(writeText(path.join(piAgentsDir, `maw-${slug(a.role)}.md`), piAgentFileMd(a, plan)));
     }
@@ -134,7 +134,7 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
   try {
     const piAgentsDir = path.join(projectRoot, ".pi", "agents");
     if (exists(piAgentsDir)) {
-      const keepPi = new Set(plan.agents.filter((a) => plan.hostApp === "pi" || a.agent === "pi").map((a) => `maw-${slug(a.role)}`));
+      const keepPi = new Set(plan.agents.filter((a) => a.appType === "pi" || a.agent === "pi").map((a) => `maw-${slug(a.role)}`));
       for (const f of fs.readdirSync(piAgentsDir)) {
         if (f.startsWith("maw-") && f.endsWith(".md") && !keepPi.has(f.slice(0, -3))) {
           fs.unlinkSync(path.join(piAgentsDir, f)); files.push(`(pruned) ${path.join(piAgentsDir, f)}`);
@@ -205,10 +205,13 @@ ${a.agent === "codex" ? `This agent runs via **codex-plugin-cc**. From Claude Co
 mawf review --force --project .
 \`\`\`
 
-or use the slash command \`/codex:review\` (review-only). For adversarial review use \`/codex:adversarial-review\`.` : (plan.hostApp === "pi" || a.agent === "pi") ? `This agent runs via **pi-subagents**. Spawn it from the orchestrator with the native \`trellis_subagent\` tool (single/parallel/chain) or the \`/agents\` command, pointing at the pi agent file \`.pi/agents/maw-${slug(a.role)}.md\`:
+or use the slash command \`/codex:review\` (review-only). For adversarial review use \`/codex:adversarial-review\`.` : (plan.hostApp === "pi" || a.agent === "pi") ? `This agent targets **pi-subagents-lite**, an optional extension (Pi core has no built-in subagents). After confirming the extension and its \`Agent\` tool are loaded, call \`Agent\` with \`agent: "maw-${slug(a.role)}"\` and the task in \`prompt\`. The custom agent file is \`.pi/agents/maw-${slug(a.role)}.md\`:
 
+- Tool whitelist entries beyond Pi built-ins require the corresponding extension to be loaded.
+- Project resources require Pi project trust; do not bypass the user's trust settings.
+- This runner does not allow child agents to spawn more agents; delegation stays with the orchestrator.
 - Pass the task verbatim (see the Task section above) and require it to return a compressed summary + file diffs.
-- Cost control for pi is **concurrency-only**: pi is not routed via the cc-switch proxy, so real-spend is not measured. Wrap spawns with \`mawf acquire --role ${a.role}\` / \`mawf release --role ${a.role}\` to enforce concurrency.` : (plan.hostApp === "dsh" || a.agent === "dsh") ? `This agent runs via **dsh's prompt-driven subagent tool**. Spawn it from the orchestrator session (\`dsh web\`, or \`dsh --profile headless "<task>"\` for one-shot runs) — dsh has no named agent-definition files, so the portable spec IS the payload:
+- Pi spend is measured when cc-switch Pi (Session) import rows are available; cache-write accounting may be incomplete. Without that telemetry, cost-rate enforcement is **concurrency-only**. Wrap spawns with \`mawf acquire --role ${a.role}\` / \`mawf release --role ${a.role}\` to enforce concurrency.` : (plan.hostApp === "dsh" || a.agent === "dsh") ? `This agent runs via **dsh's prompt-driven subagent tool**. Spawn it from the orchestrator session (\`dsh web\`, or \`dsh --profile headless "<task>"\` for one-shot runs) — dsh has no named agent-definition files, so the portable spec IS the payload:
 
 - Point the spawn at \`.mawf/agents/${slug(a.role)}.md\`: pass the Task section verbatim plus the tool list, and require it to return a compressed summary + file diffs.
 - Cost control for dsh is **concurrency-only** (rate): dsh is not routed via the cc-switch proxy, so real-spend rate is not measured. Wrap spawns with \`mawf acquire --role ${a.role}\` / \`mawf release --role ${a.role}\`. Model prices come from cc-switch's synced \`~/.cc-switch/model-pricing.json\` where model ids match; unmatched ids price as unknown.` : `Spawn this agent from the orchestrator as a subagent with the tool list above. Pass the task verbatim and require it to return a compressed summary + file diffs.`}
@@ -223,17 +226,23 @@ or use the slash command \`/codex:review\` (review-only). For adversarial review
  * @param {import("./planner.js").Plan} plan
  */
 function piAgentFileMd(a, plan) {
+  const builtin = { Read: "read", Edit: "edit", Write: "write", Bash: "bash", Grep: "grep", Glob: "find" };
+  const tools = [...new Set(a.tools.filter((t) => t !== "Task" && t !== "Agent").map((t) => builtin[t] ?? t))];
+  const provider = a.modelChoice?.providerId ?? a.modelChoice?.provider;
+  const model = provider && !a.model.startsWith(`${provider}/`) ? `${provider}/${a.model}` : a.model;
   const fm = [
     "---",
     `name: maw-${slug(a.role)}`,
-    `description: ${a.role} agent for the MAW "${plan.name}" workflow`,
-    `tools: ${a.tools.join(", ")}`,
+    `description: ${JSON.stringify(`${a.role} agent for the MAW "${plan.name}" workflow`)}`,
+    `tools: ${JSON.stringify(tools)}`,
+    ...(model ? [`model: ${JSON.stringify(model)}`] : []),
+    ...(a.modelReasoningEffort ? [`thinking: ${JSON.stringify(a.modelReasoningEffort)}`] : []),
     "---",
     "",
   ].join("\n");
   return `${fm}# maw-${slug(a.role)}
 
-This is the pi-native spawn target for the MAW agent \`${a.role}\`. The full
+This is the pi-subagents-lite spawn target for the MAW agent \`${a.role}\`. The full
 spec (model, model-selection, cost control, task) lives in the portable files
 \`.mawf/agents/${slug(a.role)}.md\` / \`${slug(a.role)}.json\` — read those for the
 verbatim task and tool list.

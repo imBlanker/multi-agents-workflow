@@ -1,3 +1,8 @@
+---
+name: mawf-loop
+description: "Run open-ended coding or research work with an iterative act, observe, reflect, and decide loop."
+---
+
 # MAW Loop Engineering (skill)
 
 > Use for open-ended tasks where the number of steps cannot be predicted.
