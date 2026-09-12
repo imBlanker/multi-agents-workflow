@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-12
+
+### Changed
+
+- 明確串聯 Trellis 生命週期操作：`mawf update` 執行 `trellis update`，`mawf upgrade` 執行 `trellis upgrade` 及適用的 Trellis 專案更新；`mawf uninstall` 仍只解除安裝 MAWF，並保留 Trellis 擁有的檔案。
+- 記錄從 mawf v0.7.2 之後至 `2026-09-12T23:59:59Z` 固定截止時間的五個上游正式發佈帳本。新發佈的非 TUI 宿主契約均無需新增 mawf 程式碼調整；第三方生態與新的實機宿主認證不在本次稽核範圍內。
+
+### Fixed
+
+- 當 stdin 與 stdout 都連接終端時，繼承終端標準串流並省略跳過提示和預選平台的參數，從而保留 Trellis 原生互動式 init TUI。重新導向執行繼續使用 `-y`、宿主感知參數和擷取的診斷資訊，保持確定性。
+- Trellis 部分失敗後的生命週期復原保持確定性；專案更新後重新確保 MAWF 管理區塊與 grill 覆蓋層。
+
+### 驗證範圍
+
+- 本機 Windows 測試屬於本次發佈證據。儲存庫已包含 Linux 介面卡迴歸測試，但發佈前仍須執行原生 Ubuntu/Windows × Node 22/24 CI；不聲稱完成了新的第三方或實機宿主認證。
+
 ## [0.8.0] - 2026-09-12
 
 ### Changed

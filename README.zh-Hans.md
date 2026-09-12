@@ -9,11 +9,11 @@
 
 [变更日志](./CHANGELOG.zh-Hans.md)（[English](./CHANGELOG.md)·[繁](./CHANGELOG.zh-Hant.md)）
 
-## Linux 与 Windows（v0.8.0）
+## Linux 与 Windows（v0.8.1）
 
 两个平台共享 `src/` 中的应用核心，Linux 与 Windows 适配模块分别放在 `src/platform/` 下，软件包和插件使用统一版本号。Windows 原生开发面向 PowerShell，mawf 自身功能无需 WSL 或 Git Bash；外部宿主仍有各自的环境要求。
 
-只克隆、不安装 mawf 时，可在仓库目录运行 `node bin/mawf.js version` 和 `node --test --test-reporter=spec "tests/**/*.test.js"`。CI 使用 Node 22 和 24；最低版本仍为 20.17，缺少内置 SQLite 时需外部 `sqlite3` 命令。CI 配置覆盖 Ubuntu/Windows × Node 22/24，但配置本身不能证明未运行的任务或外部集成已通过验证。架构与同步升级方式见[跨平台开发指南](./docs/CROSS_PLATFORM.md)。
+只克隆、不安装 mawf 时，可在仓库目录运行 `node bin/mawf.js version` 和 `node scripts/run-tests.mjs`。CI 使用 Node 22 和 24；最低版本仍为 20.17，缺少内置 SQLite 时需外部 `sqlite3` 命令。CI 配置覆盖 Ubuntu/Windows × Node 22/24，但配置本身不能证明未运行的任务或外部集成已通过验证。架构与同步升级方式见[跨平台开发指南](./docs/CROSS_PLATFORM.md)。
 
 > 一个可移植的、**动态的**多智能体工作流系统。面对一个新的复杂项目，MAW 会读取你的 [cc-switch](https://github.com/farion1231/cc-switch) 配置，探测代码库，并选择合适的智能体架构——*循环*、*编排者-工人*（子智能体）、*多智能体*、*图工作流*、*动态工作流*或 *ultracode*——或它们的组合。它会为每个智能体生成可独立编辑的配置，强制执行基于真实花费的成本速率限制，并通过 [`codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) 集成 **Codex 审查**。
 

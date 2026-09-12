@@ -200,7 +200,7 @@ Commands:
   uninstall     Remove exactly what install wrote (manifest-driven, all
                 hosts); configs are KEPT unless --purge-config (--keep-config
                 wins if both); --restore-routing rolls cc-switch proxy_config
-                back to the pre-init snapshot
+                back to the pre-init snapshot; Trellis-owned files are kept
   update        Refresh MAWF, then run trellis update in Trellis projects
                 (TTY: native prompts; redirected: exactly --skip-all), then
                 re-ensure MAWF overlays. --force is never passed to Trellis

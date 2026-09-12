@@ -6,6 +6,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-12
+
+### Changed
+
+- Chain Trellis lifecycle operations explicitly: `mawf update` runs `trellis update`, while `mawf upgrade` runs `trellis upgrade` and the applicable Trellis project update. `mawf uninstall` remains MAWF-only and preserves Trellis-owned files.
+- Record the fixed-cutoff five-upstream release ledger after mawf v0.7.2 through `2026-09-12T23:59:59Z`. No newly released non-TUI host contract required a mawf code adaptation; third-party ecosystems and fresh live-host certification are outside this audit.
+
+### Fixed
+
+- Preserve Trellis's native interactive init TUI when stdin and stdout are terminals by inheriting terminal streams and omitting prompt-skipping/platform-selection flags. Redirected runs remain deterministic with `-y`, host-aware flags, and captured diagnostics.
+- Keep lifecycle recovery deterministic after partial Trellis failures and re-ensure MAWF-managed blocks and the grill overlay after project updates.
+
+### Validation limits
+
+- Local Windows tests are release evidence. Linux adapter regression coverage is present, but native Ubuntu/Windows × Node 22/24 CI must run before release; no fresh third-party or live-host certification is claimed.
+
 ## [0.8.0] - 2026-09-12
 
 ### Changed

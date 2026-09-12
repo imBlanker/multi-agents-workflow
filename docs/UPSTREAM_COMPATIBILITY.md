@@ -101,9 +101,9 @@ repository tags define formal releases here.
 
 Trellis's interactive contract is unchanged from `0.6.16`: omitting command-level
 `-y` and platform flags opens native selection and requires inherited streams.
-mawf's prior always-`-y`, piped-stream behavior is a pre-existing wrapper defect,
-not a release regression. Repair is owned by sibling task
-`09-12-preserve-trellis-tui`; this audit makes no overlapping code/test change.
+mawf's prior always-`-y`, piped-stream behavior was a pre-existing wrapper defect,
+not a release regression. v0.8.1 repairs it by preserving the native interactive
+TUI while retaining deterministic redirected operation.
 
 ## Fixed-cutoff conclusion
 
