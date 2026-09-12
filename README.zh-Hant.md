@@ -272,7 +272,7 @@ bin/mawf.js  src/  plugin/  skills/  defaults/  examples/  tests/  docs/
 cc-switch 預設唯讀；唯一的寫入為 (a) 已脫鉤的專案設定檔同步——**預設停用**，僅當 `MAW_CC_PROJECT_SYNC=1` 時重開（只建立新設定檔，絕不觸碰 `默认`）——與 (b) claude/codex 的可選 `proxy_config` 豁免 —— 兩者皆有硬性護欄（無 `DELETE`／`DROP`，對 profiles／providers／skills 無 `UPDATE`，絕不作用於 `默认`）。價格閘門會暫停昂貴的模型配用直到人工處理。`PreToolUse` hook 只**阻擋**超預算的產生。外部程式碼在重用前已審查（授權條款＋無隱藏網路／憑證竊取）—— 見 [`NOTICE.md`](./NOTICE.md)、[`ACKNOWLEDGEMENTS.md`](./ACKNOWLEDGEMENTS.md)。
 
 ## 15. 已知限制
-- 尚未上架 npm（使用 `npx . install`）。
+- 已上架 npm：`npx multi-agents-workflow@latest install`。
 - 成本護欄衡量的是**過去**消費；短時間尖峰可能短暫超過限制。
 - Codex 審查依賴 codex-plugin-cc；若無，MAW 以第二個 Claude 審查者替代。
 - 路由豁免直接寫入 cc-switch 的 SQLite；cc-switch GUI 可能需要重新啟動才會反映。

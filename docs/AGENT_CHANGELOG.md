@@ -6,6 +6,29 @@ coding agents operating this repo). Human narrative: [`../CHANGELOG.md`](../CHAN
 
 Package: `multi-agents-workflow` · CLI: `mawf` · Node ≥ 20.17 · zero runtime deps.
 
+## 0.8.1 (2026-09-12)
+
+```yaml
+version: 0.8.1
+semver_impact: patch
+compatibility:
+  cutoff: "Claude Code, Codex, Pi, DeepSeek Harness, and Trellis releases after mawf 0.7.2 through 2026-09-12T23:59:59Z"
+  result: "no newly released non-TUI host contract required another mawf code adaptation"
+fixed:
+  - "interactive Trellis init inherits terminal streams and preserves the native TUI; redirected init remains deterministic"
+changed:
+  - "mawf update/upgrade chain the applicable Trellis lifecycle stages and repair MAWF overlays after project updates"
+preserved:
+  - "mawf uninstall remains MAWF-only and preserves Trellis-owned and modified Trellis files"
+upgrade:
+  npm: "npm i -g multi-agents-workflow@0.8.1"
+  checkout: "mawf upgrade"
+smoke: "mawf doctor && mawf --version && mawf inventory --verify"
+evidence_limits:
+  local: "Windows tests and source/fixture evidence; no fresh live-host or third-party ecosystem certification"
+  ci: "Ubuntu/Windows x Node 22/24 must pass before release; local runs do not imply CI results"
+```
+
 ## 0.6.0 (2026-08-21)
 
 ```yaml

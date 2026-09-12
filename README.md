@@ -274,7 +274,7 @@ bin/mawf.js  src/  plugin/  skills/  defaults/  examples/  tests/  docs/
 cc-switch is read-only by default; the only writes are (a) the DECOUPLED project-profile sync — **disabled by default**, re-enabled only via `MAW_CC_PROJECT_SYNC=1` (creates a NEW profile only, never touches `默认`) — and (b) the opt-in `proxy_config` carve-out for claude/codex — both hard-guarded (no `DELETE`/`DROP`, no `UPDATE` on profiles/providers/skills, never on `默认`). The price gate pauses expensive model assignments until a human acts. The `PreToolUse` hook only **blocks** over-budget spawns. External code was reviewed (license + no hidden network/credential-harvesting) before reuse — see [`NOTICE.md`](./NOTICE.md), [`ACKNOWLEDGEMENTS.md`](./ACKNOWLEDGEMENTS.md).
 
 ## 15. Known Limitations
-- Not yet on npm (use `npx . install`).
+- Available from npm: `npx multi-agents-workflow@latest install`.
 - The cost guard measures **past** spend; a burst can briefly exceed the limit.
 - Codex review depends on codex-plugin-cc; without it, MAW substitutes a second Claude reviewer.
 - The routing carve-out writes cc-switch's SQLite directly; the cc-switch GUI may need a restart to reflect it.
