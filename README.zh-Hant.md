@@ -9,11 +9,11 @@
 
 [變更日誌](./CHANGELOG.zh-Hant.md)（[English](./CHANGELOG.md)·[简](./CHANGELOG.zh-Hans.md)）
 
-## Linux 與 Windows（v0.8.0）
+## Linux 與 Windows（v0.8.1）
 
 兩個平台共用 `src/` 中的應用核心，Linux 與 Windows 配接模組分別放在 `src/platform/` 下，套件和外掛使用統一版本號。Windows 原生開發面向 PowerShell，mawf 自身功能無需 WSL 或 Git Bash；外部宿主仍有各自的環境要求。
 
-只複製儲存庫、不安裝 mawf 時，可在儲存庫目錄執行 `node bin/mawf.js version` 和 `node --test --test-reporter=spec "tests/**/*.test.js"`。CI 使用 Node 22 和 24；最低版本仍為 20.17，缺少內建 SQLite 時需外部 `sqlite3` 命令。CI 設定涵蓋 Ubuntu/Windows × Node 22/24，但設定本身不能證明未執行的工作或外部整合已通過驗證。架構與同步升級方式見[跨平台開發指南](./docs/CROSS_PLATFORM.md)。
+只複製儲存庫、不安裝 mawf 時，可在儲存庫目錄執行 `node bin/mawf.js version` 和 `node scripts/run-tests.mjs`。CI 使用 Node 22 和 24；最低版本仍為 20.17，缺少內建 SQLite 時需外部 `sqlite3` 命令。CI 設定涵蓋 Ubuntu/Windows × Node 22/24，但設定本身不能證明未執行的工作或外部整合已通過驗證。架構與同步升級方式見[跨平台開發指南](./docs/CROSS_PLATFORM.md)。
 
 > 一個可攜、**動態**的多智慧體工作流系統。面對全新的複雜專案，MAW 會讀取你的 [cc-switch](https://github.com/farion1231/cc-switch) 設定，探測程式碼庫，並挑選合適的智慧體架構 —— *迴圈工程*、*編排者-工人*（子智慧體）、*多智慧體*、*圖工作流*、*動態工作流* 或 *ultracode* —— 或其組合。它為每個智慧體產生可獨立編輯的設定，強制執行**真實消費的成本速率限制**，並透過 [`codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) 整合 **Codex 審查**。
 
@@ -194,16 +194,18 @@ MAW 預設將你的 cc-switch 視為**唯讀**。以下規則在程式碼中強�
 
 由於 trellis 與 MAW 都能管理檔案，發生衝突時 MAW 會**暫停** trellis init：
 1. **快照** MAW 管理的檔案（`.mawf/*`，排除 `runtime/`／`logs/`）。
-2. **執行** `trellis init -u <user> -y --claude --codex`，將輸出串流至 `.mawf/logs/trellis-init-<timestamp>.log`。
+2. **依終端模式執行 Trellis。** 當 stdin 與 stdout 都連接終端機時，MAW 以繼承的標準串流執行 `trellis init -u <user>`，保留 Trellis 原生提示、鍵盤操作、色彩與即時輸出，並由 Trellis 選擇平台。任一標準串流被重新導向時，MAW 使用 `-y` 加上宿主感知的平台參數維持自動化的確定性，並將 stdout/stderr 記錄到 `.mawf/logs/trellis-init-<timestamp>.log`。互動模式日誌只記錄命令中繼資料與最終結果，不記錄 TUI 轉錄。
 3. **偵測** trellis 動過的任何 MAW 管理檔案 → **暫停**，在終端機印出衝突詳情＋概覽＋日誌路徑。
 4. **你逐項選擇**：`[m]` 保留 MAW（透過 `mawf plan` 重新產生）· `[t]` 保留 trellis · `[r]` 重新執行 trellis init 以**恢復進度**。
 5. MAW 套用你的選擇並繼續。
 
 （黑箱 CLI 無法在寫入途中暫停，因此 MAW 在衝突寫入後立即偵測，再透過重新執行冪等的 `trellis init` 來恢復。）見 [`src/trellis.js`](./src/trellis.js)。
 
-**Trellis 更新追蹤器。** 本倉庫的 GitHub Actions 工作流程 [`trellis-update-tracker`](./.github/workflows/trellis-tracker.yml) 會自動追蹤 `@mindfoldhq/trellis` 的更新（每週＋手動觸發）：出現新 npm 版本時，它會開啟一個 `[trellis-tracker]` issue（含版本與連結）並推進 `.github/trellis-tracker/state.json`。唯一例外：**如果 trellis 刪庫**（上游 404），追蹤器會開啟一條 notice issue、暫停追蹤，且工作流程仍然成功——上游恢復後自動恢復追蹤。MAW 透過 `@latest` 呼叫 trellis，因此 MAW 本身無需升級動作；issue 只是提醒人工審閱變更日誌。
+**Trellis 更新追蹤器。** 本倉庫的 GitHub Actions 工作流程 [`trellis-update-tracker`](./.github/workflows/trellis-tracker.yml) 會自動追蹤 `@mindfoldhq/trellis` 的更新（每週＋手動觸發）：出現新 npm 版本時，它會開啟一個 `[trellis-tracker]` issue（含版本與連結）並推進 `.github/trellis-tracker/state.json`。唯一例外：**如果 trellis 刪庫**（上游 404），追蹤器會開啟一條 notice issue、暫停追蹤，且工作流程仍然成功——上游恢復後自動恢復追蹤。`mawf upgrade` 現在會呼叫 Trellis 自己的升級路徑；追蹤 issue 仍用於提醒人工審閱上游變更。
 
 **在 mawf 工作區中，`trellis brainstorm` 執行 grill 版。** `trellis init` 後，mawf 會把 `.agents/skills/trellis-brainstorm/SKILL.md` 換成執行 vendored **grill-with-docs** 面試的包裝器（mattpocock/skills，MIT：`grilling` 輪次/設計樹/frontier + `domain-modeling` 術語表/ADR），同時完整保留 Trellis 規劃契約（任務目錄、PRD 種子、consent 門、`task.py start` 前不寫碼）。術語落入 `CONTEXT.md`，不可逆決策記 ADR，收斂的輪次更新 `prd.md`。逃生門：還原備份於 `.agents/skills/trellis-brainstorm.orig.md` 的原版檔案。`trellis update` 覆寫後 `mawf update` 會重打補丁；`mawf doctor` 標記狀態。
+
+**生命週期串聯。** 在含 `.trellis/` 的專案中，`mawf update` 先更新 MAWF，再於互動終端繼承終端執行 `trellis update`（重新導向時僅使用 `trellis update --skip-all`），最後重新確保 MAWF 管理區塊與 grill 覆蓋層；即使 Trellis 在失敗前已部分寫入，也會執行修復。非 Trellis 專案只明確略過 Trellis 階段。MAWF 的 `--force` 絕不傳給 Trellis。`mawf upgrade` 先完成既有 MAWF 升級／更新，再執行 `trellis upgrade`；啟用專案範本時，接著執行對應的 Trellis 專案更新並修復覆蓋層。`--dry-run` 不寫入地預覽所有適用階段；MAWF 的 `--tag` 不傳給 Trellis；`--no-apply-templates` 略過專案更新但仍升級 Trellis CLI。後續階段失敗會回傳非零並報告已成功階段。`mawf uninstall` 不級聯，保留所有 Trellis 擁有的檔案。
 
 ## 9. 成本控制機制
 來自 cc-switch `proxy_request_logs` 的真實推理消費 → USD/分鐘。**每智慧體** $5/分鐘、**總計** $10/分鐘（獨立）、**最大並發** 16 —— 可在 `.mawf/config.yaml` 或透過旗標編輯。定價來源鏈：cc-switch `model_pricing` → 供應商 `cost_multiplier` → 內建**估計值**（標記 `estimated:true`）→ `null`（絕不偽造）。不經 cc-switch 代理路由的宿主（pi、dsh）沒有可測的消費速率 → 速率限額降級為僅並發；dsh 上的**價格門**仍透過 cc-switch 自動同步的 `~/.cc-switch/model-pricing.json` 生效（命中的模型 id 獲得真實價格，未命中保持未知）。
@@ -270,7 +272,7 @@ bin/mawf.js  src/  plugin/  skills/  defaults/  examples/  tests/  docs/
 cc-switch 預設唯讀；唯一的寫入為 (a) 已脫鉤的專案設定檔同步——**預設停用**，僅當 `MAW_CC_PROJECT_SYNC=1` 時重開（只建立新設定檔，絕不觸碰 `默认`）——與 (b) claude/codex 的可選 `proxy_config` 豁免 —— 兩者皆有硬性護欄（無 `DELETE`／`DROP`，對 profiles／providers／skills 無 `UPDATE`，絕不作用於 `默认`）。價格閘門會暫停昂貴的模型配用直到人工處理。`PreToolUse` hook 只**阻擋**超預算的產生。外部程式碼在重用前已審查（授權條款＋無隱藏網路／憑證竊取）—— 見 [`NOTICE.md`](./NOTICE.md)、[`ACKNOWLEDGEMENTS.md`](./ACKNOWLEDGEMENTS.md)。
 
 ## 15. 已知限制
-- 尚未上架 npm（使用 `npx . install`）。
+- 已上架 npm：`npx multi-agents-workflow@latest install`。
 - 成本護欄衡量的是**過去**消費；短時間尖峰可能短暫超過限制。
 - Codex 審查依賴 codex-plugin-cc；若無，MAW 以第二個 Claude 審查者替代。
 - 路由豁免直接寫入 cc-switch 的 SQLite；cc-switch GUI 可能需要重新啟動才會反映。

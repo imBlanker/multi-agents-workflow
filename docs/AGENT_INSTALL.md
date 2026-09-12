@@ -42,7 +42,7 @@ Prerequisites: Node ≥ 20.17, `npm i -g @deepseek-ai/dsh` (verify `dsh --versio
 
    Keys live in `~/.dsh/.credentials.yaml` (write-only; referenced by `apiKeyEnv`). Renaming a provider id is not supported — add a new one and delete the old.
 2. **Install MAW assets**: `npx . install` on a dsh host copies MAW skills into `$DSH_HOME/skills` (rank-400 user root). No prompts/commands surface exists on dsh — role specs stay portable under `.mawf/agents/`.
-3. **Init**: `MAW_HOST=dsh mawf init -u <user>` (or set the env before any maw command) — writes `.mawf/`, skips cc-switch profile creation for dsh, and chains `trellis init --dsh` (shared `.agents/skills/` + dsh-private `.dsh/skills/` entry skills + `.dsh/DSH.md`).
+3. **Init**: `MAW_HOST=dsh mawf init -u <user>` (or set the env before any maw command) — writes `.mawf/`, skips cc-switch profile creation for dsh, and chains Trellis init. In an interactive terminal, use Trellis's native platform picker and select dsh; in a redirected/non-interactive run, MAW preselects `--dsh` (shared `.agents/skills/` + dsh-private `.dsh/skills/` entry skills + `.dsh/DSH.md`).
 4. **Plan/run**: `mawf plan --project .` then run one orchestrator session via `dsh web` (choose the project workspace) or `dsh --profile headless "<task>"`; spawn workers with dsh's subagent tool using `.mawf/agents/<role>.md` as the payload.
 5. **Troubleshooting**: `MISSING_CREDENTIAL` → store the key via the Models page or export the `apiKeyEnv` variable; `UNKNOWN_MODEL` → select a configured model or add it to the custom provider's `models` list.
 
@@ -72,9 +72,11 @@ mawf init -u <user-name>
 ```
 This: (a) **snapshots all cc-switch config** to `~/.cc-switch/maw-backups/`, (b) writes `.mawf/` configs (paused with a ⚠ PRICE GATE report + exit 3 if any model assignment is expensive — resolve via `mawf approve-model --role <role> --yes` or a cheaper model, then re-run), (c) notes that cc-switch project-profile sync is DECOUPLED by default (`MAW_CC_PROJECT_SYNC=1` re-enables), (d) checks the routing policy, (e) **automatically runs `trellis init -u <user-name>`** as the mandatory next step.
 
+When both stdin and stdout are terminals, MAW gives Trellis direct access to stdin/stdout/stderr and does not pass Trellis `-y` or MAW-selected platform flags. Guide the human through Trellis's native selectable prompts; output is live, and the MAW log records command metadata plus the final result rather than a TUI transcript. If either stream is redirected, MAW runs Trellis non-interactively with `-y` plus host-aware platform flags and captures stdout/stderr in the log so automation cannot wait for input. The npx fallback may show its own `--yes` before the package name; that approves package acquisition and is distinct from Trellis's prompt-skipping `-y`.
+
 **trellis conflict handling** (see README §8): if trellis touches a MAW-managed file, MAW pauses, prints the conflict + overview + log path (`.mawf/logs/trellis-init-*.log`), and asks the user to choose `[m]` keep MAW / `[t]` keep trellis / `[r]` re-run trellis. Apply the user's choice and resume. In a non-interactive context, surface the conflicts + log and let the user decide.
 
-Use `mawf init -u <user> --no-trellis` only when you must skip the trellis chain (e.g. CI/automated).
+Use `mawf init -u <user> --no-trellis` only as an intentional opt-out when you must skip the Trellis chain. Redirected CI and automation are supported without this flag.
 
 ## 6. Plan
 ```bash
@@ -120,18 +122,18 @@ npx . uninstall --purge-config [--project <dir>]
 npx . uninstall --restore-routing
                     # rolls cc-switch proxy_config (claude/codex) back to the
                     # latest pre-MAW snapshot (~/.cc-switch/maw-backups/)
-npx . update        # re-copies templates, keeps user edits; ALSO removes
-                    # stale assets an older install left behind (exact v2
-                    # manifest diff — user files are never touched)
-npx . upgrade       # self-upgrade + template refresh BY DEFAULT (0.4.1):
+npx . update        # refreshes MAWF, then Trellis in .trellis projects
+                    # (TTY prompts; redirected uses exactly --skip-all), then
+                    # repairs MAWF blocks/overlay; --force stays MAWF-only
+npx . upgrade       # self-upgrade + template refresh BY DEFAULT:
                     # git fetch + ff-only pull (checkout installs; never
                     # stashes/rebases/forces) or npm i -g (npm installs),
-                    # then spawns the NEW bin/mawf.js update; --dry-run to
-                    # preview; --no-apply-templates to skip the refresh (a
-                    # refresh failure degrades to a warning, never a failed
-                    # upgrade)
+                    # then trellis upgrade + applicable project update;
+                    # --dry-run previews all stages without writes; --tag is
+                    # MAWF-only; --no-apply-templates still upgrades Trellis
+                    # CLI but skips project template updates
 ```
-Uninstall never removes trellis-owned files (`.trellis/`, trellis entries in `.agents/skills` / `.dsh/skills`) — mention them for manual removal. Snapshots under `~/.cc-switch/maw-backups/` are the user's audit trail and are kept.
+Trellis failures after MAWF success are nonzero partial successes; after any possibly-partial Trellis project update MAWF blocks and the grill overlay are repaired. Outside `.trellis/`, update explicitly skips only Trellis. Uninstall never invokes `trellis uninstall` or removes trellis-owned files (`.trellis/`, trellis entries in `.agents/skills` / `.dsh/skills`) — mention them for manual removal. Snapshots under `~/.cc-switch/maw-backups/` are the user's audit trail and are kept.
 
 ## 11. Report back to the user
 After install+plan, tell the user: the architecture chosen, the agents, the cost limits, the routing compliance, and whether the trellis chain succeeded (or what conflict needs resolving). Link the log: `.mawf/logs/trellis-init-*.log`.

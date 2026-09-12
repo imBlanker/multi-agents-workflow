@@ -6,6 +6,7 @@ import path from "node:path";
 import * as windows from "../src/platform/windows.js";
 import * as linux from "../src/platform/linux.js";
 import { platformFor, run, execFile, findExecutable } from "../src/platform/index.js";
+import { buildTrellisCommandSpec, buildTrellisLaunchSpec } from "../src/trellis.js";
 
 test("facade selects explicit adapters and retains POSIX fallback", () => {
   assert.equal(platformFor("win32"), windows);
@@ -96,6 +97,66 @@ test("npm Node shim bypasses cmd for quoted and multiline prompts", { skip: proc
   const result = windows.run(shim, args, { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   assert.deepEqual(JSON.parse(result.stdout), args);
+});
+
+test("Windows npm shim executes interactive Trellis argv without shell rewriting", { skip: process.platform !== "win32" }, (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mawf trellis shim-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const entry = path.join(dir, "entry.cjs");
+  fs.writeFileSync(entry, "process.stdout.write(JSON.stringify(process.argv.slice(2)))");
+  const shim = path.join(dir, "trellis.cmd");
+  fs.writeFileSync(shim, '@echo off\r\nSET "_prog=node"\r\n"%_prog%" "%~dp0\\entry.cjs" %*\r\n');
+  const spec = buildTrellisLaunchSpec({ user: "Alice Example", stdinIsTTY: true, stdoutIsTTY: true, detection: { via: "path", bin: shim, args: [] } });
+  assert.equal(spec.stdio, "inherit");
+  const result = windows.run(spec.command, spec.args, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.deepEqual(JSON.parse(result.stdout), ["init", "-u", "Alice Example"]);
+});
+
+test("Windows npm shim carries Trellis update and upgrade argv without shell rewriting", { skip: process.platform !== "win32" }, (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mawf trellis lifecycle shim-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const entry = path.join(dir, "entry.cjs");
+  fs.writeFileSync(entry, "process.stdout.write(JSON.stringify(process.argv.slice(2)))");
+  const shim = path.join(dir, "trellis.cmd");
+  fs.writeFileSync(shim, '@echo off\r\nSET "_prog=node"\r\n"%_prog%" "%~dp0\\entry.cjs" %*\r\n');
+  const detection = { via: "path", bin: shim, args: [] };
+  const specs = [
+    buildTrellisCommandSpec({ command: "update", stdinIsTTY: false, stdoutIsTTY: false, detection }),
+    buildTrellisCommandSpec({ command: "upgrade", stdinIsTTY: true, stdoutIsTTY: true, detection }),
+  ];
+  assert.deepEqual(specs.map((spec) => [spec.args, spec.stdio]), [
+    [["update", "--skip-all"], ["pipe", "pipe", "pipe"]],
+    [["upgrade"], "inherit"],
+  ]);
+  for (const spec of specs) {
+    const result = windows.run(spec.command, spec.args, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+    assert.equal(result.status, 0, result.stderr || result.error?.message);
+    assert.deepEqual(JSON.parse(result.stdout), spec.args);
+  }
+});
+
+test("Linux direct adapter carries Trellis lifecycle argv and stdio contract", { skip: process.platform === "win32" }, (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mawf trellis lifecycle linux-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const executable = path.join(dir, "trellis");
+  fs.writeFileSync(executable, `#!${process.execPath}\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))\n`, { mode: 0o755 });
+  const detection = { via: "path", bin: executable, args: [] };
+  const specs = [
+    buildTrellisCommandSpec({ command: "update", stdinIsTTY: false, stdoutIsTTY: false, detection }),
+    buildTrellisCommandSpec({ command: "update", stdinIsTTY: true, stdoutIsTTY: true, detection }),
+    buildTrellisCommandSpec({ command: "upgrade", stdinIsTTY: false, stdoutIsTTY: false, detection }),
+  ];
+  assert.deepEqual(specs.map((spec) => [spec.args, spec.stdio]), [
+    [["update", "--skip-all"], ["pipe", "pipe", "pipe"]],
+    [["update"], "inherit"],
+    [["upgrade"], "inherit"],
+  ]);
+  for (const spec of specs) {
+    const result = linux.run(spec.command, spec.args, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+    assert.equal(result.status, 0, result.stderr || result.error?.message);
+    assert.deepEqual(JSON.parse(result.stdout), spec.args);
+  }
 });
 
 

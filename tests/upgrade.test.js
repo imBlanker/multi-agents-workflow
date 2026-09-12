@@ -172,7 +172,7 @@ test("npm mode: successful install spawns the NEW code's update and reports appl
   assert.equal(r.ok, true, r.error || "");
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].cmd, process.execPath);
-  assert.deepEqual(spawns[0].args, [path.join(pkgRoot, "bin", "mawf.js"), "update"]);
+  assert.deepEqual(spawns[0].args, [path.join(pkgRoot, "bin", "mawf.js"), "update", "--mawf-only"]);
   assert.equal(spawns[0].opts.cwd, pkgRoot);
   assert.equal(r.appliedTemplates, true);
   assert.match(r.output.join("\n"), /templates refreshed \(post-upgrade code\)/);

@@ -12,7 +12,7 @@
 
 ## Tests run
 <!-- Which tests did you run? Check all that apply. -->
-- [ ] `npm test` — all 69 tests pass
+- [ ] `npm test` — the canonical full suite passes
 - [ ] `node bin/mawf.js doctor`
 - [ ] Manual smoke test (describe below)
 

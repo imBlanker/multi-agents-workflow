@@ -108,7 +108,8 @@ function manifestHostHint() {
 function refreshTemplates(pkgRoot, output, spawnFn, hostHint) {
   const spawnOpts = { cwd: pkgRoot, encoding: "utf8", timeout: 300000 };
   if (hostHint) spawnOpts.env = { ...process.env, MAW_HOST: hostHint };
-  const r = spawnFn(process.execPath, [path.join(pkgRoot, "bin", "mawf.js"), "update"], spawnOpts);
+  // The top-level lifecycle runs Trellis only after the MAWF stage completes.
+  const r = spawnFn(process.execPath, [path.join(pkgRoot, "bin", "mawf.js"), "update", "--mawf-only"], spawnOpts);
   const ok = !r.error && r.status === 0;
   const tail = String(r.stdout || "").trim().split("\n").filter(Boolean).slice(-3);
   if (ok) {

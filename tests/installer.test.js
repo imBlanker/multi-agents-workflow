@@ -127,7 +127,12 @@ test("uninstall keeps configs by default; --purge-config removes .mawf and .pi/a
   fs.writeFileSync(path.join(proj, ".mawf", "workflow.json"), "{}");
   fs.mkdirSync(path.join(proj, ".pi", "agents"), { recursive: true });
   fs.writeFileSync(path.join(proj, ".pi", "agents", "maw-worker.md"), "#");
-  fs.writeFileSync(path.join(proj, ".pi", "agents", "trellis-implement.md"), "#");
+  const trellisAgent = path.join(proj, ".pi", "agents", "trellis-implement.md");
+  fs.writeFileSync(trellisAgent, "# trellis agent\n");
+  const trellisConfig = path.join(proj, ".trellis", "config.json");
+  fs.mkdirSync(path.dirname(trellisConfig), { recursive: true });
+  fs.writeFileSync(trellisConfig, "{\"owner\":\"trellis\"}\n");
+  const trellisBefore = new Map([[trellisAgent, fs.readFileSync(trellisAgent)], [trellisConfig, fs.readFileSync(trellisConfig)]]);
   install({ claudeDir });
   const keep = uninstall({ project: proj });
   assert.ok(fs.existsSync(path.join(proj, ".mawf", "workflow.json")), "default keeps configs");
@@ -135,7 +140,7 @@ test("uninstall keeps configs by default; --purge-config removes .mawf and .pi/a
   const purge = uninstall({ project: proj, purgeConfig: true });
   assert.ok(!fs.existsSync(path.join(proj, ".mawf")), ".mawf purged");
   assert.ok(!fs.existsSync(path.join(proj, ".pi", "agents", "maw-worker.md")), "maw-* pi agent purged");
-  assert.ok(fs.existsSync(path.join(proj, ".pi", "agents", "trellis-implement.md")), "trellis-* pi agent preserved");
+  for (const [file, bytes] of trellisBefore) assert.deepEqual(fs.readFileSync(file), bytes, `Trellis file preserved byte-identically: ${file}`);
   assert.ok(purge.purged.some((p) => p === path.join(proj, ".mawf")));
 });
 

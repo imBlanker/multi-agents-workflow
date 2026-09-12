@@ -24,7 +24,7 @@ From the repository directory, these commands work in PowerShell and a Linux she
 ```text
 node --version
 node bin/mawf.js version
-node --test --test-reporter=spec "tests/**/*.test.js"
+node scripts/run-tests.mjs
 ```
 
 No dependency installation or mawf installation is needed to develop from source. Use native absolute filesystem paths, quote paths containing spaces, and use `fileURLToPath` when converting module URLs. Pass executable arguments as arrays; shell syntax belongs inside the platform adapter. Never interpolate project paths into executable PowerShell scripts.

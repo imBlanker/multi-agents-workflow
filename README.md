@@ -9,11 +9,11 @@
 
 [Changelog](./CHANGELOG.md)（[简](./CHANGELOG.zh-Hans.md)·[繁](./CHANGELOG.zh-Hant.md)）
 
-## Linux and Windows (v0.8.0)
+## Linux and Windows (v0.8.1)
 
 Both platforms share the application core in `src/`, with separate Linux and Windows adapters under `src/platform/` and one synchronized package/plugin version. Native Windows development targets PowerShell without requiring WSL or Git Bash for mawf-owned operations; external hosts have their own prerequisites.
 
-To work from a clone without installing mawf, run `node bin/mawf.js version` and `node --test --test-reporter=spec "tests/**/*.test.js"` from the repository directory. Use Node 22 or 24 for the CI test matrix; the minimum remains 20.17, with an external `sqlite3` CLI needed when built-in SQLite is unavailable. CI covers Ubuntu/Windows × Node 22/24; unrun jobs and external integrations are not verified by that configuration alone. See [cross-platform development](./docs/CROSS_PLATFORM.md) for architecture and synchronized upgrades.
+To work from a clone without installing mawf, run `node bin/mawf.js version` and `node scripts/run-tests.mjs` from the repository directory. Use Node 22 or 24 for the CI test matrix; the minimum remains 20.17, with an external `sqlite3` CLI needed when built-in SQLite is unavailable. CI covers Ubuntu/Windows × Node 22/24; unrun jobs and external integrations are not verified by that configuration alone. See [cross-platform development](./docs/CROSS_PLATFORM.md) for architecture and synchronized upgrades.
 
 > A portable, **dynamic** multi-agent workflow system. For a new complex project, MAW reads your [cc-switch](https://github.com/farion1231/cc-switch) config, probes the codebase, and picks the right agent architecture — *loop*, *orchestrator-workers* (subagents), *multi-agent*, *graph*, *dynamic*, or *ultracode* — or a combination. It generates per-agent, independently-editable configs, enforces **real-spend cost-rate limits**, and integrates **Codex review via [`codex-plugin-cc`](https://github.com/openai/codex-plugin-cc)**.
 
@@ -196,16 +196,18 @@ MAW treats your cc-switch as **read-only by default**. The rules below are enfor
 
 Because trellis and MAW can both manage files, on conflict MAW **pauses** trellis init:
 1. **Snapshot** MAW-managed files (`.mawf/*`, excluding `runtime/`/`logs/`).
-2. **Run** `trellis init -u <user> -y --claude --codex`, streaming output to `.mawf/logs/trellis-init-<timestamp>.log`.
+2. **Run Trellis in the terminal's mode.** When both stdin and stdout are terminals, MAW runs `trellis init -u <user>` with inherited streams so Trellis's native prompts, keyboard controls, colors, and live output remain available; Trellis chooses the platforms. If either stream is redirected, MAW keeps deterministic automation with `-y` plus host-aware platform flags and captures stdout/stderr in `.mawf/logs/trellis-init-<timestamp>.log`. Interactive logs contain command metadata and the final result, not a TUI transcript.
 3. **Detect** any MAW-managed file trellis touched → **pause**, print the conflict details + overview + log path in the terminal.
 4. **You choose** per conflict: `[m]` keep MAW (regenerate via `mawf plan`) · `[t]` keep trellis · `[r]` re-run trellis init to **resume progress**.
 5. MAW applies your choice and continues.
 
 (A black-box CLI can't be paused mid-write, so MAW detects conflicts immediately after the conflicting write, then resumes by re-running the idempotent `trellis init`.) See [`src/trellis.js`](./src/trellis.js).
 
-**Trellis update tracker.** The repo's GitHub Actions workflow [`trellis-update-tracker`](./.github/workflows/trellis-tracker.yml) automatically tracks `@mindfoldhq/trellis` updates (weekly + manual dispatch): when a new npm version appears it opens an `[trellis-tracker]` issue with version + links and advances `.github/trellis-tracker/state.json`. The only exception: **if trellis deletes its repo** (upstream 404), the tracker opens ONE notice issue, pauses tracking, and the workflow still succeeds — it resumes automatically when the upstream comes back. MAW invokes trellis via `@latest`, so no upgrade action is required in MAW itself; the issue is a heads-up to review the changelog.
+**Trellis update tracker.** The repo's GitHub Actions workflow [`trellis-update-tracker`](./.github/workflows/trellis-tracker.yml) automatically tracks `@mindfoldhq/trellis` updates (weekly + manual dispatch): when a new npm version appears it opens an `[trellis-tracker]` issue with version + links and advances `.github/trellis-tracker/state.json`. The only exception: **if trellis deletes its repo** (upstream 404), the tracker opens ONE notice issue, pauses tracking, and the workflow still succeeds — it resumes automatically when the upstream comes back. `mawf upgrade` now invokes Trellis's own upgrade path; tracker issues remain a heads-up to review upstream changes.
 
 **In mawf workspaces, `trellis brainstorm` runs the grill edition.** After `trellis init`, mawf swaps `.agents/skills/trellis-brainstorm/SKILL.md` for a wrapper that runs the vendored **grill-with-docs** interview (mattpocock/skills, MIT: `grilling` rounds/design-tree/frontier + `domain-modeling` glossary/ADRs) while preserving the full Trellis planning contract (task dir, PRD seed, consent gate, no code before `task.py start`). Terms land in `CONTEXT.md`, irreversible decisions as ADRs, settled rounds update `prd.md`. Escape hatch: restore the backed-up stock file at `.agents/skills/trellis-brainstorm.orig.md`. `mawf update` re-applies the swap if a `trellis update` clobbers it; `mawf doctor` flags the state.
+
+**Lifecycle chaining.** In a project containing `.trellis/`, `mawf update` refreshes MAWF first, runs interactive `trellis update` with the terminal inherited (or exactly `trellis update --skip-all` when redirected), then re-ensures MAWF managed blocks and the grill overlay even if Trellis partially writes before failing. Outside such a project only the Trellis stage is explicitly skipped. MAWF `--force` is never forwarded. `mawf upgrade` completes the existing MAWF upgrade/refresh first, then runs `trellis upgrade`, and, when project templates are enabled, the corresponding Trellis project update followed by overlay repair. `--dry-run` previews all applicable stages without mutation; MAWF `--tag` never reaches Trellis; `--no-apply-templates` skips project updates but still upgrades the Trellis CLI. Later-stage failures return nonzero and report earlier successes. `mawf uninstall` never cascades and preserves all Trellis-owned files.
 
 ## 9. Cost Control Mechanism
 Real inference spend from cc-switch's `proxy_request_logs` → USD/min. **Per-agent** $5/min, **total** $10/min (independent), **max concurrency** 16 — editable in `.mawf/config.yaml` or via flags. Pricing source chain: cc-switch `model_pricing` → provider `cost_multiplier` → vendored **estimate** (tagged `estimated:true`) → `null` (never faked). Hosts not routed via the cc-switch proxy (pi, dsh) have no measured spend rate → rate limits degrade to concurrency-only; the **price gate** still applies on dsh via cc-switch's auto-synced `~/.cc-switch/model-pricing.json` (matched ids get real prices, unmatched stay unknown).
@@ -272,7 +274,7 @@ bin/mawf.js  src/  plugin/  skills/  defaults/  examples/  tests/  docs/
 cc-switch is read-only by default; the only writes are (a) the DECOUPLED project-profile sync — **disabled by default**, re-enabled only via `MAW_CC_PROJECT_SYNC=1` (creates a NEW profile only, never touches `默认`) — and (b) the opt-in `proxy_config` carve-out for claude/codex — both hard-guarded (no `DELETE`/`DROP`, no `UPDATE` on profiles/providers/skills, never on `默认`). The price gate pauses expensive model assignments until a human acts. The `PreToolUse` hook only **blocks** over-budget spawns. External code was reviewed (license + no hidden network/credential-harvesting) before reuse — see [`NOTICE.md`](./NOTICE.md), [`ACKNOWLEDGEMENTS.md`](./ACKNOWLEDGEMENTS.md).
 
 ## 15. Known Limitations
-- Not yet on npm (use `npx . install`).
+- Available from npm: `npx multi-agents-workflow@latest install`.
 - The cost guard measures **past** spend; a burst can briefly exceed the limit.
 - Codex review depends on codex-plugin-cc; without it, MAW substitutes a second Claude reviewer.
 - The routing carve-out writes cc-switch's SQLite directly; the cc-switch GUI may need a restart to reflect it.
