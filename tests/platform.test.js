@@ -6,6 +6,7 @@ import path from "node:path";
 import * as windows from "../src/platform/windows.js";
 import * as linux from "../src/platform/linux.js";
 import { platformFor, run, execFile, findExecutable } from "../src/platform/index.js";
+import { buildTrellisLaunchSpec } from "../src/trellis.js";
 
 test("facade selects explicit adapters and retains POSIX fallback", () => {
   assert.equal(platformFor("win32"), windows);
@@ -96,6 +97,20 @@ test("npm Node shim bypasses cmd for quoted and multiline prompts", { skip: proc
   const result = windows.run(shim, args, { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   assert.deepEqual(JSON.parse(result.stdout), args);
+});
+
+test("Windows npm shim executes interactive Trellis argv without shell rewriting", { skip: process.platform !== "win32" }, (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mawf trellis shim-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const entry = path.join(dir, "entry.cjs");
+  fs.writeFileSync(entry, "process.stdout.write(JSON.stringify(process.argv.slice(2)))");
+  const shim = path.join(dir, "trellis.cmd");
+  fs.writeFileSync(shim, '@echo off\r\nSET "_prog=node"\r\n"%_prog%" "%~dp0\\entry.cjs" %*\r\n');
+  const spec = buildTrellisLaunchSpec({ user: "Alice Example", stdinIsTTY: true, stdoutIsTTY: true, detection: { via: "path", bin: shim, args: [] } });
+  assert.equal(spec.stdio, "inherit");
+  const result = windows.run(spec.command, spec.args, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.deepEqual(JSON.parse(result.stdout), ["init", "-u", "Alice Example"]);
 });
 
 

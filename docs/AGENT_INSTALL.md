@@ -42,7 +42,7 @@ Prerequisites: Node ≥ 20.17, `npm i -g @deepseek-ai/dsh` (verify `dsh --versio
 
    Keys live in `~/.dsh/.credentials.yaml` (write-only; referenced by `apiKeyEnv`). Renaming a provider id is not supported — add a new one and delete the old.
 2. **Install MAW assets**: `npx . install` on a dsh host copies MAW skills into `$DSH_HOME/skills` (rank-400 user root). No prompts/commands surface exists on dsh — role specs stay portable under `.mawf/agents/`.
-3. **Init**: `MAW_HOST=dsh mawf init -u <user>` (or set the env before any maw command) — writes `.mawf/`, skips cc-switch profile creation for dsh, and chains `trellis init --dsh` (shared `.agents/skills/` + dsh-private `.dsh/skills/` entry skills + `.dsh/DSH.md`).
+3. **Init**: `MAW_HOST=dsh mawf init -u <user>` (or set the env before any maw command) — writes `.mawf/`, skips cc-switch profile creation for dsh, and chains Trellis init. In an interactive terminal, use Trellis's native platform picker and select dsh; in a redirected/non-interactive run, MAW preselects `--dsh` (shared `.agents/skills/` + dsh-private `.dsh/skills/` entry skills + `.dsh/DSH.md`).
 4. **Plan/run**: `mawf plan --project .` then run one orchestrator session via `dsh web` (choose the project workspace) or `dsh --profile headless "<task>"`; spawn workers with dsh's subagent tool using `.mawf/agents/<role>.md` as the payload.
 5. **Troubleshooting**: `MISSING_CREDENTIAL` → store the key via the Models page or export the `apiKeyEnv` variable; `UNKNOWN_MODEL` → select a configured model or add it to the custom provider's `models` list.
 
@@ -72,9 +72,11 @@ mawf init -u <user-name>
 ```
 This: (a) **snapshots all cc-switch config** to `~/.cc-switch/maw-backups/`, (b) writes `.mawf/` configs (paused with a ⚠ PRICE GATE report + exit 3 if any model assignment is expensive — resolve via `mawf approve-model --role <role> --yes` or a cheaper model, then re-run), (c) notes that cc-switch project-profile sync is DECOUPLED by default (`MAW_CC_PROJECT_SYNC=1` re-enables), (d) checks the routing policy, (e) **automatically runs `trellis init -u <user-name>`** as the mandatory next step.
 
+When both stdin and stdout are terminals, MAW gives Trellis direct access to stdin/stdout/stderr and does not pass Trellis `-y` or MAW-selected platform flags. Guide the human through Trellis's native selectable prompts; output is live, and the MAW log records command metadata plus the final result rather than a TUI transcript. If either stream is redirected, MAW runs Trellis non-interactively with `-y` plus host-aware platform flags and captures stdout/stderr in the log so automation cannot wait for input. The npx fallback may show its own `--yes` before the package name; that approves package acquisition and is distinct from Trellis's prompt-skipping `-y`.
+
 **trellis conflict handling** (see README §8): if trellis touches a MAW-managed file, MAW pauses, prints the conflict + overview + log path (`.mawf/logs/trellis-init-*.log`), and asks the user to choose `[m]` keep MAW / `[t]` keep trellis / `[r]` re-run trellis. Apply the user's choice and resume. In a non-interactive context, surface the conflicts + log and let the user decide.
 
-Use `mawf init -u <user> --no-trellis` only when you must skip the trellis chain (e.g. CI/automated).
+Use `mawf init -u <user> --no-trellis` only as an intentional opt-out when you must skip the Trellis chain. Redirected CI and automation are supported without this flag.
 
 ## 6. Plan
 ```bash

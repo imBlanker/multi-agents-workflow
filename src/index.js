@@ -336,10 +336,11 @@ function cmdInit(f, flags) {
     return;
   }
   out(`  next step: trellis init -u ${user} (chained automatically)`);
-  const tr = runTrellisInit({ project, user, hostApp: ctx.host.app, nonInteractive: !process.stdin.isTTY });
+  const tr = runTrellisInit({ project, user, hostApp: ctx.host.app, nonInteractive: !(process.stdin.isTTY && process.stdout.isTTY) });
   if (tr.stdout) process.stdout.write(tr.stdout);
   if (tr.stderr && !tr.ok) process.stderr.write(tr.stderr);
-  out(`  trellis init: ${tr.ok ? "ok" : (tr.code == null ? "interrupted" : `exit ${tr.code}`)} (via ${tr.via}); log: ${path.relative(project, tr.logPath)}`);
+  const trellisResult = tr.ok ? "ok" : tr.error ? `${tr.error.code || "launch error"}: ${tr.error.message}` : tr.signal ? `signal ${tr.signal}` : tr.code == null ? "interrupted" : `exit ${tr.code}`;
+  out(`  trellis init: ${trellisResult} (via ${tr.via}); log: ${path.relative(project, tr.logPath)}`);
   if (tr.conflicts.length) {
     out(`  ⚠ ${tr.conflicts.length} conflict(s) between MAW and trellis detected (see log):`, false);
     for (const c of tr.conflicts.slice(0, 10)) out(`    - ${path.relative(project, c.file)} (${c.kind})`);

@@ -194,7 +194,7 @@ MAW 預設將你的 cc-switch 視為**唯讀**。以下規則在程式碼中強�
 
 由於 trellis 與 MAW 都能管理檔案，發生衝突時 MAW 會**暫停** trellis init：
 1. **快照** MAW 管理的檔案（`.mawf/*`，排除 `runtime/`／`logs/`）。
-2. **執行** `trellis init -u <user> -y --claude --codex`，將輸出串流至 `.mawf/logs/trellis-init-<timestamp>.log`。
+2. **依終端模式執行 Trellis。** 當 stdin 與 stdout 都連接終端機時，MAW 以繼承的標準串流執行 `trellis init -u <user>`，保留 Trellis 原生提示、鍵盤操作、色彩與即時輸出，並由 Trellis 選擇平台。任一標準串流被重新導向時，MAW 使用 `-y` 加上宿主感知的平台參數維持自動化的確定性，並將 stdout/stderr 記錄到 `.mawf/logs/trellis-init-<timestamp>.log`。互動模式日誌只記錄命令中繼資料與最終結果，不記錄 TUI 轉錄。
 3. **偵測** trellis 動過的任何 MAW 管理檔案 → **暫停**，在終端機印出衝突詳情＋概覽＋日誌路徑。
 4. **你逐項選擇**：`[m]` 保留 MAW（透過 `mawf plan` 重新產生）· `[t]` 保留 trellis · `[r]` 重新執行 trellis init 以**恢復進度**。
 5. MAW 套用你的選擇並繼續。

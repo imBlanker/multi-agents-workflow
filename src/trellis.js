@@ -16,7 +16,7 @@
 //   pre-snapshot MAW files → run trellis init (logged) → post-diff → on any
 //   conflict, pause + prompt + apply the user's choice + re-run trellis init.
 // `detectConflicts`/`applyConflictChoice` are pure and unit-tested separately.
-import { findExecutable, run as spawnSync } from "./platform/index.js";
+import { commandText, findExecutable, run as platformRun } from "./platform/index.js";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -121,14 +121,61 @@ export function trellisPlatformFlags(hostApp) {
 }
 
 /**
- * Run `trellis init -u <user>` (non-interactive `-y`, scoped to the supported
- * hosts via `trellisPlatformFlags`), teeing output to a log file, then detect
- * + report conflicts. If nonInteractive, returns conflicts for the caller to
- * print (no stdin prompt). If interactive and conflicts exist, prompts the
- * user and re-runs trellis init to resume progress.
+ * Build the complete Trellis invocation without launching it. Native prompts
+ * are safe only when both sides of the parent terminal are interactive.
  *
- * @param {{ project: string, user: string, hostApp?: string, nonInteractive?: boolean, timeoutMs?: number }} opts
- * @returns {{ ok: boolean, code: number|null, conflicts: any[], logPath: string, via: string, stdout: string, stderr: string, resumed?: boolean }}
+ * @param {{ user: string, hostApp?: string, nonInteractive?: boolean, stdinIsTTY?: boolean, stdoutIsTTY?: boolean, detection?: { via: "env"|"path"|"npx", bin: string|null, args: string[] } }} opts
+ * @returns {{ command: string, args: string[], interactive: boolean, stdio: "inherit"|["pipe", "pipe", "pipe"], description: string, detection: { via: "env"|"path"|"npx", bin: string|null, args: string[] } }}
+ */
+export function buildTrellisLaunchSpec(opts) {
+  const detection = opts.detection || detectTrellis();
+  const stdinIsTTY = opts.stdinIsTTY ?? process.stdin.isTTY;
+  const stdoutIsTTY = opts.stdoutIsTTY ?? process.stdout.isTTY;
+  const interactive = opts.nonInteractive !== true && stdinIsTTY === true && stdoutIsTTY === true;
+  const trellisArgs = ["init", "-u", opts.user];
+  if (!interactive) trellisArgs.push("-y", ...trellisPlatformFlags(opts.hostApp || ""));
+  const command = detection.via === "npx" ? "npx" : detection.bin;
+  if (!command) throw new Error("Trellis command could not be resolved");
+  const args = detection.via === "npx" ? [...detection.args, ...trellisArgs] : trellisArgs;
+  return {
+    command,
+    args,
+    interactive,
+    stdio: interactive ? "inherit" : ["pipe", "pipe", "pipe"],
+    description: commandText(command, args),
+    detection,
+  };
+}
+
+function childOutput(result) {
+  return { stdout: result.stdout || "", stderr: result.stderr || "" };
+}
+
+function childSucceeded(result) {
+  return result.status === 0 && !result.signal && !result.error;
+}
+
+function appendChildResult(logPath, label, result, conflicts, captureOutput) {
+  const { stdout, stderr } = childOutput(result);
+  if (captureOutput && (stdout || stderr)) {
+    fs.appendFileSync(logPath, `\n# ${label} output\n${stdout}${stderr ? `\n[stderr]\n${stderr}` : ""}`);
+  }
+  const error = result.error ? `${result.error.code || result.error.name || "error"}: ${result.error.message}` : "none";
+  fs.appendFileSync(
+    logPath,
+    `\n# ${label}: code=${result.status == null ? "null" : result.status}, signal=${result.signal || "none"}, error=${error}, conflicts=${conflicts.length}` +
+      (conflicts.length ? "\n# conflicts:\n" + conflicts.map((c) => `- ${c.file} (${c.kind})`).join("\n") : "") +
+      "\n",
+  );
+}
+
+/**
+ * Run `trellis init -u <user>`, preserving Trellis's native TUI only when
+ * parent stdin and stdout are terminals. Automated runs retain `-y`, scoped
+ * platform flags, and captured diagnostics. Then detect + report conflicts.
+ *
+ * @param {{ project: string, user: string, hostApp?: string, nonInteractive?: boolean, timeoutMs?: number, stdinIsTTY?: boolean, stdoutIsTTY?: boolean, detection?: { via: "env"|"path"|"npx", bin: string|null, args: string[] }, runner?: typeof platformRun, promptReader?: () => string }} opts
+ * @returns {{ ok: boolean, code: number|null, signal?: string|null, error?: any, conflicts: any[], logPath: string, via: string, stdout: string, stderr: string, resumed?: boolean }}
  */
 export function runTrellisInit(opts) {
   const project = opts.project;
@@ -138,9 +185,10 @@ export function runTrellisInit(opts) {
   const logPath = path.join(logDir, `trellis-init-${ts}.log`);
   if (!user) return { ok: false, code: null, conflicts: [], logPath, via: "", stdout: "", stderr: "user name required (-u <name>)" };
 
-  const det = detectTrellis();
+  const launch = buildTrellisLaunchSpec(opts);
+  const det = launch.detection;
+  const runner = opts.runner || platformRun;
   const before = snapshotFiles(project);
-  const flags = trellisPlatformFlags(opts.hostApp || "");
   const header = [
     `# MAW → trellis init log`,
     `started: ${isoNow()}`,
@@ -148,36 +196,30 @@ export function runTrellisInit(opts) {
     `user: ${user}`,
     `hostApp: ${opts.hostApp || "(auto)"}`,
     `trellis: ${det.via} ${det.bin || det.args.join(" ")}`,
-    `command: trellis init -u ${user} -y ${flags.join(" ")}`,
+    `mode: ${launch.interactive ? "interactive" : "non-interactive"}`,
+    `command: ${launch.description}`,
     ``,
   ].join("\n");
   writeText(logPath, header);
 
-  let cmd, args;
-  if (det.via === "npx") { cmd = "npx"; args = [...det.args, "init", "-u", user, "-y", ...flags]; }
-  else { cmd = det.bin; args = ["init", "-u", user, "-y", ...flags]; }
-
-  const r = spawnSync(cmd, args, {
+  const runOptions = {
     cwd: project,
     env: process.env,
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
     timeout: opts.timeoutMs ?? 300000,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  const stdout = r.stdout || "";
-  const stderr = r.stderr || "";
-  fs.appendFileSync(logPath, stdout + (stderr ? `\n[stderr]\n${stderr}` : ""));
+    stdio: launch.stdio,
+  };
+  const r = runner(launch.command, launch.args, runOptions);
+  const { stdout, stderr } = childOutput(r);
   const code = r.status;
   const after = snapshotFiles(project);
   const conflicts = detectConflicts(before, after);
-
-  const summary = `\n# finished: code=${code == null ? "signal/timeout" : code}, conflicts=${conflicts.length}` + (conflicts.length ? "\n# conflicts:\n" + conflicts.map((c) => `- ${c.file} (${c.kind})`).join("\n") : "") + "\n";
-  fs.appendFileSync(logPath, summary);
+  appendChildResult(logPath, "finished", r, conflicts, !launch.interactive);
 
   // non-interactive: surface conflicts + log for the caller to print/decide
-  if (opts.nonInteractive || !process.stdin.isTTY) {
-    return { ok: code === 0, code, conflicts, logPath, via: det.via, stdout, stderr };
+  if (!launch.interactive) {
+    return { ok: childSucceeded(r), code, signal: r.signal, error: r.error, conflicts, logPath, via: det.via, stdout, stderr };
   }
 
   // interactive: if conflicts, pause + prompt + resume (re-run)
@@ -186,7 +228,7 @@ export function runTrellisInit(opts) {
     for (const c of conflicts) process.stdout.write(`   - ${path.relative(project, c.file)} (${c.kind})\n`);
     process.stdout.write(`   log: ${path.relative(project, logPath)}\n`);
     process.stdout.write(`   choose: [m] keep MAW (regenerate via mawf plan)  [t] keep trellis  [r] re-run trellis init to resume\n> `);
-    const ans = readLineSync().trim().toLowerCase() || "r";
+    const ans = (opts.promptReader || readLineSync)().trim().toLowerCase() || "r";
     if (ans === "m") {
       // regenerate MAW plan files (caller re-runs mawf plan); here we just note it
       applyConflictChoice("maw");
@@ -194,12 +236,14 @@ export function runTrellisInit(opts) {
       applyConflictChoice("trellis");
     } else {
       // re-run to resume
-      const r2 = spawnSync(cmd, args, { cwd: project, env: process.env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: opts.timeoutMs ?? 300000, stdio: ["pipe", "pipe", "pipe"] });
-      fs.appendFileSync(logPath, `\n# resume run: code=${r2.status}\n${r2.stdout || ""}${r2.stderr ? "\n[stderr]\n" + r2.stderr : ""}`);
-      return { ok: r2.status === 0, code: r2.status, conflicts: detectConflicts(before, snapshotFiles(project)), logPath, via: det.via, stdout: stdout + (r2.stdout || ""), stderr, resumed: true };
+      const r2 = runner(launch.command, launch.args, runOptions);
+      const resumedConflicts = detectConflicts(before, snapshotFiles(project));
+      const resumedOutput = childOutput(r2);
+      appendChildResult(logPath, "resume finished", r2, resumedConflicts, !launch.interactive);
+      return { ok: childSucceeded(r2), code: r2.status, signal: r2.signal, error: r2.error, conflicts: resumedConflicts, logPath, via: det.via, stdout: stdout + resumedOutput.stdout, stderr: stderr + resumedOutput.stderr, resumed: true };
     }
   }
-  return { ok: code === 0, code, conflicts, logPath, via: det.via, stdout, stderr };
+  return { ok: childSucceeded(r), code, signal: r.signal, error: r.error, conflicts, logPath, via: det.via, stdout, stderr };
 }
 
 /** Read one line from stdin synchronously (best-effort; "" if no TTY). */

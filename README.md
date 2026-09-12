@@ -196,7 +196,7 @@ MAW treats your cc-switch as **read-only by default**. The rules below are enfor
 
 Because trellis and MAW can both manage files, on conflict MAW **pauses** trellis init:
 1. **Snapshot** MAW-managed files (`.mawf/*`, excluding `runtime/`/`logs/`).
-2. **Run** `trellis init -u <user> -y --claude --codex`, streaming output to `.mawf/logs/trellis-init-<timestamp>.log`.
+2. **Run Trellis in the terminal's mode.** When both stdin and stdout are terminals, MAW runs `trellis init -u <user>` with inherited streams so Trellis's native prompts, keyboard controls, colors, and live output remain available; Trellis chooses the platforms. If either stream is redirected, MAW keeps deterministic automation with `-y` plus host-aware platform flags and captures stdout/stderr in `.mawf/logs/trellis-init-<timestamp>.log`. Interactive logs contain command metadata and the final result, not a TUI transcript.
 3. **Detect** any MAW-managed file trellis touched → **pause**, print the conflict details + overview + log path in the terminal.
 4. **You choose** per conflict: `[m]` keep MAW (regenerate via `mawf plan`) · `[t]` keep trellis · `[r]` re-run trellis init to **resume progress**.
 5. MAW applies your choice and continues.

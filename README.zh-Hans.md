@@ -194,7 +194,7 @@ MAW 把你的 cc-switch 视为**默认只读**。以下规则在代码中强制�
 
 因为 trellis 与 MAW 都能管理文件，发生冲突时 MAW 会**暂停** trellis init：
 1. **快照** MAW 管理的文件（`.mawf/*`，排除 `runtime/`/`logs/`）。
-2. **运行** `trellis init -u <user> -y --claude --codex`，把输出流式写入 `.mawf/logs/trellis-init-<timestamp>.log`。
+2. **按终端模式运行 Trellis。** 当 stdin 和 stdout 都连接到终端时，MAW 以继承的标准流运行 `trellis init -u <user>`，保留 Trellis 原生提示、键盘操作、颜色和实时输出，并由 Trellis 选择平台。任一标准流被重定向时，MAW 使用 `-y` 加宿主感知的平台参数保持自动化确定性，并把 stdout/stderr 记录到 `.mawf/logs/trellis-init-<timestamp>.log`。交互模式日志只记录命令元数据和最终结果，不记录 TUI 转录。
 3. **检测** trellis 触碰过的任何 MAW 管理文件 → **暂停**，在终端打印冲突详情 + 概览 + 日志路径。
 4. **由你逐个冲突选择**：`[m]` 保留 MAW（通过 `mawf plan` 重新生成）· `[t]` 保留 trellis · `[r]` 重新运行 trellis init 以**恢复进度**。
 5. MAW 应用你的选择并继续。
