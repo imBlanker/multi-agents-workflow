@@ -201,9 +201,11 @@ MAW 預設將你的 cc-switch 視為**唯讀**。以下規則在程式碼中強�
 
 （黑箱 CLI 無法在寫入途中暫停，因此 MAW 在衝突寫入後立即偵測，再透過重新執行冪等的 `trellis init` 來恢復。）見 [`src/trellis.js`](./src/trellis.js)。
 
-**Trellis 更新追蹤器。** 本倉庫的 GitHub Actions 工作流程 [`trellis-update-tracker`](./.github/workflows/trellis-tracker.yml) 會自動追蹤 `@mindfoldhq/trellis` 的更新（每週＋手動觸發）：出現新 npm 版本時，它會開啟一個 `[trellis-tracker]` issue（含版本與連結）並推進 `.github/trellis-tracker/state.json`。唯一例外：**如果 trellis 刪庫**（上游 404），追蹤器會開啟一條 notice issue、暫停追蹤，且工作流程仍然成功——上游恢復後自動恢復追蹤。MAW 透過 `@latest` 呼叫 trellis，因此 MAW 本身無需升級動作；issue 只是提醒人工審閱變更日誌。
+**Trellis 更新追蹤器。** 本倉庫的 GitHub Actions 工作流程 [`trellis-update-tracker`](./.github/workflows/trellis-tracker.yml) 會自動追蹤 `@mindfoldhq/trellis` 的更新（每週＋手動觸發）：出現新 npm 版本時，它會開啟一個 `[trellis-tracker]` issue（含版本與連結）並推進 `.github/trellis-tracker/state.json`。唯一例外：**如果 trellis 刪庫**（上游 404），追蹤器會開啟一條 notice issue、暫停追蹤，且工作流程仍然成功——上游恢復後自動恢復追蹤。`mawf upgrade` 現在會呼叫 Trellis 自己的升級路徑；追蹤 issue 仍用於提醒人工審閱上游變更。
 
 **在 mawf 工作區中，`trellis brainstorm` 執行 grill 版。** `trellis init` 後，mawf 會把 `.agents/skills/trellis-brainstorm/SKILL.md` 換成執行 vendored **grill-with-docs** 面試的包裝器（mattpocock/skills，MIT：`grilling` 輪次/設計樹/frontier + `domain-modeling` 術語表/ADR），同時完整保留 Trellis 規劃契約（任務目錄、PRD 種子、consent 門、`task.py start` 前不寫碼）。術語落入 `CONTEXT.md`，不可逆決策記 ADR，收斂的輪次更新 `prd.md`。逃生門：還原備份於 `.agents/skills/trellis-brainstorm.orig.md` 的原版檔案。`trellis update` 覆寫後 `mawf update` 會重打補丁；`mawf doctor` 標記狀態。
+
+**生命週期串聯。** 在含 `.trellis/` 的專案中，`mawf update` 先更新 MAWF，再於互動終端繼承終端執行 `trellis update`（重新導向時僅使用 `trellis update --skip-all`），最後重新確保 MAWF 管理區塊與 grill 覆蓋層；即使 Trellis 在失敗前已部分寫入，也會執行修復。非 Trellis 專案只明確略過 Trellis 階段。MAWF 的 `--force` 絕不傳給 Trellis。`mawf upgrade` 先完成既有 MAWF 升級／更新，再執行 `trellis upgrade`；啟用專案範本時，接著執行對應的 Trellis 專案更新並修復覆蓋層。`--dry-run` 不寫入地預覽所有適用階段；MAWF 的 `--tag` 不傳給 Trellis；`--no-apply-templates` 略過專案更新但仍升級 Trellis CLI。後續階段失敗會回傳非零並報告已成功階段。`mawf uninstall` 不級聯，保留所有 Trellis 擁有的檔案。
 
 ## 9. 成本控制機制
 來自 cc-switch `proxy_request_logs` 的真實推理消費 → USD/分鐘。**每智慧體** $5/分鐘、**總計** $10/分鐘（獨立）、**最大並發** 16 —— 可在 `.mawf/config.yaml` 或透過旗標編輯。定價來源鏈：cc-switch `model_pricing` → 供應商 `cost_multiplier` → 內建**估計值**（標記 `estimated:true`）→ `null`（絕不偽造）。不經 cc-switch 代理路由的宿主（pi、dsh）沒有可測的消費速率 → 速率限額降級為僅並發；dsh 上的**價格門**仍透過 cc-switch 自動同步的 `~/.cc-switch/model-pricing.json` 生效（命中的模型 id 獲得真實價格，未命中保持未知）。

@@ -27,11 +27,13 @@ import { exists, readText, writeText, ensureDir, isoNow, home } from "./util.js"
  * Order: TRELLIS_BIN env → `trellis` on PATH → `npx --yes @mindfoldhq/trellis@latest`.
  * @returns {{ via: "env"|"path"|"npx", bin: string|null, args: string[] }}
  */
-export function detectTrellis() {
-  if (process.env.TRELLIS_BIN && exists(process.env.TRELLIS_BIN)) {
-    return { via: "env", bin: process.env.TRELLIS_BIN, args: [] };
+export function detectTrellis(opts = {}) {
+  const env = opts.env || process.env;
+  const find = opts.findExecutable || findExecutable;
+  if (env.TRELLIS_BIN && exists(env.TRELLIS_BIN)) {
+    return { via: "env", bin: env.TRELLIS_BIN, args: [] };
   }
-  const p = findExecutable("trellis");
+  const p = find("trellis", { env });
   if (p && exists(p)) return { via: "path", bin: p, args: [] };
   return { via: "npx", bin: null, args: ["--yes", "@mindfoldhq/trellis@latest"] };
 }
@@ -118,6 +120,59 @@ export function trellisPlatformFlags(hostApp) {
     return flags;
   }
   return ["--claude", "--codex"];
+}
+
+/** Build a non-init Trellis lifecycle invocation. */
+export function buildTrellisCommandSpec(opts) {
+  const detection = opts.detection || detectTrellis();
+  const interactive = (opts.stdinIsTTY ?? process.stdin.isTTY) === true &&
+    (opts.stdoutIsTTY ?? process.stdout.isTTY) === true;
+  const trellisArgs = [opts.command];
+  if (opts.dryRun) trellisArgs.push("--dry-run");
+  else if (opts.command === "update" && !interactive) trellisArgs.push("--skip-all");
+  const command = detection.via === "npx" ? "npx" : detection.bin;
+  if (!command) throw new Error("Trellis command could not be resolved");
+  const args = detection.via === "npx" ? [...detection.args, ...trellisArgs] : trellisArgs;
+  const live = opts.command === "upgrade" || interactive || opts.dryRun === true;
+  return {
+    command, args, interactive,
+    mode: live ? "live" : "captured",
+    stdio: live ? "inherit" : ["pipe", "pipe", "pipe"],
+    description: commandText(command, args), detection,
+  };
+}
+
+/** Run a Trellis update/upgrade and retain structured child evidence. */
+export function runTrellisCommand(opts) {
+  let launch;
+  try {
+    launch = buildTrellisCommandSpec(opts);
+  } catch (error) {
+    return {
+      stage: `trellis ${opts.command}`, command: null, args: [], argv: [], mode: "unresolved",
+      status: null, signal: null, error, stdout: "", stderr: "", ok: false, success: false, via: "unresolved",
+    };
+  }
+  const runner = opts.runner || platformRun;
+  let result;
+  try {
+    result = runner(launch.command, launch.args, {
+      cwd: opts.project, env: process.env, encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024, timeout: opts.timeoutMs ?? 300000,
+      stdio: launch.stdio,
+    });
+  } catch (error) {
+    result = { status: null, signal: null, stdout: "", stderr: "", error };
+  }
+  const { stdout, stderr } = childOutput(result);
+  const ok = childSucceeded(result);
+  return {
+    stage: `trellis ${opts.command}`, command: launch.command, args: launch.args,
+    argv: launch.args,
+    mode: launch.mode, status: result.status ?? null, signal: result.signal ?? null,
+    error: result.error, stdout, stderr, ok, success: ok,
+    via: launch.detection.via,
+  };
 }
 
 /**

@@ -17,7 +17,7 @@ import { runReview, shouldReview, status as codexStatus } from "./codex.js";
 import { probeProject } from "./probe.js";
 import { WorkflowGraph, graphFromPlan } from "./graph.js";
 import { createProjectProfile, readRouting, routingPolicy, applyRouting, readProviderQuota, projectSyncEnabled, restoreRoutingFromSnapshot } from "./ccswitch.js";
-import { runTrellisInit } from "./trellis.js";
+import { runTrellisInit, runTrellisCommand } from "./trellis.js";
 import { snapshotCcSwitch } from "./backup.js";
 import { classifyModel, selectModelForRole, candidatesForAppType, baseRole } from "./modelcap.js";
 import { resolvePrice } from "./pricing.js";
@@ -99,7 +99,7 @@ function exit0(o) { if (o?.signal) process.kill(process.pid, o.signal); }
 /**
  * @param {string[]} argv
  */
-export function main(argv = process.argv.slice(2)) {
+export function main(argv = process.argv.slice(2), deps = {}) {
   const a = parse(argv);
   const cmd = a._[0];
   const f = a._.slice(1);
@@ -107,7 +107,10 @@ export function main(argv = process.argv.slice(2)) {
   // --version / -v prints the version regardless of position (standard CLI
   // convention); without this the flag fell through to help.
   // Legacy `.maw` -> `.mawf` migration first (single choke point; idempotent).
-  const mig = migrateLegacyMawDirs({ project: flags.project });
+  // A dry-run must not perform even the otherwise-idempotent legacy rename.
+  const mig = cmd === "upgrade" && flags["dry-run"] === true
+    ? []
+    : (deps.migrateLegacyMawDirs || migrateLegacyMawDirs)({ project: flags.project });
   for (const note of mig) out(`migrated: ${note}`);
   if (flags.version === true) return cmdVersion();
   switch (cmd) {
@@ -130,8 +133,8 @@ export function main(argv = process.argv.slice(2)) {
     case "routing": return cmdRouting(f, flags);
     case "install": return cmdInstall(f, flags);
     case "uninstall": return cmdUninstall(f, flags);
-    case "update": return cmdUpdate(f, flags);
-    case "upgrade": return cmdUpgrade(f, flags);
+    case "update": return cmdUpdate(f, flags, deps);
+    case "upgrade": return cmdUpgrade(f, flags, deps);
     case "doctor": return cmdDoctor(f, flags);
     case "graph": return cmdGraph(f, flags);
     case "version": return cmdVersion();
@@ -198,10 +201,13 @@ Commands:
                 hosts); configs are KEPT unless --purge-config (--keep-config
                 wins if both); --restore-routing rolls cc-switch proxy_config
                 back to the pre-init snapshot
-  update        Reinstall (overwrites templates, keeps user edits)
+  update        Refresh MAWF, then run trellis update in Trellis projects
+                (TTY: native prompts; redirected: exactly --skip-all), then
+                re-ensure MAWF overlays. --force is never passed to Trellis
   upgrade       Self-upgrade: git fetch + ff-only pull (checkout installs);
                 npm i -g <name>@latest (npm installs). --dry-run to preview.
-                Never stashes/rebases/forces; follow up with 'mawf update'
+                Then trellis upgrade + applicable project update. --tag is
+                MAWF-only; --no-apply-templates still upgrades Trellis CLI
   doctor        Environment + capability check
   version       Print version
   help          This message
@@ -878,44 +884,178 @@ function cmdUninstall(f, flags) {
     out(`  routing: pass --restore-routing to roll cc-switch proxy_config (claude/codex) back to the latest pre-MAW snapshot`);
   }
 }
-function cmdUpdate(f, flags) {
-  const r = update({ force: flags.force });
-  try { writeManagedBlocks(flags.project ? path.resolve(flags.project) : process.cwd()); } catch {}
-  out(`updated mawf ${pkgVersion()}`);
-  // grill-swap repair across registered workspaces (a `trellis update` may
-  // have restored the stock trellis-brainstorm; re-apply idempotently)
+
+function structuredOverlayError(operation, target, error) {
+  return {
+    operation,
+    target,
+    code: error?.code || null,
+    message: error?.message || String(error),
+  };
+}
+
+export function repairMawOverlays(project, deps = {}) {
+  const writeBlocks = deps.writeManagedBlocks || writeManagedBlocks;
+  const registry = deps.readRegistry || readRegistry;
+  const watchList = deps.resolveWatchList || resolveWatchList;
+  const status = deps.grillSwapStatus || grillSwapStatus;
+  const apply = deps.applyGrillSwap || applyGrillSwap;
+  const pathExists = deps.exists || exists;
+  let repaired = 0;
+  const errors = [];
+  try { writeBlocks(project); } catch (error) {
+    errors.push(structuredOverlayError("write managed blocks", project, error));
+  }
   try {
-    const list = resolveWatchList(readRegistry(), {}, { exists: (p) => exists(p) });
-    let repaired = 0;
-    for (const { dir } of list) {
-      const st = grillSwapStatus(dir);
-      if (st.trellisBrainstormPresent && (!st.wrapperCurrent || st.missing.length)) {
-        const g = applyGrillSwap(dir);
-        if (g.applied) repaired++;
+    const dirs = new Set([project]);
+    for (const { dir } of watchList(registry(), {}, { exists: (p) => pathExists(p) })) dirs.add(dir);
+    for (const dir of dirs) {
+      try {
+        const st = status(dir);
+        if (st.trellisBrainstormPresent && (!st.wrapperCurrent || st.missing.length)) {
+          const g = apply(dir);
+          if (g.applied) repaired++;
+        }
+      } catch (error) {
+        errors.push(structuredOverlayError("repair grill overlay", dir, error));
       }
     }
-    if (repaired) out(`  grill swap: repaired in ${repaired} registered workspace(s)`);
-  } catch {}
-  for (const c of r.copied) out(`  copied -> ${c}`);
-  if (r.removedStale?.length) {
-    out(`  removed ${r.removedStale.length} stale asset(s) from an older install:`);
-    for (const s of r.removedStale) out(`    - ${s}`);
+  } catch (error) {
+    errors.push(structuredOverlayError("resolve registered workspaces", project, error));
+  }
+  return { ok: errors.length === 0, repaired, errors };
+}
+
+/** Injected lifecycle seam used by isolated order/failure tests. */
+export function runUpdateLifecycle(opts = {}, deps = {}) {
+  const project = opts.project ? path.resolve(opts.project) : process.cwd();
+  const stages = [];
+  let maw;
+  try {
+    maw = (deps.updateMaw || update)({ force: opts.force });
+    stages.push({ stage: "mawf update", ok: true, result: maw });
+  } catch (error) {
+    stages.push({ stage: "mawf update", ok: false, error });
+    return { ok: false, project, stages, maw };
+  }
+
+  const trellisProject = (deps.exists || exists)(path.join(project, ".trellis"));
+  let trellis = null;
+  if (!opts.mawfOnly && trellisProject) {
+    trellis = (deps.runTrellis || runTrellisCommand)({
+      project, command: "update", stdinIsTTY: opts.stdinIsTTY,
+      stdoutIsTTY: opts.stdoutIsTTY, detection: opts.detection, runner: opts.runner,
+    });
+    stages.push(trellis);
+  } else if (!opts.mawfOnly) {
+    stages.push({ stage: "trellis update", ok: true, skipped: true, reason: "not a Trellis project" });
+  }
+
+  // Trellis can write some files before failing, so this must be unconditional.
+  const overlay = (deps.repairOverlays || repairMawOverlays)(project);
+  stages.push({ stage: "mawf overlay repair", ...overlay, ok: overlay.ok !== false });
+  return { ok: trellis?.ok !== false && overlay.ok !== false, project, stages, maw, trellis, overlay };
+}
+
+/** Injected lifecycle seam for MAWF -> Trellis upgrade/update ordering. */
+export function runUpgradeLifecycle(opts = {}, deps = {}) {
+  const project = opts.project ? path.resolve(opts.project) : process.cwd();
+  const dryRun = opts.dryRun === true;
+  const applyTemplates = opts.applyTemplates !== false;
+  const stages = [];
+  const maw = (deps.upgradeMaw || upgrade)({
+    dryRun, remote: opts.remote, applyTemplates, tag: opts.tag,
+  });
+  stages.push({ stage: "mawf upgrade", ok: maw.ok, result: maw });
+  if (!maw.ok) return { ok: false, project, stages, maw };
+
+  const trellisUpgrade = (deps.runTrellis || runTrellisCommand)({
+    project, command: "upgrade", dryRun, detection: opts.detection,
+    runner: opts.runner, stdinIsTTY: opts.stdinIsTTY, stdoutIsTTY: opts.stdoutIsTTY,
+  });
+  stages.push(trellisUpgrade);
+  if (!trellisUpgrade.ok) return { ok: false, project, stages, maw, trellisUpgrade };
+
+  const trellisProject = (deps.exists || exists)(path.join(project, ".trellis"));
+  let trellisUpdate = null;
+  let overlay = null;
+  if (applyTemplates && trellisProject) {
+    trellisUpdate = (deps.runTrellis || runTrellisCommand)({
+      project, command: "update", dryRun, detection: opts.detection,
+      runner: opts.runner, stdinIsTTY: opts.stdinIsTTY, stdoutIsTTY: opts.stdoutIsTTY,
+    });
+    stages.push(trellisUpdate);
+    if (!dryRun) {
+      overlay = (deps.repairOverlays || repairMawOverlays)(project);
+      stages.push({ stage: "mawf overlay repair", ...overlay, ok: overlay.ok !== false });
+    }
+  } else if (applyTemplates && !dryRun) {
+    overlay = (deps.repairOverlays || repairMawOverlays)(project);
+    stages.push({ stage: "mawf overlay repair", ...overlay, ok: overlay.ok !== false });
+  }
+  return { ok: trellisUpdate?.ok !== false && overlay?.ok !== false, project, stages, maw, trellisUpgrade, trellisUpdate, overlay };
+}
+
+function writeOverlayErrors(write, overlay) {
+  for (const error of overlay?.errors || []) {
+    const code = error.code ? ` (${error.code})` : "";
+    write(`  overlay repair error [${error.operation}] ${error.target}${code}: ${error.message}`);
   }
 }
-function cmdUpgrade(f, flags) {
-  const r = upgrade({
-    dryRun: flags["dry-run"] === true,
-    remote: typeof flags.remote === "string" ? flags.remote : undefined,
-    // 0.4.1: templates refresh by default; --no-apply-templates opts out
-    // (explicit opt-out wins over --apply-templates regardless of order).
-    applyTemplates: flags["no-apply-templates"] === true ? false : undefined,
-    tag: typeof flags.tag === "string" ? flags.tag : undefined,
+
+function cmdUpdate(f, flags, deps = {}) {
+  const write = deps.out || out;
+  const r = (deps.runUpdateLifecycle || runUpdateLifecycle)({
+    project: typeof flags.project === "string" ? flags.project : undefined,
+    force: flags.force, mawfOnly: flags["mawf-only"] === true,
   });
-  for (const line of r.output) out(`  ${line}`);
-  if (!r.ok) { out(`upgrade failed: ${r.error}`, false); process.exitCode = 1; return; }
-  if (flags["dry-run"] === true) { out(`upgrade dry-run ok (mode: ${r.mode}; nothing changed)`); return; }
-  out(`upgraded mawf${r.from && r.to ? ` ${r.from} -> ${r.to}` : ""} (mode: ${r.mode}; templates: ${r.appliedTemplates === true ? "refreshed" : r.appliedTemplates === false ? "not refreshed" : "n/a"})`);
-  try { writeManagedBlocks(flags.project ? path.resolve(flags.project) : process.cwd()); } catch {}
+  if (!r.maw) { write(`update failed during MAWF stage`, false); process.exitCode = 1; return; }
+  write(`updated mawf ${pkgVersion()}`);
+  for (const c of r.maw.copied) write(`  copied -> ${c}`);
+  if (r.maw.removedStale?.length) {
+    write(`  removed ${r.maw.removedStale.length} stale asset(s) from an older install:`);
+    for (const s of r.maw.removedStale) write(`    - ${s}`);
+  }
+  if (r.trellis?.stdout) write(r.trellis.stdout.trimEnd());
+  if (r.trellis?.stderr) write(`[trellis stderr] ${r.trellis.stderr.trimEnd()}`);
+  const skipped = r.stages.find((s) => s.stage === "trellis update" && s.skipped);
+  if (skipped) write(`  trellis update: skipped (${skipped.reason}); MAWF update completed`);
+  else if (r.trellis?.ok && r.overlay?.ok !== false) write(`  trellis update: completed; MAWF overlays re-ensured`);
+  if (r.overlay?.repaired) write(`  grill swap: repaired in ${r.overlay.repaired} workspace(s)`);
+  if (!r.ok) {
+    const failures = [];
+    if (r.trellis?.ok === false) failures.push("trellis update failed");
+    if (r.overlay?.ok === false) failures.push("MAWF overlay repair failed");
+    write(`update partially succeeded: MAWF update completed, but ${failures.join(" and ")}`, false);
+    writeOverlayErrors(write, r.overlay);
+    process.exitCode = 1;
+  }
+}
+function cmdUpgrade(f, flags, deps = {}) {
+  const write = deps.out || out;
+  const applyTemplates = flags["no-apply-templates"] !== true;
+  const r = (deps.runUpgradeLifecycle || runUpgradeLifecycle)({
+    project: typeof flags.project === "string" ? flags.project : undefined,
+    dryRun: flags["dry-run"] === true, remote: typeof flags.remote === "string" ? flags.remote : undefined,
+    applyTemplates, tag: typeof flags.tag === "string" ? flags.tag : undefined,
+  });
+  for (const line of r.maw?.output || []) write(`  ${line}`);
+  if (!r.maw?.ok) { write(`upgrade failed during MAWF stage: ${r.maw?.error || "unknown error"}`, false); process.exitCode = 1; return; }
+  if (!r.trellisUpgrade?.ok) { write(`upgrade partially succeeded: MAWF completed, but trellis upgrade failed`, false); process.exitCode = 1; return; }
+  if (r.trellisUpdate?.stdout) write(r.trellisUpdate.stdout.trimEnd());
+  if (r.trellisUpdate?.stderr) write(`[trellis stderr] ${r.trellisUpdate.stderr.trimEnd()}`);
+  if (!r.ok) {
+    const failures = [];
+    if (r.trellisUpdate?.ok === false) failures.push("trellis update failed");
+    if (r.overlay?.ok === false) failures.push("MAWF overlay repair failed");
+    write(`upgrade partially succeeded: MAWF and Trellis CLI upgraded, but ${failures.join(" and ")}`, false);
+    writeOverlayErrors(write, r.overlay);
+    process.exitCode = 1;
+    return;
+  }
+  if (flags["dry-run"] === true) { write(`upgrade dry-run ok (mode: ${r.maw.mode}; nothing changed)`); return; }
+  write(`upgraded mawf${r.maw.from && r.maw.to ? ` ${r.maw.from} -> ${r.maw.to}` : ""} (mode: ${r.maw.mode}; templates: ${r.maw.appliedTemplates === true ? "refreshed" : r.maw.appliedTemplates === false ? "not refreshed" : "n/a"})`);
+  write(`  trellis CLI: upgraded${applyTemplates && r.trellisUpdate ? "; project templates updated; MAWF overlays re-ensured" : "; project templates skipped"}`);
 }
 
 // --- doctor ---

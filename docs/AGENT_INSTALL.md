@@ -122,18 +122,18 @@ npx . uninstall --purge-config [--project <dir>]
 npx . uninstall --restore-routing
                     # rolls cc-switch proxy_config (claude/codex) back to the
                     # latest pre-MAW snapshot (~/.cc-switch/maw-backups/)
-npx . update        # re-copies templates, keeps user edits; ALSO removes
-                    # stale assets an older install left behind (exact v2
-                    # manifest diff — user files are never touched)
-npx . upgrade       # self-upgrade + template refresh BY DEFAULT (0.4.1):
+npx . update        # refreshes MAWF, then Trellis in .trellis projects
+                    # (TTY prompts; redirected uses exactly --skip-all), then
+                    # repairs MAWF blocks/overlay; --force stays MAWF-only
+npx . upgrade       # self-upgrade + template refresh BY DEFAULT:
                     # git fetch + ff-only pull (checkout installs; never
                     # stashes/rebases/forces) or npm i -g (npm installs),
-                    # then spawns the NEW bin/mawf.js update; --dry-run to
-                    # preview; --no-apply-templates to skip the refresh (a
-                    # refresh failure degrades to a warning, never a failed
-                    # upgrade)
+                    # then trellis upgrade + applicable project update;
+                    # --dry-run previews all stages without writes; --tag is
+                    # MAWF-only; --no-apply-templates still upgrades Trellis
+                    # CLI but skips project template updates
 ```
-Uninstall never removes trellis-owned files (`.trellis/`, trellis entries in `.agents/skills` / `.dsh/skills`) — mention them for manual removal. Snapshots under `~/.cc-switch/maw-backups/` are the user's audit trail and are kept.
+Trellis failures after MAWF success are nonzero partial successes; after any possibly-partial Trellis project update MAWF blocks and the grill overlay are repaired. Outside `.trellis/`, update explicitly skips only Trellis. Uninstall never invokes `trellis uninstall` or removes trellis-owned files (`.trellis/`, trellis entries in `.agents/skills` / `.dsh/skills`) — mention them for manual removal. Snapshots under `~/.cc-switch/maw-backups/` are the user's audit trail and are kept.
 
 ## 11. Report back to the user
 After install+plan, tell the user: the architecture chosen, the agents, the cost limits, the routing compliance, and whether the trellis chain succeeded (or what conflict needs resolving). Link the log: `.mawf/logs/trellis-init-*.log`.

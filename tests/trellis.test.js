@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { detectTrellis, mawManagedFiles, snapshotFiles, detectConflicts, applyConflictChoice, trellisPlatformFlags, buildTrellisLaunchSpec, runTrellisInit } from "../src/trellis.js";
+import { detectTrellis, mawManagedFiles, snapshotFiles, detectConflicts, applyConflictChoice, trellisPlatformFlags, buildTrellisLaunchSpec, runTrellisInit, buildTrellisCommandSpec, runTrellisCommand } from "../src/trellis.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "maw-tr-"));
 const project = path.join(tmp, "proj");
@@ -147,6 +147,40 @@ test("interactive npx fallback keeps npx --yes but omits Trellis -y", () => {
   });
   assert.equal(spec.command, "npx");
   assert.deepEqual(spec.args, ["--yes", "@mindfoldhq/trellis@latest", "init", "-u", "alice"]);
+});
+
+test("lifecycle specs preserve update interaction policy and never leak MAWF flags", () => {
+  const detection = { via: "path", bin: "trellis-fixture", args: [] };
+  const interactive = buildTrellisCommandSpec({ command: "update", stdinIsTTY: true, stdoutIsTTY: true, detection });
+  assert.deepEqual(interactive.args, ["update"]);
+  assert.equal(interactive.stdio, "inherit");
+  const redirected = buildTrellisCommandSpec({ command: "update", stdinIsTTY: false, stdoutIsTTY: true, detection });
+  assert.deepEqual(redirected.args, ["update", "--skip-all"]);
+  assert.deepEqual(redirected.stdio, ["pipe", "pipe", "pipe"]);
+  const dry = buildTrellisCommandSpec({ command: "update", dryRun: true, stdinIsTTY: false, stdoutIsTTY: false, detection });
+  assert.deepEqual(dry.args, ["update", "--dry-run"]);
+  assert.equal(dry.stdio, "inherit");
+  const upgrade = buildTrellisCommandSpec({ command: "upgrade", detection });
+  assert.deepEqual(upgrade.args, ["upgrade"]);
+  assert.equal(upgrade.stdio, "inherit");
+});
+
+test("generic lifecycle runner preserves structured nonzero/signal/error evidence", () => {
+  const detection = { via: "npx", bin: null, args: ["--yes", "@mindfoldhq/trellis@latest"] };
+  const calls = [];
+  const result = runTrellisCommand({
+    project: tmp, command: "upgrade", dryRun: true, detection,
+    runner: (command, args, options) => {
+      calls.push({ command, args, options });
+      return { status: 1, signal: "SIGTERM", stdout: "out", stderr: "err", error: new Error("stopped") };
+    },
+  });
+  assert.deepEqual(calls[0].args, ["--yes", "@mindfoldhq/trellis@latest", "upgrade", "--dry-run"]);
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 1);
+  assert.equal(result.signal, "SIGTERM");
+  assert.equal(result.stdout, "out");
+  assert.equal(result.stderr, "err");
 });
 
 test("Trellis logs capture child diagnostics only in non-interactive mode", (t) => {
