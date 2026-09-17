@@ -7,6 +7,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Rapid pushes to the same PR supersede older runs: cancel them instead of
+# paying for queued duplicates (Windows jobs bill at 2x).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 # Permissions follow the principle of least privilege (read-only by default).
 permissions:
   contents: read
@@ -15,11 +21,21 @@ jobs:
   test:
     name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
+    # Bound runaway jobs — the suite needs ~1 min; 10 is a generous ceiling.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         node: ["22.x", "24.x"]
+        # Cost control: Windows bills at 2x — keep ONE Windows cell in the
+        # automatic matrix (Node 24, current LTS line) and cover Node 22 on
+        # Linux (cheap). Full 4-cell coverage stays available via
+        # workflow_dispatch runs (see the extra job below) for pre-release
+        # verification.
+        exclude:
+          - os: windows-latest
+            node: "22.x"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,3 +62,29 @@ jobs:
       - name: Smoke (doctor)
         continue-on-error: true
         run: node bin/mawf.js doctor
+
+  # Full 4-cell matrix, manual only (Actions tab → "Run workflow"): run this
+  # before tagging a release to re-verify Windows × Node 22 without paying
+  # for it on every push.
+  full-matrix:
+    if: github.event_name == 'workflow_dispatch'
+    name: Full matrix (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            node: "22.x"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run tests
+        run: node scripts/run-tests.mjs
+      - name: Smoke (version)
+        run: node bin/mawf.js version
