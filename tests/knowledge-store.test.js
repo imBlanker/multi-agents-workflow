@@ -98,8 +98,8 @@ test("layout: default docs/knowledge when no legacy roots; legacy adopted when p
   const p1 = tmpProject();
   const l1 = resolveLayout(p1);
   assert.equal(l1.legacy.decisions, "default");
-  assert.match(l1.decisions, /docs\/knowledge\/decisions$/);
-  assert.match(l1.solutions, /docs\/knowledge\/solutions$/);
+  assert.equal(l1.decisions, path.join(p1, "docs", "knowledge", "decisions")); // native-path compare, not POSIX regex
+  assert.equal(l1.solutions, path.join(p1, "docs", "knowledge", "solutions"));
 
   const p2 = tmpProject();
   fs.mkdirSync(path.join(p2, ".agents", "notes"), { recursive: true });

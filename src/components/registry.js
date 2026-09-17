@@ -18,12 +18,15 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { readJson, ensureDir, isoNow } from "../util.js";
 
 /** @returns {object} the locked component registry bundled with MAWF */
 export function loadLock() {
   // resolve relative to this module: src/components -> ../../defaults
-  const p = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "defaults", "components.lock.json");
+  // (fileURLToPath is required for Windows native paths — URL.pathname
+  // produces /D:/... garbage there)
+  const p = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "defaults", "components.lock.json");
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
 
