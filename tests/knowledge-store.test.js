@@ -241,3 +241,41 @@ test("rejected/proposed docs carry explicit caveats in context blocks", () => {
   assert.match(block, /NEGATIVE-EXPERIENCE/);
   assert.match(block, /mawf:knowledge-context BEGIN/);
 });
+
+test("sidecar survives walk → index → search: provenance + freshness reach candidates (§7.2)", () => {
+  const store = KnowledgeStore.open(tmpProject());
+  store.create("solution", "runtime/2026-09-10-reconnect.md", SOLUTION_OK, { sourceTask: "task-A", sourceCommit: "abc1234" });
+  const abs = path.join(store.layout.solutions, "runtime/2026-09-10-reconnect.md");
+  store.writeSidecar(abs, { verification: { method: "test", result: "pass" } });
+
+  // walk must carry the sidecar (previous bug: item.sidecar was undefined)
+  const walked = store.walk("solution").find((i) => i.rel === "runtime/2026-09-10-reconnect.md");
+  assert.equal(walked.sidecar.sourceTask, "task-A");
+  assert.equal(walked.sidecar.lastVerified, store.readSidecar(abs).lastVerified);
+
+  const idx = store.buildIndex();
+  const entry = idx.entries.find((e) => e.rel === "runtime/2026-09-10-reconnect.md");
+  assert.equal(entry.id, "sol-2026-09-10-reconnect");
+  assert.ok(entry.sidecar, "index entry must carry sidecar");
+  assert.equal(entry.sidecar.sourceTask, "task-A");
+  assert.equal(entry.sidecar.sourceCommit, "abc1234");
+  assert.ok(entry.sidecar.lastVerified, "index entry must carry lastVerified");
+
+  // full chain: index → search → candidate provenance & freshness
+  const r = searchKnowledge(idx.entries, { q: "重连" });
+  const c = r.candidates.find((x) => x.id === "sol-2026-09-10-reconnect");
+  assert.ok(c, "candidate found");
+  assert.equal(c.provenance.sourceTask, "task-A");
+  assert.ok(c.provenance.lastVerified);
+  assert.deepEqual(c.caveats, [], "verified doc must not be flagged never-verified");
+
+  // editing body WITHOUT explicit verification must not refresh lastVerified
+  const before = entry.sidecar.lastVerified;
+  const cur = store.read("solution", "runtime/2026-09-10-reconnect.md");
+  store.update("solution", "runtime/2026-09-10-reconnect.md", cur.text.replace("重连时强制 snapshot", "重连时强制 snapshot 与校验和"));
+  const idx2 = store.buildIndex();
+  const entry2 = idx2.entries.find((e) => e.rel === "runtime/2026-09-10-reconnect.md");
+  assert.equal(entry2.sidecar.lastVerified, before, "lastVerified frozen without explicit verify");
+  const c2 = searchKnowledge(idx2.entries, { q: "校验和" }).candidates.find((x) => x.id === "sol-2026-09-10-reconnect");
+  assert.equal(c2.provenance.lastVerified, before);
+});

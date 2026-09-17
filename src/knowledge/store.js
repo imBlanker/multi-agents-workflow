@@ -324,17 +324,20 @@ export class KnowledgeStore {
   /**
    * Walk a corpus and yield parse results. Unknown/invalid files are yielded
    * with `parsed.ok=false` — never silently skipped (migration rule §5.1).
+   * Each item carries its sidecar metadata so index/retrieval keep provenance
+   * and freshness (stabilization §7 — a previous version dropped sidecars
+   * here, silently emptying every index entry's verification fields).
    * @param {"decision"|"solution"} kind
    */
   walk(kind) {
     const root = this.dirFor(kind);
-    /** @type {{rel: string, abs: string, text: string, parsed: object}[]} */
+    /** @type {{rel: string, abs: string, text: string, parsed: object, sidecar: object|null}[]} */
     const out = [];
     visit(root, root, (rel, abs) => {
       if (!rel.endsWith(".md")) return;
       if (path.basename(rel).endsWith(SIDECAR_SUFFIX)) return;
       const text = readText(abs);
-      out.push({ rel, abs, text, parsed: parseKnowledgeDoc(text, { kind, relPath: rel }) });
+      out.push({ rel, abs, text, parsed: parseKnowledgeDoc(text, { kind, relPath: rel }), sidecar: this.readSidecar(abs) });
     });
     return out;
   }
