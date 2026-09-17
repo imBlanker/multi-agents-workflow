@@ -13,19 +13,31 @@ The engine is a managed component, NOT the npm `archify` package (that name is a
 
 ```bash
 mawf components status archify   # once the components CLI ships
-mawf archify --help
+mawf archify doctor
 ```
 
-If the component is missing, stop at the gate and tell the user: **requires `mawf components install archify`**. Do not improvise with an untracked engine copy, and do not substitute the DSH-specific bundle (different version, higher Node floor, different snapshot). While the `mawf archify` adapter has not shipped, a locked engine checkout can be invoked directly as `node <component-dir>/bin/archify.mjs <cmd> --json` — record engine version and digest with the artifact.
+If the component is missing, stop at the gate and tell the user: **requires `mawf components install archify --from-file <archive>`**. Do not improvise with an untracked engine copy, and do not substitute the DSH-specific bundle (different version, higher Node floor, different snapshot). During development, a locked engine checkout can be used via `MAWF_ARCHIFY_SRC=<checkout> mawf archify <cmd> ...` — record engine version and digest with the artifact.
 
-## Planned invocation (thin adapter)
+## Invocation — exact locked-engine CLI (raw pass-through)
+
+`mawf archify` forwards argv **verbatim** to the locked engine — it is not a redesigned CLI. Flags, values and order are preserved; use the engine's real grammar (excerpt from the locked commit's own usage; consult `--help` of the resolved engine for full detail):
 
 ```bash
-mawf archify render   <ir> [--out <dir>]    # IR → HTML artifact + receipt
-mawf archify validate <ir> [--repo-root <dir>] [--rev <git-rev>]
-mawf archify deliver  <ir> [--out <dir>]    # validated artifact + delivery receipt
-mawf archify preview  <ir>                  # loopback preview lifecycle
+mawf archify render    <type> <input.json> [output.html] [--quality standard|showcase] [--repo-root <path>]
+mawf archify validate  <type> <input.json> [--json] [--layout-json] [--quality standard|showcase] [--repo-root <path>]
+mawf archify deliver   <type> <input.json> [output.html] [--json] [--open] [--quality ...] [--repo-root <path>]
+mawf archify preview   <type> <input.json> [output.html] [--no-open] [--quality ...]
+mawf archify compare architecture <base.json> <head.json> [out.html] [--receipt <path>] [--json]
+mawf archify check <output.html>          # artifact integrity check
+mawf archify visual-check <output.html> [--json]   # requires Chrome; exit 2 = skipped
+mawf archify migrate workflow <old.json> <new.json> --to-schema 2 [--json]
+mawf archify inspect <type> <input.json>  # architecture/workflow layout dump
+mawf archify doctor
 ```
+
+`<type>` ∈ `architecture | workflow | sequence | dataflow | lifecycle` — the engine **requires** the diagram type as the first argument of render/validate/deliver/preview. JSON receipts (`--json`) are the machine-readable contract; agent-facing summaries must derive from receipts, not from memory.
+
+Forwarded commands (allowlist): `render, validate, deliver, preview, compare, check, inspect, migrate, guide, examples, doctor, demo, visual-check`. `brands` is deliberately NOT forwarded (brand marks include NC-licensed icons).
 
 ## Five diagram types
 

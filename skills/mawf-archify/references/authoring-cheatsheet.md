@@ -17,10 +17,10 @@ Every IR requires `schema_version`, `diagram_type`, `meta` (with `title`). `addi
 ## Minimal authoring loop
 
 1. **Author IR** in the task-local area (task drafts) or `docs/architecture/` (long-lived; the IR is the versioned source).
-2. **Validate**: `mawf archify validate <ir> [--repo-root <dir>] [--rev <rev>]` — structure, geometry, and (architecture only) repo evidence at the pinned revision.
-3. **Render**: `mawf archify render <ir>` — HTML artifact + deterministic receipt. Rendering never requires a browser on the generating host.
+2. **Validate**: `mawf archify validate <type> <input.json> [--quality standard|showcase] [--json] [--repo-root <path>]` — structure, geometry, and (architecture only) repo evidence at the pinned revision. There is no `--rev` flag: the revision comes from `meta.repository` inside the IR (full 40-char commit), verified by the engine against `--repo-root`.
+3. **Render**: `mawf archify render <type> <input.json> [output.html] [--quality ...]` — HTML artifact + deterministic receipt. Rendering never requires a browser on the generating host.
 4. **Visual check (optional, honest)** — real browser at a named viewport, client or CI side; report where it ran.
-5. **Deliver**: `mawf archify deliver <ir>` — delivery receipt; human review happens on the artifact, not the receipt.
+5. **Deliver**: `mawf archify deliver <type> <input.json> [output.html] [--json]` — delivery receipt (spec + artifact SHA-256); human review happens on the artifact, not the receipt.
 
 ## Receipt discipline
 
