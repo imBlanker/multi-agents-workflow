@@ -15,6 +15,7 @@ import {
   SshTransport,
   buildSshArgs,
   classifySshFailure,
+  FIXED_REMOTE_COMMAND, validateRemoteCommand,
 } from "../src/workspace/ssh.js";
 import { CAPABILITIES, ERR, MAX_FRAME_BYTES, helloServer } from "../src/workspace/protocol.js";
 import { makeWorkspaceRef } from "../src/workspace/ref.js";
@@ -80,24 +81,60 @@ async function waitFor(fn, ms = 2000, what = "condition") {
 }
 
 test("buildSshArgs: fixed options + host alias + remote command only — business params never appear", () => {
-  const args = buildSshArgs({ host: "devbox", remoteCommand: "/opt/mawf/helper.mjs serve" });
+  const args = buildSshArgs({ host: "devbox", remoteCommand: "/opt/mawf/helper.mjs" });
   assert.deepEqual(args, [
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=10",
     "-o", "RequestTTY=no",
-    "--", "devbox", "/opt/mawf/helper.mjs serve",
+    "--", "devbox", "/opt/mawf/helper.mjs",
   ]);
-  const noBatch = buildSshArgs({ host: "devbox", remoteCommand: "x serve", batchMode: false });
+  // the MAWF-owned fixed entry (with spaces) is the sanctioned default
+  assert.deepEqual(
+    buildSshArgs({ host: "devbox", remoteCommand: FIXED_REMOTE_COMMAND }).slice(-2),
+    ["devbox", FIXED_REMOTE_COMMAND],
+  );
+  const noBatch = buildSshArgs({ host: "devbox", remoteCommand: "/opt/mawf/helper.mjs", batchMode: false });
   assert.ok(!noBatch.includes("BatchMode=yes"), "BatchMode only when requested");
   assert.equal(noBatch.filter((x) => x.startsWith("-o")).length, 2);
   assert.ok(
-    buildSshArgs({ host: "d", remoteCommand: "x", connectTimeoutMs: 250 }).includes("ConnectTimeout=1"),
+    buildSshArgs({ host: "d", remoteCommand: "/x", connectTimeoutMs: 250 }).includes("ConnectTimeout=1"),
     "sub-second timeout clamps to 1s (ssh granularity)",
   );
   for (const bad of ["-oProxyCommand=evil", "host with space", "host\nx", ""]) {
-    assert.throws(() => buildSshArgs({ host: bad, remoteCommand: "x serve" }), /host/);
+    assert.throws(() => buildSshArgs({ host: bad, remoteCommand: "/x" }), /host/);
   }
-  assert.throws(() => buildSshArgs({ host: "d", remoteCommand: "x\ny" }), /remoteCommand/);
+});
+
+test("remote command boundary: shell metacharacters and traversal are rejected (§12.2)", () => {
+  const payloads = [
+    "/opt/x; rm -rf /",            // command chaining
+    "/opt/x && curl evil",          // chaining
+    "/opt/$(whoami)",               // command substitution
+    "/opt/`id`",                    // backtick substitution
+    "/opt/a|b",                     // pipe
+    "/opt/a&b",                     // background
+    "/opt/my helper.mjs",           // space (would split into two shell words)
+    "/opt/'quoted'",                // quotes
+    "/opt/\"dq\"",                  // double quotes
+    "/opt/$HOME/bin",               // variable expansion
+    "/opt/*",                        // glob
+    "/opt/~x",                       // tilde expansion
+    "/opt/a\nb",                     // CR/LF injection
+    "/opt/a\rb",                     // CR injection
+    "mawf bridge serve; extra",     // fixed-string prefix games
+    "relative/path.mjs",             // must be absolute
+    "/opt/../etc/passwd",            // traversal
+    "/opt//double//slash",           // empty segments
+    "/opt/x\0y",                     // NUL
+  ];
+  for (const p of payloads) {
+    assert.throws(() => validateRemoteCommand(p), Error, `must reject: ${JSON.stringify(p)}`);
+    assert.throws(() => buildSshArgs({ host: "d", remoteCommand: p }), Error, `buildSshArgs must reject: ${JSON.stringify(p)}`);
+  }
+  // allowed forms
+  assert.equal(validateRemoteCommand(FIXED_REMOTE_COMMAND), FIXED_REMOTE_COMMAND);
+  assert.equal(validateRemoteCommand("/opt/mawf/helper.mjs"), "/opt/mawf/helper.mjs");
+  assert.equal(validateRemoteCommand("/opt/mawf.helpers/bridge-v1.mjs"), "/opt/mawf.helpers/bridge-v1.mjs");
 });
 
 test("missing helperPath fails with a structured diagnostic suggesting install-helper", async () => {

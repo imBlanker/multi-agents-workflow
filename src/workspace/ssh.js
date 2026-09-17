@@ -3,8 +3,10 @@
 // bridge protocol over its stdin/stdout (contract §8.1–§8.2).
 //
 // Security rules (contract §8.1):
-// - Only the host alias and a FIXED remote command token ("<helperPath> serve")
-//   may be argv items. Workspace paths, queries and every other business
+// - Only the host alias and a FIXED remote entry may be argv items; the
+//   entry is either the MAWF-owned fixed command or a strictly-validated
+//   install-record helper path (stabilization §12.2). Workspace paths,
+//   queries and every other business
 //   parameter travel through stdin as protocol frames — they are NEVER
 //   interpolated into the command line.
 // - The user's ~/.ssh/config, known_hosts, agent and existing ControlMaster
@@ -66,10 +68,52 @@ export const SSH_FAILURE = Object.freeze({
  * options + host alias + "--" + the fixed remote command token. Workspace
  * paths/queries never appear here (they travel via stdin frames).
  *
+ * The remote entry is either the MAWF-owned FIXED_REMOTE_COMMAND or a
+ * helper path validated by validateRemoteCommand (charset gate; §12.2).
+ *
  * @param {{host: string, remoteCommand: string, batchMode?: boolean,
  *           connectTimeoutMs?: number}} p
  * @returns {string[]} argv items to pass after the ssh binary
  */
+
+/**
+ * Fixed remote entry used when no explicit helper path is installed:
+ * `mawf bridge serve` resolved on the remote PATH by the remote login shell.
+ * This string is owned by MAWF - it is never built from user, workspace or
+ * project input (stabilization section 12.2). Dynamic parameters travel via
+ * the stdin protocol, never through the command line.
+ */
+export const FIXED_REMOTE_COMMAND = "mawf bridge serve";
+
+/**
+ * Strict validation for the remote entry. Allowed forms:
+ *  1. the exact FIXED_REMOTE_COMMAND (spaces are part of the owned string), or
+ *  2. an absolute helper path from MAWF's own install record matching a
+ *     restrictive charset - no shell metacharacters survive: only
+ *     [A-Za-z0-9._/-], no spaces, quotes, $, backticks, ;|&()<>*?~!#,
+ *     no '..' segments, no CR/LF/NUL, no leading '-' (option injection).
+ * Callers must not pass arbitrary strings; helper paths come exclusively from
+ * the remote helper installation record written by `mawf bridge install-helper`.
+ * @param {string} cmd
+ * @returns {string} the validated command (unchanged)
+ */
+export function validateRemoteCommand(cmd) {
+  if (cmd === FIXED_REMOTE_COMMAND) return cmd;
+  if (typeof cmd !== "string" || cmd.length === 0) {
+    throw new Error("remote command is required (fixed entry or install-record helper path)");
+  }
+  if (!cmd.startsWith("/")) {
+    throw new Error(`remote helper path must be absolute: ${JSON.stringify(cmd)}`);
+  }
+  if (!/^[A-Za-z0-9._/-]+$/.test(cmd)) {
+    throw new Error(`remote helper path contains characters outside the safe set [A-Za-z0-9._/-]: ${JSON.stringify(cmd)}`);
+  }
+  const segments = cmd.split("/").slice(1);
+  if (segments.some((s) => s === ".." || s === "")) {
+    throw new Error(`remote helper path must not contain '..' or empty segments: ${JSON.stringify(cmd)}`);
+  }
+  return cmd;
+}
 export function buildSshArgs({ host, remoteCommand, batchMode = true, connectTimeoutMs = 10000 }) {
   if (typeof host !== "string" || host.length === 0) {
     throw new Error("ssh host (alias or hostname) is required");
@@ -83,9 +127,7 @@ export function buildSshArgs({ host, remoteCommand, batchMode = true, connectTim
   if (typeof remoteCommand !== "string" || remoteCommand.length === 0) {
     throw new Error("remoteCommand (fixed helper entry) is required");
   }
-  if (/[\r\n\0]/.test(remoteCommand)) {
-    throw new Error("remoteCommand must be a single token without CR/LF/NUL");
-  }
+  validateRemoteCommand(remoteCommand); // shell-metacharacter gate (stabilization 12.2)
   let ms = Number(connectTimeoutMs);
   if (!Number.isFinite(ms) || ms <= 0) ms = 10000;
   const seconds = Math.max(1, Math.ceil(ms / 1000));
@@ -265,7 +307,10 @@ export class SshTransport extends EventEmitter {
       try {
         argv = this._argvBuilder({
           host: endpoint.host,
-          remoteCommand: `${helperPath} serve`,
+          // Fixed owned entry by default; an explicit helper path is only
+          // accepted from MAWF's own install record and passes the strict
+          // charset gate inside buildSshArgs (stabilization 12.2).
+          remoteCommand: helperPath ? String(helperPath) : FIXED_REMOTE_COMMAND,
           batchMode: this._batchMode,
           connectTimeoutMs: this._connectTimeoutMs,
         });
