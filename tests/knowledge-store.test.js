@@ -279,3 +279,58 @@ test("sidecar survives walk → index → search: provenance + freshness reach c
   const c2 = searchKnowledge(idx2.entries, { q: "校验和" }).candidates.find((x) => x.id === "sol-2026-09-10-reconnect");
   assert.equal(c2.provenance.lastVerified, before);
 });
+
+test("archived decisions are mechanically immutable; ordinary update hard-rejects (§8)", () => {
+  const store = KnowledgeStore.open(tmpProject());
+  store.create("decision", "implemented/architecture/2026-01-01-seal.md", DECISION_OK("封印"));
+  const r = store.archiveDecision("implemented/architecture/2026-01-01-seal.md");
+  const dest = "archived/architecture/2026-01-01-seal.md";
+  assert.throws(
+    () => store.update("decision", dest, DECISION_OK("篡改")),
+    (e) => e.code === "KNOWLEDGE_ARCHIVED_IMMUTABLE",
+  );
+  assert.throws(
+    () => store.create("decision", "archived/architecture/2026-01-02-smuggled.md", DECISION_OK("走私")),
+    (e) => e.code === "KNOWLEDGE_ARCHIVED_IMMUTABLE",
+  );
+  // untouched archive passes seal verification
+  assert.deepEqual(store.verifyArchives(), { ok: true, violations: [] });
+});
+
+test("verifyArchives detects tampered content, dangling entries, unregistered files (§8.1)", () => {
+  const store = KnowledgeStore.open(tmpProject());
+  store.create("decision", "implemented/feature/2026-02-01-a.md", DECISION_OK("A"));
+  store.create("decision", "implemented/feature/2026-02-02-b.md", DECISION_OK("B"));
+  store.archiveDecision("implemented/feature/2026-02-01-a.md");
+  store.archiveDecision("implemented/feature/2026-02-02-b.md");
+
+  // 1) tamper with an archived file's body → seal mismatch
+  const tamperedAbs = path.join(store.layout.decisions, "archived/feature/2026-02-01-a.md");
+  fs.writeFileSync(tamperedAbs, fs.readFileSync(tamperedAbs, "utf8").replace("NDJSON", "TAMPERED"));
+  let v = store.verifyArchives();
+  assert.equal(v.ok, false);
+  assert.ok(v.violations.some((x) => x.includes("seal mismatch") && x.includes("2026-02-01-a.md")));
+  fs.writeFileSync(tamperedAbs, fs.readFileSync(tamperedAbs, "utf8").replace("TAMPERED", "NDJSON")); // restore
+
+  // 2) dangling manifest entry (file removed on disk)
+  const manifestPath = path.join(store.layout.decisions, "archived", "manifest.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  fs.rmSync(path.join(store.layout.decisions, "archived/feature/2026-02-02-b.md"));
+  v = store.verifyArchives();
+  assert.equal(v.ok, false);
+  assert.ok(v.violations.some((x) => x.includes("dangling manifest entry")));
+  delete manifest.files["archived/feature/2026-02-02-b.md"];
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+
+  // 3) unregistered archived file (dropped in without a seal)
+  fs.mkdirSync(path.join(store.layout.decisions, "archived/feature"), { recursive: true });
+  fs.copyFileSync(tamperedAbs, path.join(store.layout.decisions, "archived/feature/2026-02-03-unsealed.md"));
+  v = store.verifyArchives();
+  assert.equal(v.ok, false);
+  assert.ok(v.violations.some((x) => x.includes("unregistered archived file")));
+
+  // 4) restored consistency passes
+  v = store.verifyArchives();
+  assert.deepEqual(v, { ok: false, violations: v.violations });
+  assert.ok(v.violations.length >= 1 && v.violations.every((x) => x.includes("unregistered")));
+});

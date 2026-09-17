@@ -202,12 +202,20 @@ export class KnowledgeStore {
 
   /**
    * Atomic create. Fails if the target exists or the document is invalid.
+   * Direct creates under archived/ are rejected — the only lawful path into
+   * the archive is archiveDecision(), which applies the Archived: line and
+   * the manifest seal (stabilization §8).
    * @param {"decision"|"solution"} kind
    * @param {string} relPath
    * @param {string} text
    * @param {{expectedHash?: string, sourceTask?: string, sourceCommit?: string}} [meta]
    */
   create(kind, relPath, text, meta = {}) {
+    if (kind === "decision" && relPath.startsWith("archived/")) {
+      const e = new Error(`knowledge store: direct create under archived/ is forbidden (use archiveDecision): ${relPath}`);
+      e.code = "KNOWLEDGE_ARCHIVED_IMMUTABLE";
+      throw e;
+    }
     const abs = path.join(this.dirFor(kind), relPath);
     const lk = this.lock(`doc:${kind}:${relPath}`);
     try {
@@ -228,8 +236,16 @@ export class KnowledgeStore {
   /**
    * Compare-and-swap update (contract §5.4: two writers must not silently
    * overwrite). expectedHash = hash of the content the caller based edits on.
+   * Archived decisions are sealed and immutable — ordinary update hard-rejects
+   * (stabilization §8); a future repair/migration flow must be a separate,
+   * audited command.
    */
   update(kind, relPath, text, meta = {}) {
+    if (kind === "decision" && relPath.startsWith("archived/")) {
+      const e = new Error(`knowledge store: archived decisions are sealed and immutable (update rejected): ${relPath}`);
+      e.code = "KNOWLEDGE_ARCHIVED_IMMUTABLE";
+      throw e;
+    }
     const abs = path.join(this.dirFor(kind), relPath);
     const lk = this.lock(`doc:${kind}:${relPath}`);
     try {
@@ -308,6 +324,44 @@ export class KnowledgeStore {
     const key = destRel.startsWith("archived/") ? destRel : `archived/${destRel}`;
     manifest.files[key] = `sha256:${contentHash(content)}`;
     atomicWriteJson(manifestPath, manifest);
+  }
+
+  /**
+   * Mechanical archive-seal verification (stabilization §8.1):
+   * - every archived .md is registered in the manifest with a matching SHA-256
+   * - no manifest entry points at a missing file (dangling record)
+   * - no archived file exists unregistered (outside an explicit migration)
+   * @returns {{ok: boolean, violations: string[]}}
+   */
+  verifyArchives() {
+    const violations = [];
+    const archivedDir = path.join(this.layout.decisions, "archived");
+    if (!fs.existsSync(archivedDir)) return { ok: true, violations };
+    const manifest = readJson(path.join(archivedDir, "manifest.json"), null);
+    if (!manifest || typeof manifest !== "object" || !manifest.files) {
+      return { ok: false, violations: ["archived/manifest.json missing or malformed"] };
+    }
+    const entries = manifest.files ?? {};
+    const sealOf = (v) => (typeof v === "string" && v.startsWith("sha256:") ? v.slice(7) : null);
+    // 1) manifest → disk: no dangling records, SHA matches
+    for (const [rel, seal] of Object.entries(entries)) {
+      const abs = path.join(this.layout.decisions, rel);
+      if (!fs.existsSync(abs)) {
+        violations.push(`dangling manifest entry (file missing): ${rel}`);
+        continue;
+      }
+      const hash = contentHash(readText(abs));
+      const sealed = sealOf(seal);
+      if (!sealed) violations.push(`malformed seal (expected sha256:<hex>): ${rel}`);
+      else if (sealed !== hash) violations.push(`seal mismatch (content changed after archival): ${rel}`);
+    }
+    // 2) disk → manifest: every archived .md registered (sidecars exempt)
+    visit(archivedDir, archivedDir, (rel, abs) => {
+      if (!rel.endsWith(".md") || path.basename(rel).endsWith(SIDECAR_SUFFIX)) return;
+      const key = `archived/${rel.split(path.sep).join("/")}`;
+      if (!(key in entries)) violations.push(`unregistered archived file (no seal): ${key}`);
+    });
+    return { ok: violations.length === 0, violations };
   }
 
   /** Notes whose relative links point at `fromRel` (pre-move links). */

@@ -3,6 +3,7 @@
 // Subcommands: status | list | search | context | verify | reindex
 // Contract: contract §5 (store), §6 (retrieval/budget). JSON output via --json.
 
+import fs from "node:fs";
 import path from "node:path";
 import { KnowledgeStore, PROBLEM_TYPES, SEVERITIES } from "./store.js";
 import { searchKnowledge, renderContextBlock } from "./search.js";
@@ -119,21 +120,52 @@ export function runKnowledge(f, flags) {
     }
 
     case "verify": {
-      // Mechanical structural verification across both corpora (A03/A05 gate).
+      // Mechanical verification (stabilization §9): schema/format, path
+      // grammar, status/folder consistency (via schema parse), relative-link
+      // existence + root containment, duplicate stable ids, archive seals.
       const kinds = flags.kind === "decision" || flags.kind === "solution"
         ? [flags.kind] : ["decision", "solution"];
       let bad = 0;
       const report = [];
+      /** duplicate stable-id detection across the whole store */
+      const seenIds = new Map();
       for (const kind of kinds) {
         for (const item of store.walk(kind)) {
           if (!item.parsed.ok) {
             bad++;
             report.push({ kind, rel: item.rel, errors: item.parsed.errors });
+            continue;
+          }
+          const stableId = store.stableId(kind, item.rel, item.abs, item.parsed);
+          const prev = seenIds.get(stableId);
+          if (prev) {
+            bad++;
+            report.push({ kind, rel: item.rel, errors: [{ code: "duplicate-id", message: `stable id '${stableId}' already used by ${prev}` }] });
+          } else seenIds.set(stableId, item.rel);
+          // relative-markdown-link existence + containment in the kind root
+          const rootAbs = path.resolve(store.dirFor(kind));
+          for (const link of item.parsed.doc.outLinks ?? []) {
+            const target = path.resolve(rootAbs, link);
+            if (!target.startsWith(rootAbs + path.sep)) {
+              bad++;
+              report.push({ kind, rel: item.rel, errors: [{ code: "link-escape", message: `link escapes knowledge root: ${link}` }] });
+              continue;
+            }
+            if (!fs.existsSync(target)) {
+              bad++;
+              report.push({ kind, rel: item.rel, errors: [{ code: "link", message: `broken relative link: ${link}` }] });
+            }
           }
         }
       }
-      if (asJson) console.log(JSON.stringify({ ok: bad === 0, checked: "all", invalid: report }, null, 2));
-      else if (bad === 0) console.log(`knowledge verify: OK (${kinds.join(" + ")})`);
+      // archive seal verification (decisions corpus)
+      const archives = store.verifyArchives();
+      for (const v of archives.violations) {
+        bad++;
+        report.push({ kind: "decision", rel: v, errors: [{ code: "archive-seal", message: v }] });
+      }
+      if (asJson) console.log(JSON.stringify({ ok: bad === 0, invalid: report }, null, 2));
+      else if (bad === 0) console.log(`knowledge verify: OK (${kinds.join(" + ")}, archive seals checked)`);
       else {
         for (const r of report) {
           console.error(`${r.kind} ${r.rel}:`);
