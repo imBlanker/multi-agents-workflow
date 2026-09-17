@@ -32,6 +32,7 @@ import { applyGrillSwap, grillSwapStatus } from "./grillswap.js";
 import { readRegistry, resolveWatchList } from "./watchdog/registry.js";
 import { adviseTask, checkFreshness, renderAdvise, deriveTaskProfile } from "./advise.js";
 import { runKnowledge } from "./knowledge/cli.js";
+import { runBridge } from "./workspace/cli.js";
 import { runArchify } from "./archify.js";
 import { runComponents } from "./components/cli.js";
 import { loadCatalog, detectPool, deriveStages, judgePool, renderPool, readPoolState, recordJudgment } from "./pool.js";
@@ -146,6 +147,7 @@ export function main(argv = process.argv.slice(2), deps = {}) {
     case "doctor": return cmdDoctor(f, flags);
     case "graph": return cmdGraph(f, flags);
     case "knowledge": return runKnowledge(f, flags);
+    case "bridge": return runBridge(f, flags);
     case "components": return runComponents(f, flags);
     case "version": return cmdVersion();
     case "help": case undefined: return cmdHelp();
@@ -218,6 +220,9 @@ Commands:
                 npm i -g <name>@latest (npm installs). --dry-run to preview.
                 Then trellis upgrade + applicable project update. --tag is
                 MAWF-only; --no-apply-templates still upgrades Trellis CLI
+  bridge        Workspace bridge: serve (NDJSON stdio read-only RPC over the
+                authorized project root; typed providers only, no exec) and
+                machine-id (print/provision the stable machine id)
   doctor        Environment + capability check
   version       Print version
   help          This message
