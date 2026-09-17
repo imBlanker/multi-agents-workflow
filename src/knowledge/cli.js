@@ -9,6 +9,32 @@ import { KnowledgeStore, PROBLEM_TYPES, SEVERITIES } from "./store.js";
 import { searchKnowledge, renderContextBlock } from "./search.js";
 
 /**
+ * CLI boundary for store errors: structured, actionable, non-crashing exits.
+ * CAS conflicts get the current hash so the caller can rebase their edit.
+ */
+function wrapStoreErrors(fn) {
+  try {
+    return fn();
+  } catch (e) {
+    if (e.code === "KNOWLEDGE_CAS_CONFLICT") {
+      console.error(`knowledge store: conflict — content changed since read. Current hash: ${e.currentHash}`);
+      console.error(`Re-read with 'mawf knowledge get', rebase your edit, retry with --expected-hash ${e.currentHash}`);
+      return 4;
+    }
+    if (e.code === "KNOWLEDGE_LOCK_BUSY") {
+      console.error(`knowledge store: ${e.message}`);
+      return 5;
+    }
+    if (e.code === "KNOWLEDGE_ARCHIVED_IMMUTABLE") {
+      console.error(`knowledge store: ${e.message}`);
+      return 6;
+    }
+    console.error(`knowledge store: ${e.message}`);
+    return 1;
+  }
+}
+
+/**
  * Entry used from index.js: `knowledge <sub> [args]`.
  * @param {string[]} f positional args after the subcommand name is stripped by caller? No:
  *        f = all args after "knowledge" (e.g. ["search", "query", ...])
@@ -181,8 +207,93 @@ export function runKnowledge(f, flags) {
       return 0;
     }
 
+    case "get": {
+      // Writer-API read: returns the doc with its CAS base hash so callers can
+      // edit + update() without racing other writers (stabilization §10).
+      const [kind, relPath] = rest;
+      if (!kind || !relPath || (kind !== "decision" && kind !== "solution")) {
+        console.error("usage: mawf knowledge get <decision|solution> <relPath> [--json]");
+        return 2;
+      }
+      const r = store.read(kind, relPath);
+      if (asJson) {
+        console.log(JSON.stringify({ relPath, hash: r.hash, sidecar: r.sidecar, valid: r.parsed.ok, errors: r.parsed.ok ? [] : r.parsed.errors, text: r.text }, null, 2));
+      } else {
+        console.log(`# hash: ${r.hash}`);
+        console.log(r.text);
+      }
+      return 0;
+    }
+
+    case "create": {
+      // Durable-write path: the agent authors a CANDIDATE temp file, then
+      // commits it through the store (CAS/lock/sidecar/index all apply).
+      // Writing canonical files directly bypasses these guarantees and is
+      // never the sanctioned route (stabilization §10).
+      const [kind, relPath] = rest;
+      const file = flags.file;
+      if (!kind || !relPath || !file || (kind !== "decision" && kind !== "solution")) {
+        console.error("usage: mawf knowledge create <decision|solution> <relPath> --file <candidate.md> [--source-task t] [--source-commit c]");
+        return 2;
+      }
+      const text = fs.readFileSync(path.resolve(file), "utf8");
+      const r = wrapStoreErrors(() => store.create(kind, relPath, text, { sourceTask: flags["source-task"], sourceCommit: flags["source-commit"] }));
+      if (typeof r === "number") return r;
+      console.log(`created ${kind} ${relPath} -> ${r.abs}`);
+      return 0;
+    }
+
+    case "update": {
+      const [kind, relPath] = rest;
+      const file = flags.file;
+      if (!kind || !relPath || !file || (kind !== "decision" && kind !== "solution")) {
+        console.error("usage: mawf knowledge update <decision|solution> <relPath> --file <candidate.md> [--expected-hash <hash>] [--verify-method m --verify-result r]");
+        return 2;
+      }
+      const text = fs.readFileSync(path.resolve(file), "utf8");
+      const sidecar = flags["verify-method"]
+        ? { verification: { method: String(flags["verify-method"]), result: String(flags["verify-result"] ?? "pass") } }
+        : undefined;
+      const r = wrapStoreErrors(() => store.update(kind, relPath, text, { expectedHash: flags["expected-hash"], sidecar }));
+      if (typeof r === "number") return r;
+      console.log(`updated ${kind} ${relPath} (hash ${r.hash.slice(0, 12)}…)`);
+      return 0;
+    }
+
+    case "archive": {
+      const [relPath] = rest;
+      if (!relPath) {
+        console.error("usage: mawf knowledge archive <implemented/<class>/<file>.md> [--superseded-by <relPath>]");
+        return 2;
+      }
+      const r = wrapStoreErrors(() => store.archiveDecision(relPath, { supersededBy: flags["superseded-by"] }));
+      if (typeof r === "number") return r;
+      if (asJson) console.log(JSON.stringify(r, null, 2));
+      else {
+        console.log(`archived: ${r.from} -> ${r.to} (Archived: ${r.archivedDate})`);
+        if (r.inbound.length) console.log(`inbound links to review: ${r.inbound.join(", ")}`);
+      }
+      return 0;
+    }
+
+    case "verify-doc": {
+      const [kind, relPath] = rest;
+      if (!kind || !relPath || (kind !== "decision" && kind !== "solution")) {
+        console.error("usage: mawf knowledge verify-doc <decision|solution> <relPath>");
+        return 2;
+      }
+      const r = store.read(kind, relPath);
+      if (r.parsed.ok) {
+        console.log(`verify-doc: OK ${kind} ${relPath}`);
+        return 0;
+      }
+      for (const e of r.parsed.errors) console.error(`  - [${e.code}] ${e.message}`);
+      return 1;
+    }
+
     default:
-      console.error("usage: mawf knowledge <status|list|search|context|verify|reindex> [--project dir] [--json]");
+      console.error("usage: mawf knowledge <status|list|search|context|verify|reindex|get|create|update|archive|verify-doc> [--project dir] [--json]");
+      console.error("  durable writes (create/update/archive) MUST go through this CLI so CAS, locks, sidecars and seals hold; direct file writes bypass them and are not sanctioned");
       console.error(`  solution frontmatter enums: problem_type ∈ ${PROBLEM_TYPES.length} values, severity ∈ ${SEVERITIES.join("|")}`);
       return 2;
   }
