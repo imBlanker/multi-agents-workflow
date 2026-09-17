@@ -153,6 +153,13 @@ function startServe(extraArgs = []) {
       const t = setTimeout(res, 3000);
       child.once("exit", () => { clearTimeout(t); res(); });
     });
+    // Windows: a killed child's stdio pipes can keep the test runner's event
+    // loop alive AFTER the suite finishes — destroy the streams and unref so
+    // the process can exit (post-suite hang class).
+    for (const s of [child.stdin, child.stdout, child.stderr]) {
+      try { s?.destroy(); } catch { /* already destroyed */ }
+    }
+    try { child.unref(); } catch { /* n/a */ }
   };
   return { child, send, request, awaitMsg, close, stderrText: () => stderr.join("") };
 }

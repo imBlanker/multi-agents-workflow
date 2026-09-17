@@ -128,6 +128,10 @@ function startCompanion(extraArgs = []) {
       const t = setTimeout(res, 3000); // Windows CI: exit events can be flaky
       child.once("exit", () => { clearTimeout(t); res(); });
     });
+    for (const s of [child.stdin, child.stdout, child.stderr]) {
+      try { s?.destroy(); } catch { /* already destroyed */ }
+    }
+    try { child.unref(); } catch { /* n/a */ }
   };
   return { child, ready, close, stderrText: () => stderr.join(""), stdoutText: () => stdout.join("") };
 }
