@@ -102,6 +102,11 @@ function exit0(o) { if (o?.signal) process.kill(process.pid, o.signal); }
  * @param {string[]} argv
  */
 export function main(argv = process.argv.slice(2), deps = {}) {
+  // `archify` is a raw pass-through boundary (stabilization §5): everything
+  // after the top-level command belongs to the Archify CLI — MAWF's flag
+  // parser must never see it, or --json/--quality/--repo-root would be
+  // eaten as MAWF flags. Order and flag/value pairs are preserved verbatim.
+  if (argv[0] === "archify") return runArchify(argv.slice(1));
   const a = parse(argv);
   const cmd = a._[0];
   const f = a._.slice(1);
@@ -140,7 +145,6 @@ export function main(argv = process.argv.slice(2), deps = {}) {
     case "doctor": return cmdDoctor(f, flags);
     case "graph": return cmdGraph(f, flags);
     case "knowledge": return runKnowledge(f, flags);
-    case "archify": return runArchify(f);
     case "version": return cmdVersion();
     case "help": case undefined: return cmdHelp();
     default: return cmdUnknown(cmd);

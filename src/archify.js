@@ -65,9 +65,16 @@ function findEngineUnder(dir) {
 /**
  * Run an engine command. Engine stdout/stderr are passed through; exit code
  * is preserved (engine receipts remain authoritative, contract §10.5).
- * @param {string[]} argv full argv after "archify", e.g. ["validate", "workflow", "x.json", "--json"]
+ * RAW-ARGV CONTRACT (stabilization §5): `argv` is forwarded verbatim — the
+ * only transformation MAWF performs is the allowlist check on the first
+ * token. Flags, values and ordering are never re-interpreted here; main()
+ * guarantees they were never parsed as MAWF flags in the first place.
+ * @param {string[]} argv raw Archify argv, e.g. ["validate","workflow","x.json","--quality","showcase","--json"]
+ * @param {{env?: object, spawnFn?: typeof import("node:child_process").spawnSync}} [opts]
  */
-export function runArchify(argv, env = process.env) {
+export function runArchify(argv, opts = {}) {
+  const env = opts.env ?? process.env;
+  const spawnFn = opts.spawnFn ?? spawnSync;
   const cmd = argv[0];
   if (!cmd || !ALLOWED_COMMANDS.has(cmd)) {
     console.error(`mawf archify: command not allowed: ${cmd ?? "(none)"}`);
@@ -81,8 +88,7 @@ export function runArchify(argv, env = process.env) {
   }
   const lock = loadLock();
   const entry = lock.components.find((c) => c.name === "archify");
-  const st = componentStatus(entry, { home: env.MAWF_HOME_OVERRIDE });
   console.error(`[mawf archify] engine: ${resolved.path} (${resolved.source}; locked ${entry.upstream.commit.slice(0, 10)})`);
-  const child = spawnSync(process.execPath, [resolved.path, ...argv], { stdio: "inherit" });
+  const child = spawnFn(process.execPath, [resolved.path, ...argv], { stdio: "inherit" });
   return child.status ?? 1;
 }
