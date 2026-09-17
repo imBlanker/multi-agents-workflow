@@ -35,6 +35,7 @@ import { runKnowledge } from "./knowledge/cli.js";
 import { runBridge } from "./workspace/cli.js";
 import { runCompanionServe } from "./companion/serve.js";
 import { runArchify } from "./archify.js";
+import { runArchifyRegistry } from "./archify-registry.js";
 import { runComponents } from "./components/cli.js";
 import { loadCatalog, detectPool, deriveStages, judgePool, renderPool, readPoolState, recordJudgment } from "./pool.js";
 import { writeManagedBlocks, removeManagedBlocks } from "./injectblock.js";
@@ -151,6 +152,9 @@ export function main(argv = process.argv.slice(2), deps = {}) {
     case "bridge": return runBridge(f, flags);
     case "companion": return runCompanionServe(f, flags);
     case "components": return runComponents(f, flags);
+    // MAWF-owned (rebuildable artifact registry, §10.2) — never reaches the
+    // engine, so normal flag parsing applies.
+    case "archify-registry": return runArchifyRegistry(f, flags);
     case "version": return cmdVersion();
     case "help": case undefined: return cmdHelp();
     default: return cmdUnknown(cmd);
@@ -223,11 +227,18 @@ Commands:
                 Then trellis upgrade + applicable project update. --tag is
                 MAWF-only; --no-apply-templates still upgrades Trellis CLI
   bridge        Workspace bridge: serve (NDJSON stdio read-only RPC over the
-                authorized project root; typed providers only, no exec) and
-                machine-id (print/provision the stable machine id)
+                authorized project root; typed providers only, no exec),
+                machine-id (print/provision the stable machine id),
+                install-helper <alias> (probe the remote over ONE ssh with a
+                fixed node -e probe; record absolute node/mawf entries — no
+                credentials) and status [alias] (informational record list)
   companion     Loopback companion: serve (Notes Board UI + token-authed
                 POST /rpc over the same read-only providers; binds 127.0.0.1
                 only, per-session token printed to stderr)
+  archify-registry  Rebuildable Archify artifact registry (runtime cache):
+                record <ir> <html> [--receipt r] [--task-dir d] [--project p],
+                list [--json] (staleness vs the recorded IR digest — never
+                re-renders; deleting the registry loses nothing)
   doctor        Environment + capability check
   version       Print version
   help          This message

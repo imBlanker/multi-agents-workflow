@@ -75,6 +75,10 @@ function findEngineUnder(dir) {
 export function runArchify(argv, opts = {}) {
   const env = opts.env ?? process.env;
   const spawnFn = opts.spawnFn ?? spawnSync;
+  // MAWF-owned subcommand (contract §10.4 minimal fallback): the preview
+  // state sidecar reader never reaches the engine — intercept it BEFORE the
+  // raw pass-through. Every other command is still forwarded verbatim.
+  if (argv[0] === "preview-state") return runPreviewState(argv.slice(1), opts);
   const cmd = argv[0];
   if (!cmd || !ALLOWED_COMMANDS.has(cmd)) {
     console.error(`mawf archify: command not allowed: ${cmd ?? "(none)"}`);
@@ -91,4 +95,94 @@ export function runArchify(argv, opts = {}) {
   console.error(`[mawf archify] engine: ${resolved.path} (${resolved.source}; locked ${entry.upstream.commit.slice(0, 10)})`);
   const child = spawnFn(process.execPath, [resolved.path, ...argv], { stdio: "inherit" });
   return child.status ?? 1;
+}
+
+// ---------------------------------------------------------------------------
+// Preview state sidecar (contract §10.4, MINIMAL fallback).
+//
+// A preview session (a later, separate step) may write
+//   <ir>.preview-state.json  =  {status: "checking"|"verified"|"needs-fix",
+//                                revision, artifactSha256, at}
+// next to the IR. `mawf archify preview-state <ir>` only READS that sidecar
+// and prints a machine-parsable summary. It never starts or manages preview
+// processes, never renders, and must never be presented as a live preview
+// (§10.4: the fallback must not claim real-time preview).
+
+/** Sidecar path for an IR: `<ir>.preview-state.json` (next to the IR). */
+export function previewStatePath(ir) {
+  return `${path.resolve(String(ir))}.preview-state.json`;
+}
+
+/** Raw sidecar contents; null when absent/unreadable. */
+export function readPreviewState(ir) {
+  return readJson(previewStatePath(ir), null);
+}
+
+/**
+ * `mawf archify preview-state <ir> [--project <p>] [--json]` — MAWF-owned
+ * reader; intercepted in runArchify before the engine pass-through.
+ * --project is accepted for CLI symmetry but the sidecar location is
+ * IR-relative, so it does not affect the result.
+ * @param {string[]} argv args after "preview-state" (raw — MAWF's flag
+ *        parser never sees this subcommand's args)
+ * @param {{out?: (s: string) => void, err?: (s: string) => void}} [opts] output seams (tests)
+ * @returns {number} exit code
+ */
+export function runPreviewState(argv, opts = {}) {
+  const out = opts.out ?? ((t) => process.stdout.write(t));
+  const errOut = opts.err ?? ((t) => process.stderr.write(t));
+  const pos = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--json") continue; // handled below
+    if (a === "--project") {
+      i += 1; // accepted, sidecar is IR-relative — value unused
+      continue;
+    }
+    if (a.startsWith("--")) {
+      errOut(`mawf archify preview-state: unknown option ${a}\n`);
+      return 2;
+    }
+    pos.push(a);
+  }
+  const ir = pos[0];
+  if (!ir || pos.length > 1) {
+    errOut("usage: mawf archify preview-state <ir> [--project <p>] [--json]\n");
+    return 2;
+  }
+  const irAbs = path.resolve(ir);
+  const sidecarPath = previewStatePath(irAbs);
+  // Read the sidecar directly so a MALFORMED file is distinguishable from an
+  // ABSENT one (readJson collapses both to the fallback).
+  let state = null;
+  let malformed = false;
+  try {
+    state = JSON.parse(fs.readFileSync(sidecarPath, "utf8"));
+  } catch (e) {
+    if (e && e.code !== "ENOENT") malformed = true;
+  }
+  const valid = state && typeof state === "object" && typeof state.status === "string" ? state : null;
+  if (valid === null && state !== null) malformed = true; // parsed but wrong shape
+  if (malformed) {
+    errOut(`mawf archify preview-state: sidecar is malformed (reporting as absent): ${sidecarPath}\n`);
+  }
+  const summary = {
+    ir: irAbs,
+    sidecar: sidecarPath,
+    present: Boolean(valid),
+    status: valid ? valid.status : "none",
+    revision: valid?.revision ?? null,
+    artifactSha256: valid?.artifactSha256 ?? null,
+    at: valid?.at ?? null,
+  };
+  if (argv.includes("--json")) {
+    out(`${JSON.stringify(summary, null, 2)}\n`);
+  } else {
+    out(
+      `preview-state: ${summary.status} revision=${summary.revision ?? "-"} ` +
+        `artifactSha256=${summary.artifactSha256 ? `${String(summary.artifactSha256).slice(0, 12)}…` : "-"} at=${summary.at ?? "-"}\n` +
+        `  sidecar: ${sidecarPath}${valid ? "" : " (absent — no preview session has reported for this IR)"}\n`,
+    );
+  }
+  return 0;
 }
