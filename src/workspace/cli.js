@@ -79,6 +79,9 @@ async function bridgeServe(_rest, flags) {
     capabilities: bridgeCapabilities(),
     providers,
   });
+  // Server-initiated frames (runtime subscription events) share the same
+  // protocol-only stdout — never stderr, never interleaved log noise.
+  server.onFrame((line) => process.stdout.write(line));
 
   const rl = readline.createInterface({ input: process.stdin, terminal: false });
   let tail = Promise.resolve();
@@ -96,6 +99,7 @@ async function bridgeServe(_rest, flags) {
   });
   return new Promise((resolve) => {
     rl.on("close", () => {
+      server.close(); // clear provider-owned timers (runtime poll) before flush
       tail.then(
         () => resolve(0),
         () => resolve(0),

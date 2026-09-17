@@ -102,6 +102,12 @@ export class BridgeServer {
     this._epoch = new Map();
     /** @type {Map<string, number>} per-channel last issued seq */
     this._seq = new Map();
+    /** Server-initiated frame sink (attached by the transport; runtime events). */
+    this._sink = null;
+    /** Timers registered by providers (runtime poll); close() clears them. */
+    this._ownedTimers = new Set();
+    /** True after close(); a closed server accepts no new provider timers. */
+    this.closed = false;
   }
 
   /**
@@ -237,5 +243,71 @@ export class BridgeServer {
     const seq = (this._seq.get(channel) ?? -1) + 1;
     this._seq.set(channel, seq);
     return encodeFrame(protoEvent({ channel, epoch, seq, at: opts.at, payload }));
+  }
+
+  // ------------------------------------------------ push/timer/close hooks
+
+  /**
+   * Attach the transport sink that receives server-initiated frames (events
+   * pushed by providers, e.g. the runtime subscription poll). Passing null
+   * detaches. Without a sink, pushFrame() drops frames harmlessly.
+   * @param {null | ((line: string) => void)} sink
+   */
+  onFrame(sink) {
+    this._sink = typeof sink === "function" ? sink : null;
+  }
+
+  /**
+   * Push one server-initiated frame to the attached transport sink.
+   * @param {string} line NDJSON line including the trailing newline
+   * @returns {boolean} true when a sink received the frame
+   */
+  pushFrame(line) {
+    if (this._sink === null) return false;
+    this._sink(line);
+    return true;
+  }
+
+  /**
+   * Current channel binding: epoch and last issued seq (-1 when no event has
+   * been emitted yet). runtime.subscribe returns this as the client's resume
+   * point so the first event (seq = cursor + 1) applies cleanly per the
+   * resumeDecision semantics in protocol.js (contract §8.5).
+   * @param {string} channel
+   * @returns {{epoch: number, cursor: number}}
+   */
+  channelCursor(channel) {
+    return { epoch: this._epoch.get(channel) ?? 0, cursor: this._seq.get(channel) ?? -1 };
+  }
+
+  /**
+   * Register a provider-owned timer with the server; close() clears it.
+   * @param {NodeJS.Timeout} timer
+   * @returns {NodeJS.Timeout} the same timer (fluent)
+   */
+  ownTimer(timer) {
+    this._ownedTimers.add(timer);
+    return timer;
+  }
+
+  /**
+   * Release a previously owned timer (e.g. after unsubscribe) without
+   * touching the server lifecycle.
+   * @param {NodeJS.Timeout} timer
+   */
+  disownTimer(timer) {
+    this._ownedTimers.delete(timer);
+  }
+
+  /**
+   * Close the server: clear every owned provider timer and detach the frame
+   * sink. Idempotent; request routing keeps working afterwards (close only
+   * stops background activity — callers flush pending frames separately).
+   */
+  close() {
+    this.closed = true;
+    for (const timer of this._ownedTimers) clearInterval(timer);
+    this._ownedTimers.clear();
+    this._sink = null;
   }
 }

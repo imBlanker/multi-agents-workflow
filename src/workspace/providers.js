@@ -32,6 +32,10 @@ export const ARTIFACT_CHUNK_MAX_BYTES = 1_000_000;
 export const RELATIONS_MAX_LINES = 200;
 /** tmux metadata probe timeout (fail-open, bounded, read-only). */
 export const TMUX_TIMEOUT_MS = 2000;
+/** runtime.subscribe poll cadence (ms) — the server-instance polling interval. */
+export const RUNTIME_POLL_MS = 2000;
+/** Max concurrent runtime subscribers per server instance. */
+export const RUNTIME_MAX_SUBSCRIBERS = 16;
 
 const ARTIFACT_EXTS = new Set([".html", ".json", ".md"]);
 const TMUX_FORMAT = "#{socket_path}\t#{session_name}\t#{window_name}\t#{pane_id}\t#{pane_pid}\t#{pane_current_command}";
@@ -126,12 +130,172 @@ function sha256File(abs) {
  * @param {{projectDir: string, store: import("../knowledge/store.js").KnowledgeStore,
  *           machineId?: string|null}} p
  *        projectDir is realpath-resolved exactly once (the authorization root).
- * @returns {{workspace: object, project: object, knowledge: object, artifact: object, terminal: object}}
+ * @returns {{workspace: object, project: object, runtime: object, knowledge: object, artifact: object, terminal: object}}
  */
 export function createProviders({ projectDir, store, machineId = null }) {
   const root = fs.realpathSync(path.resolve(projectDir));
   /** per-server-instance snapshot epoch for project.tasks */
   let taskEpoch = 0;
+
+  // ------------------------------------------------- runtime.* (P4.2.2)
+  // Sessions come from Trellis's own persistence (<root>/.trellis/.runtime/
+  // sessions/*.json — fields platform/last_seen_at/current_task; the FILENAME
+  // (sans .json) is the session id). scopedKey deliberately composes
+  // machineId + workspace-root basename + sessionId: a bare session id is
+  // only unique within one workspace, and clients subscribing across several
+  // bridged workspaces need a stable READABLE composite (no new crypto).
+  const RUNTIME_CHANNEL = "runtime";
+  const RUNTIME_SESSIONS_DIR = path.join(root, ".trellis", ".runtime", "sessions");
+  const RUNTIME_INCIDENTS_DIR = path.join(root, ".mawf", "watchdog", "incidents");
+  const machineKey = typeof machineId === "string" && machineId.trim() !== "" ? machineId.trim() : "unknown";
+  /** Runtime state version: 0 = initial baseline, +1 per detected change. */
+  let runtimeEpoch = 0;
+  /** Composite content signature of the sessions dir at last refresh. */
+  let runtimeSig = null;
+  /** Last refreshed runtime payload { sessions, warnings, incidents }. */
+  let runtimeState = null;
+  /** @type {Map<string, {since: number}>} clientId -> subscription record */
+  const runtimeSubs = new Map();
+  /** Shared poll interval handle; null while no subscriber is registered. */
+  let runtimeTimer = null;
+  /** The BridgeServer that owns the poll (set on first subscribe). */
+  let runtimeServer = null;
+
+  /** scopedKey: machine + workspace + session (stable, readable composite). */
+  const runtimeScopedKey = (sessionId) => `${machineKey}:${path.basename(root)}:${sessionId}`;
+
+  /**
+   * Parse one session file into the wire shape; throws on malformed content
+   * (the caller records a warning and skips the file instead of crashing).
+   * @param {string} abs @param {string} sessionId
+   */
+  function readSessionFile(abs, sessionId) {
+    const j = JSON.parse(fs.readFileSync(abs, "utf8"));
+    if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("not a JSON object");
+    return {
+      sessionId,
+      platform: typeof j.platform === "string" ? j.platform : null,
+      currentTask: typeof j.current_task === "string" ? j.current_task : null,
+      lastSeenAt: typeof j.last_seen_at === "string" ? j.last_seen_at : null,
+      scopedKey: runtimeScopedKey(sessionId),
+    };
+  }
+
+  /** Sessions + skip warnings from <root>/.trellis/.runtime/sessions/*.json. */
+  function readRuntimeSessions() {
+    /** @type {Record<string, unknown>[]} */
+    const sessions = [];
+    /** @type {string[]} */
+    const warnings = [];
+    for (const ent of listDir(RUNTIME_SESSIONS_DIR)) {
+      if (!ent.isFile() || !ent.name.endsWith(".json")) continue;
+      try {
+        sessions.push(readSessionFile(path.join(RUNTIME_SESSIONS_DIR, ent.name), ent.name.slice(0, -5)));
+      } catch (e) {
+        warnings.push(`sessions: skipped ${ent.name} (${e instanceof Error ? e.message : String(e)})`);
+      }
+    }
+    sessions.sort((a, b) => String(a.sessionId).localeCompare(String(b.sessionId)));
+    return { sessions, warnings };
+  }
+
+  /**
+   * Count watchdog incidents whose `state` is "open" — the same filter the
+   * watchdog itself uses when re-dispatching (scan.js). Malformed records are
+   * ignored, never fatal.
+   */
+  function countOpenIncidents() {
+    let open = 0;
+    for (const ent of listDir(RUNTIME_INCIDENTS_DIR)) {
+      if (!ent.isFile() || !ent.name.endsWith(".json")) continue;
+      try {
+        const j = JSON.parse(fs.readFileSync(path.join(RUNTIME_INCIDENTS_DIR, ent.name), "utf8"));
+        if (j && typeof j === "object" && !Array.isArray(j) && j.state === "open") open++;
+      } catch {
+        // malformed incident record: not counted, not fatal
+      }
+    }
+    return open;
+  }
+
+  /**
+   * Cheap composite change signature: per-file name + short content hash
+   * (session files are tiny). Sorted so file order never matters.
+   */
+  function runtimeSignature() {
+    /** @type {string[]} */
+    const parts = [];
+    for (const ent of listDir(RUNTIME_SESSIONS_DIR)) {
+      if (!ent.isFile() || !ent.name.endsWith(".json")) continue;
+      try {
+        const digest = createHash("sha256").update(fs.readFileSync(path.join(RUNTIME_SESSIONS_DIR, ent.name))).digest("hex").slice(0, 12);
+        parts.push(`${ent.name}:${digest}`);
+      } catch {
+        parts.push(`${ent.name}:unreadable`); // vanished/unreadable mid-poll
+      }
+    }
+    return parts.sort().join("|");
+  }
+
+  /**
+   * Re-read the runtime dirs; bumps runtimeEpoch when content changed. The
+   * first refresh only establishes the baseline (no event, epoch stays 0).
+   */
+  function refreshRuntime() {
+    const sig = runtimeSignature();
+    if (runtimeState !== null && sig === runtimeSig) return { changed: false, state: runtimeState };
+    const changed = runtimeState !== null;
+    runtimeSig = sig;
+    const read = readRuntimeSessions();
+    runtimeState = { sessions: read.sessions, warnings: read.warnings, incidents: { open: countOpenIncidents() } };
+    if (changed) runtimeEpoch++;
+    return { changed, state: runtimeState };
+  }
+
+  /**
+   * One poll tick: change detected -> bump epoch -> emit ONE event on the
+   * "runtime" channel through the BridgeServer event helper (epoch/seq per
+   * contract §8.5; seq starts at 0 before any snapshot binding). Every step
+   * is guarded — a failed tick must never throw out of a timer callback and
+   * kill the process.
+   */
+  function pollRuntime() {
+    if (runtimeSubs.size === 0) return;
+    let res;
+    try {
+      res = refreshRuntime();
+    } catch {
+      return; // keep the last good state; the next tick retries
+    }
+    if (!res.changed || !runtimeServer) return;
+    try {
+      runtimeServer.pushFrame(runtimeServer.event(RUNTIME_CHANNEL, {
+        kind: "runtime.sessions",
+        epoch: runtimeEpoch,
+        sessions: res.state.sessions,
+        warnings: res.state.warnings,
+        incidents: res.state.incidents,
+      }));
+    } catch {
+      // dropping one event beats killing the pump; the next change re-emits
+    }
+  }
+
+  /** Start the shared poll interval (registered with the server instance). */
+  function startRuntimePolling(server) {
+    runtimeServer = server;
+    if (runtimeTimer !== null) return;
+    runtimeTimer = server.ownTimer(setInterval(pollRuntime, RUNTIME_POLL_MS));
+  }
+
+  /** Stop the shared poll interval (last unsubscribe / server close). */
+  function stopRuntimePolling(server) {
+    if (runtimeTimer === null) return;
+    clearInterval(runtimeTimer);
+    const owner = server ?? runtimeServer;
+    if (owner && typeof owner.disownTimer === "function") owner.disownTimer(runtimeTimer);
+    runtimeTimer = null;
+  }
 
   /**
    * §12.1 authorization: rel must resolve (lexically + symlinks) inside root.
@@ -366,6 +530,61 @@ export function createProviders({ projectDir, store, machineId = null }) {
         }
         groups.sort((a, b) => a.task.localeCompare(b.task));
         return { groups };
+      },
+    },
+
+    // ---------------------------------------------------------- runtime.*
+    runtime: {
+      /**
+       * Runtime snapshot: Trellis sessions + open watchdog incident count.
+       * epoch is the runtime STATE version (0 = baseline, +1 per detected
+       * change) — unlike project.tasks it does not advance on every call.
+       */
+      snapshot: async () => {
+        refreshRuntime();
+        return { epoch: runtimeEpoch, ...runtimeState };
+      },
+
+      /**
+       * Subscribe the calling client (handshake clientId) to runtime change
+       * events on the "runtime" channel: a shared RUNTIME_POLL_MS interval on
+       * the server instance re-reads the sessions dir; on change it bumps the
+       * runtime epoch and emits one event via BridgeServer.event() with the
+       * new payload. Re-subscribing replaces; the 17th distinct subscriber is
+       * refused with a conflict. Returns the current data epoch plus the
+       * channel cursor (last issued seq, -1 before the first event) so the
+       * client's next event applies cleanly per resumeDecision (§8.5).
+       * @param {Record<string, unknown>} _p
+       * @param {{server?: object}} [ctx]
+       */
+      subscribe: async (_p, ctx) => {
+        const server = ctx?.server;
+        if (!server || typeof server.ownTimer !== "function" || typeof server.event !== "function") {
+          throw providerError(ERR.INTERNAL, "runtime.subscribe requires a BridgeServer instance");
+        }
+        if (server.closed) throw providerError(ERR.INTERNAL, "runtime.subscribe: server is closed");
+        const clientId = typeof server.clientId === "string" && server.clientId !== "" ? server.clientId : "anonymous";
+        if (!runtimeSubs.has(clientId) && runtimeSubs.size >= RUNTIME_MAX_SUBSCRIBERS) {
+          throw providerError(ERR.CONFLICT, `runtime.subscribe: subscriber limit ${RUNTIME_MAX_SUBSCRIBERS} reached`);
+        }
+        refreshRuntime(); // baseline for change detection
+        runtimeSubs.set(clientId, { since: Date.now() });
+        startRuntimePolling(server);
+        return { epoch: runtimeEpoch, cursor: server.channelCursor(RUNTIME_CHANNEL).cursor };
+      },
+
+      /**
+       * Stop the calling client's subscription. Unsubscribing the last
+       * subscriber stops the shared poll interval entirely.
+       * @param {Record<string, unknown>} _p
+       * @param {{server?: object}} [ctx]
+       */
+      unsubscribe: async (_p, ctx) => {
+        const server = ctx?.server;
+        const clientId = server && typeof server.clientId === "string" && server.clientId !== "" ? server.clientId : "anonymous";
+        const stopped = runtimeSubs.delete(clientId);
+        if (runtimeSubs.size === 0) stopRuntimePolling(server);
+        return { stopped, subscribers: runtimeSubs.size };
       },
     },
 
