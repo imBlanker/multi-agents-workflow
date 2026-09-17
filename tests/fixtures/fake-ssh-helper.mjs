@@ -77,6 +77,7 @@ const providers = {
 
 const server = new BridgeServer({
   serverId: "fake-helper",
+  machineId: "mid-fake-0001",
   capabilities: Object.values(CAPABILITIES),
   providers,
 });

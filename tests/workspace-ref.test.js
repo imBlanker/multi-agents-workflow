@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   WORKSPACE_REF_VERSION,
+  workspaceKeyFromHandshake,
   makeWorkspaceRef, workspaceKey, sessionKey, displayLabel,
   encodeWorkspaceRef, decodeWorkspaceRef, normalizeRoot, serverId,
 } from "../src/workspace/ref.js";
@@ -82,4 +83,24 @@ test("encode/decode round-trips and rejects tampered refs", () => {
   assert.deepEqual(decoded, ref);
   assert.throws(() => decodeWorkspaceRef(JSON.stringify({ ...ref, refVersion: 99 })));
   assert.throws(() => decodeWorkspaceRef("{not json"));
+});
+
+test("handshake machineId decouples workspace identity from ssh alias (§13)", () => {
+  // two aliases, one real server (same machineId) + same root => same identity
+  const a = makeWorkspaceRef({ endpoint: { kind: "ssh", host: "wsz05-1" }, root: "/srv/proj" });
+  const b = makeWorkspaceRef({ endpoint: { kind: "ssh", host: "gpu-box" }, root: "/srv/proj" });
+  assert.notEqual(workspaceKey(a), workspaceKey(b), "pre-connect keys differ (alias hash)");
+  const machine = { machineId: "mid-9f8e7d" };
+  assert.equal(workspaceKeyFromHandshake(a, machine), workspaceKeyFromHandshake(b, machine),
+    "post-handshake identity unifies on machineId");
+
+  // same alias re-pointed at a different machine => identity MUST change
+  const repointed = workspaceKeyFromHandshake(a, { machineId: "mid-other" });
+  assert.notEqual(workspaceKeyFromHandshake(a, machine), repointed);
+
+  // machineId is required for remote canonicalization
+  assert.throws(() => workspaceKeyFromHandshake(a, {}), /machineId/);
+  // local refs unaffected
+  const local = makeWorkspaceRef({ endpoint: { kind: "local" }, root: "/srv/proj" });
+  assert.equal(workspaceKeyFromHandshake(local, machine), workspaceKey(local));
 });

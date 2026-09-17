@@ -81,11 +81,16 @@ export class BridgeServer {
    * @param {{providers?: {workspace?: object, project?: object, knowledge?: object,
    *                     artifact?: object, runtime?: object, terminal?: object},
    *           capabilities?: string[],
-   *           serverId?: string}} [opts]
+   *           serverId?: string, machineId?: string}} [opts]
    */
   constructor(opts = {}) {
     this.providers = opts.providers ?? {};
     this.serverId = opts.serverId ?? "mawf-bridge";
+    // Stable machine identity (stabilization 13): survives alias changes and
+    // changes when the alias is re-pointed. Servers should derive it from a
+    // registration record (written by `mawf bridge install-helper`), never
+    // from connection parameters.
+    this.machineId = opts.machineId ?? null;
     this.capabilities = [...new Set((opts.capabilities ?? []).filter((c) => typeof c === "string"))].sort();
     /** Set after a successful hello; a refused handshake is terminal. */
     this.handshaked = false;
@@ -156,7 +161,7 @@ export class BridgeServer {
     this.handshaked = true;
     this.clientId = msg.clientId;
     this.negotiated = negotiate(this.capabilities, Array.isArray(msg.capabilities) ? msg.capabilities : []);
-    return [encodeFrame(helloServer({ serverId: this.serverId, accepted: true, capabilities: this.capabilities }))];
+    return [encodeFrame(helloServer({ serverId: this.serverId, machineId: this.machineId ?? this.serverId, accepted: true, capabilities: this.capabilities }))];
   }
 
   /**

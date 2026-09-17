@@ -553,6 +553,9 @@ export class SshTransport extends EventEmitter {
     this._helloTimer = null;
     const info = {
       serverId: String(msg.serverId ?? ""),
+      // Stable machine identity from the remote hello (stabilization §13):
+      // canonical workspace keys must be derived from THIS, not the alias.
+      machineId: typeof msg.machineId === "string" && msg.machineId ? msg.machineId : null,
       capabilities: Array.isArray(msg.capabilities) ? msg.capabilities : [],
       negotiated: this.negotiated,
     };

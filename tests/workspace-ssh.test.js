@@ -68,7 +68,9 @@ function makeFakeChild() {
 async function handshakeFake(t, child, caps = Object.values(CAPABILITIES)) {
   const p = t.connect(ref(), { helperPath: "/opt/mawf/helper.mjs" });
   assert.match(child.written[0], /"type":"hello"/, "client hello is the first frame on stdin");
-  child.stdout.emit("data", frame(helloServer({ serverId: "fake-srv", accepted: true, capabilities: caps })));
+  child.stdout.emit("data", frame(helloServer({ serverId: "fake-srv", machineId: "mid-test-42", accepted: true, capabilities: caps })));
+  const hello = await p;
+  assert.equal(hello.machineId, "mid-test-42", "handshake surfaces the stable machine identity");
   return p;
 }
 

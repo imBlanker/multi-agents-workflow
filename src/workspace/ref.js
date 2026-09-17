@@ -148,6 +148,31 @@ export function makeWorkspaceRef(input) {
 }
 
 /**
+ * Canonical workspace key once the remote handshake is complete: the remote
+ * machineId REPLACES the alias-derived endpoint hash (stabilization 13).
+ * Two aliases reaching one server (same machineId) with the same root share
+ * one identity; one alias re-pointed at another machine changes it.
+ * @param {WorkspaceRef} ref
+ * @param {{machineId: string}} remote hello-provided machine identity
+ * @returns {string}
+ */
+export function workspaceKeyFromHandshake(ref, remote) {
+  assertRef(ref);
+  if (!remote?.machineId || typeof remote.machineId !== "string") {
+    throw new Error("workspaceKeyFromHandshake requires the remote hello machineId");
+  }
+  if (ref.endpoint.kind !== "ssh") return workspaceKey(ref); // local: unchanged
+  const h = createHash("sha256");
+  h.update("mawf-ws-v1\x1f");
+  h.update("ssh\x1f");
+  h.update("mid:");
+  h.update(remote.machineId);
+  h.update("\x1f");
+  h.update(ref.root);
+  return h.digest("hex").slice(0, 24);
+}
+
+/**
  * Stable identity key for a workspace ref: endpoint server + canonical root.
  * Same server reached via two aliases with the same resolved serverId and the
  * same root share a key (alias is a label, not identity). Different servers

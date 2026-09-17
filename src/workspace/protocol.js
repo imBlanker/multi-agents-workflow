@@ -90,8 +90,13 @@ export function helloClient(p) {
 
 /**
  * Server -> client handshake reply (accepts or refuses).
- * @param {{serverId: string, accepted: boolean, protocolVersion?: number,
- *           capabilities?: string[], reason?: string}} p
+ * `machineId` is the server's STABLE machine identity (stabilization §13):
+ * it must not change when the client's ssh alias changes, and must change
+ * when the same alias is re-pointed at another machine. Clients derive the
+ * canonical workspace identity from machineId + canonical root — the ssh
+ * alias (and serverId's pre-connect alias hash) are connection labels only.
+ * @param {{serverId: string, machineId?: string, accepted: boolean,
+ *           protocolVersion?: number, capabilities?: string[], reason?: string}} p
  */
 export function helloServer(p) {
   if (!p?.serverId) throw err(ERR.BAD_MESSAGE, "serverId required");
@@ -102,9 +107,12 @@ export function helloServer(p) {
     accepted: !!p.accepted,
     capabilities: sanitizeCaps(p.capabilities),
   };
+  if (out.accepted) {
+    if (!p.machineId) throw err(ERR.BAD_MESSAGE, "machineId required for accepted hello (stable machine identity)");
+    out.machineId = String(p.machineId);
+  }
   if (!out.accepted) {
-    out.error = err(p.reason === ERR.PROTOCOL_VERSION ? ERR.PROTOCOL_VERSION : ERR.PROTOCOL_VERSION,
-      p.reason ?? "refused");
+    out.error = err(ERR.PROTOCOL_VERSION, p.reason ?? "refused");
   }
   return out;
 }
