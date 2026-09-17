@@ -15,7 +15,8 @@
     "defaults",
     "examples",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "vendor"
   ],
   "scripts": {
     "test": "node scripts/run-tests.mjs",
