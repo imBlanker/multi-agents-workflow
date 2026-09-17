@@ -24,6 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { ensureDir, home, isoNow } from "../util.js";
+import { validateRemoteCommand } from "./ssh.js";
 
 /**
  * Fixed probe program printed by the remote `node -e` invocation.
@@ -250,7 +251,7 @@ export function classifyProbeFailure({
  *            mawfBin: string, mawfVersion: string, remoteMachineHint: string,
  *            recordedAt: string}} | {ok: false, kind: string, message: string}>}
  */
-export function probeRemote({ alias, sshPath = "ssh", spawnFn = nodeSpawn, connectTimeoutMs = 10000, timeoutMs } = {}) {
+export function probeRemote({ alias, sshPath = "ssh", spawnFn = nodeSpawn, connectTimeoutMs = 10000, timeoutMs, overrideMawfBin } = {}) {
   return new Promise((resolve) => {
     /** @type {string[]} */
     let argv;
@@ -313,7 +314,18 @@ export function probeRemote({ alias, sshPath = "ssh", spawnFn = nodeSpawn, conne
         }
       }
       if (json && typeof json === "object" && typeof json.node === "string") {
-        const mawfBin = String(json.mawfBin ?? "");
+        let mawfBin = String(json.mawfBin ?? "");
+        if (!mawfBin && overrideMawfBin) {
+          // Contract §8.2: the remote non-interactive PATH may miss the
+          // npm-global bin dir. A caller that KNOWS the absolute entry may
+          // supply it — same strict charset gate as the transport applies.
+          try {
+            mawfBin = validateRemoteCommand(String(overrideMawfBin));
+          } catch (e) {
+            finish({ ok: false, kind: PROBE_FAILURE.PROBE_FAILED, message: `--mawf-bin rejected: ${e.message}` });
+            return;
+          }
+        }
         if (!mawfBin) {
           finish({ ok: false, ...classifyProbeFailure({ gotJson: true, mawfBin, exitCode: code, alias }) });
           return;
@@ -325,6 +337,7 @@ export function probeRemote({ alias, sshPath = "ssh", spawnFn = nodeSpawn, conne
             nodePath: json.node,
             mawfBin,
             mawfVersion: String(json.mawfVersion ?? ""),
+            ...(overrideMawfBin && mawfBin === String(overrideMawfBin) ? { mawfBinSource: "cli-override" } : {}),
             // os.hostname() as seen by the remote node process — a hint only.
             remoteMachineHint: String(json.hostname ?? ""),
             recordedAt: isoNow(),

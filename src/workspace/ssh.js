@@ -100,6 +100,11 @@ export const FIXED_REMOTE_COMMAND = "mawf bridge serve";
  */
 export function validateRemoteCommand(cmd) {
   if (cmd === FIXED_REMOTE_COMMAND) return cmd;
+  // Composite form written by the transport itself when launching the
+  // install-record mawf entry: "<validated-path> bridge serve".
+  if (typeof cmd === "string" && cmd.endsWith(" bridge serve")) {
+    return validateRemoteCommand(cmd.slice(0, -" bridge serve".length)) + " bridge serve";
+  }
   if (typeof cmd !== "string" || cmd.length === 0) {
     throw new Error("remote command is required (fixed entry or install-record helper path)");
   }
@@ -312,7 +317,9 @@ export class SshTransport extends EventEmitter {
       });
       if (record && typeof record.mawfBin === "string" && record.mawfBin) {
         try {
-          helperPath = validateRemoteCommand(String(record.mawfBin));
+          // The record's mawfBin is a mawf CLI ENTRY (not a standalone
+          // helper): the fixed subcommand suffix is MAWF-owned (§12.2).
+          helperPath = validateRemoteCommand(`${String(record.mawfBin)} bridge serve`);
         } catch (e) {
           this.emit(
             "log",

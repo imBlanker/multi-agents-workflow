@@ -331,3 +331,20 @@ test("close() kills only the child this transport spawned; later requests fail c
   await assert.rejects(t.request("project.list"), (e) => e.code === ERR.INTERNAL);
   t.close(); // double close is a no-op
 });
+
+test("install-record entry composes with the fixed subcommand; override path is charset-gated (§12.2)", () => {
+  // composite "<recorded mawfBin> bridge serve" is transport-written and legal
+  const composite = "/home/u/mawf-repo/bin/mawf.js bridge serve";
+  assert.equal(validateRemoteCommand(composite), composite);
+  // the prefix alone also stays legal (record stores the bare entry)
+  assert.equal(validateRemoteCommand("/home/u/mawf-repo/bin/mawf.js"), "/home/u/mawf-repo/bin/mawf.js");
+  // malicious composites still rejected
+  for (const bad of [
+    "/opt/x bridge serve; rm -rf /",
+    "/opt/'x' bridge serve",
+    "/opt/$x bridge serve",
+    "mawf bridge serve && cat /etc/passwd",
+  ]) {
+    assert.throws(() => validateRemoteCommand(bad), Error, `must reject: ${bad}`);
+  }
+});

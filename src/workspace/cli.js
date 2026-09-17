@@ -160,6 +160,9 @@ export async function bridgeInstallHelper(rest, _flags = {}, deps = {}) {
     spawnFn: deps.spawnFn,
     connectTimeoutMs: deps.connectTimeoutMs,
     timeoutMs: deps.timeoutMs,
+    // §8.2: non-interactive remote PATH often misses npm-global bins; a
+    // caller may supply the known absolute entry (charset-gated).
+    overrideMawfBin: typeof _flags["mawf-bin"] === "string" ? _flags["mawf-bin"] : undefined,
   });
   if (!r.ok) {
     err(`mawf bridge install-helper: probe failed [${r.kind}]\n  ${r.message}\n  no install record written.\n`);

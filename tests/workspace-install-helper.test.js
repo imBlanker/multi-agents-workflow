@@ -247,7 +247,7 @@ test("SshTransport.connect prefers the install-record mawfBin over FIXED_REMOTE_
     assert.equal(spawns.length, 1);
     const idx = spawns[0].args.indexOf("devbox");
     assert.ok(idx > 0, "alias present in argv");
-    assert.equal(spawns[0].args[idx + 1], "/opt/mawf/bin/recorded-mawf", "argv contains the RECORDED absolute path");
+    assert.equal(spawns[0].args[idx + 1], "/opt/mawf/bin/recorded-mawf bridge serve", "argv carries the recorded entry + MAWF-owned fixed subcommand");
   } finally {
     t.close();
   }
@@ -322,4 +322,25 @@ test("install-helper CLI usage errors: missing alias and unsafe alias exit 2 wit
   assert.match(errs.join(""), /alias/);
   assert.equal(spawned, 0, "no ssh spawn for usage errors");
   assert.equal(listInstallRecords({ home }).length, 0);
+});
+
+test("probe overrideMawfBin rescues a node-only remote through the charset gate", async () => {
+  const { probeRemote, PROBE_FAILURE } = await import("../src/workspace/install-record.js");
+  const payload = JSON.stringify({ node: "/usr/bin/node", hostname: "wsz05", mawfBin: "", mawfVersion: "" });
+  const spawnFn = (bin, args) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => {
+      child.stdout.emit("data", Buffer.from(payload + "\n"));
+      child.emit("close", 0);
+    });
+    return child;
+  };
+  const bad = await probeRemote({ alias: "h1", spawnFn, overrideMawfBin: "/opt/x; rm -rf /" });
+  assert.equal(bad.ok, false);
+  const ok = await probeRemote({ alias: "h1", spawnFn, overrideMawfBin: "/opt/mawf/bin/mawf.js" });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.record.mawfBin, "/opt/mawf/bin/mawf.js");
+  assert.equal(ok.record.mawfBinSource, "cli-override");
 });
