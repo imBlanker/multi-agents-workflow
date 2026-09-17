@@ -298,10 +298,17 @@ test("companion serve: SIGINT exits 0; port conflict fails with a clear error", 
     // SIGTERM gracefully to a spawned child (hard terminate) — there we only
     // assert that the process terminates on request; graceful path stays a
     // POSIX guarantee, documented in src/companion/serve.js.
-    first.child.kill("SIGINT");
-    const code = await new Promise((resolve) => first.child.once("exit", (c) => resolve(c)));
-    if (process.platform === "win32") assert.notEqual(code, null, "companion terminates on request");
-    else assert.equal(code, 0, "SIGINT shuts the companion down cleanly");
+    if (process.platform === "win32") {
+      // Windows: SIGINT/SIGTERM are not deliverable to spawned children —
+      // kill() (TerminateProcess) is the only hard stop; assert it terminates.
+      first.child.kill();
+      const code = await new Promise((resolve) => first.child.once("exit", (c) => resolve(c)));
+      assert.notEqual(code, null, "companion terminates on request");
+    } else {
+      first.child.kill("SIGINT");
+      const code = await new Promise((resolve) => first.child.once("exit", (c) => resolve(c)));
+      assert.equal(code, 0, "SIGINT shuts the companion down cleanly");
+    }
   } finally {
     await first.close();
   }
