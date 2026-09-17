@@ -98,8 +98,10 @@ fs.writeFileSync(machineIdPath(homeDir), MACHINE_ID + "\n", { mode: 0o600 });
  * Spawn `mawf bridge serve --project <fixture>` and speak NDJSON to it.
  * Every stdout line must parse as JSON — this is the protocol-only proof.
  */
-function startServe() {
-  const child = spawn(process.execPath, [BIN, "bridge", "serve", "--project", fixture], {
+function startServe(extraArgs = []) {
+  const lazy = extraArgs.includes("--lazy");
+  const argList = lazy ? ["bridge", "serve"] : ["bridge", "serve", "--project", fixture];
+  const child = spawn(process.execPath, [BIN, ...argList], {
     cwd: tmpRoot,
     env: fixtureEnv(homeDir),
     stdio: ["pipe", "pipe", "pipe"],
@@ -361,4 +363,33 @@ test("providers: authorization rejects empty/NUL/escaping rels at the source", a
   const fresh = createProviders({ projectDir: fixture, store, machineId: MACHINE_ID });
   const e1 = await fresh.project.tasks();
   assert.equal(e1.epoch, 1);
+});
+
+test("onWorkspace: hello root builds providers; invalid/relative roots refuse the hello (§8.1)", async () => {
+  // lazy mode: no --project; the root arrives via the hello (stdin, §8.1)
+  const b = startServe(["--lazy"]);
+  const ws = { refVersion: 1, endpoint: { kind: "ssh", host: "x" }, root: fixture };
+  b.send({ type: "hello", v: PROTOCOL_VERSION, clientId: "onws", capabilities: ["project.read"], workspaces: [ws] });
+  const hello = await b.awaitMsg((m) => m.type === "hello_ok", "hello_ok");
+  assert.equal(hello.accepted, true, JSON.stringify(hello));
+  const r = await b.request("r1", "project.tasks", {});
+  assert.equal(r.ok, true, JSON.stringify(r).slice(0, 140));
+  assert.ok(Array.isArray(r.result.tasks));
+  await b.close();
+
+  // invalid root (exists but no .trellis) -> hello refused with structured reason
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), "maw-no-trellis-"));
+  const c = startServe(["--lazy"]);
+  c.send({ type: "hello", v: PROTOCOL_VERSION, clientId: "onws2", capabilities: [], workspaces: [{ refVersion: 1, endpoint: { kind: "ssh", host: "x" }, root: emptyDir }] });
+  const refused = await c.awaitMsg((m) => m.type === "hello_ok", "refused hello");
+  assert.equal(refused.accepted, false);
+  assert.match(refused.error?.message ?? "", /workspace rejected/);
+  await c.close();
+
+  // relative root -> refused without touching the filesystem
+  const d = startServe(["--lazy"]);
+  d.send({ type: "hello", v: PROTOCOL_VERSION, clientId: "onws3", capabilities: [], workspaces: [{ refVersion: 1, endpoint: { kind: "ssh", host: "x" }, root: "relative/path" }] });
+  const refused2 = await d.awaitMsg((m) => m.type === "hello_ok", "refused hello (relative)");
+  assert.equal(refused2.accepted, false);
+  await d.close();
 });
