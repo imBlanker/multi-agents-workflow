@@ -16,3 +16,12 @@ alternatives, consequences, outLinks[], rawBody }`) via two injection anchors:
 `id="brand-project-title">…</`. The MAWF WorkspaceRpcDataSource (P5) assembles
 these objects from `mawf knowledge list/search` — remote workspaces get the
 same UI through the bridge instead of the local directory picker.
+
+## MAWF companion additions (not upstream)
+
+`workspace-datasource.js` is MAWF-original (P5.1, task
+09-17-mawf-four-tool-integration): the serve-time companion bootstrap in
+`src/companion/serve.js` fetches it with the session token in a request
+HEADER and evaluates it before the board renders, feeding the board's
+13-field note contract from the token-authed `/rpc` endpoint. `board.html`
+itself is never modified at rest — injection happens in memory at serve time.
