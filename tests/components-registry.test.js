@@ -29,7 +29,8 @@ test("status reports honest states: not-installed, release/license gates (A21, Â
   const home = fakeHome();
   const card = componentStatus(lock.components.find((c) => c.name === "trellis-card"), { home });
   assert.equal(card.state, "not-installed");
-  assert.equal(card.licenseBlocked, true); // no upstream LICENSE
+  assert.equal(card.licenseBlocked, false); // owner-authorized pending upstream LICENSE
+  assert.match(card.licenseStatus, /user-authorized-pending-upstream-license/);
   assert.equal(card.releaseBlocked, true); // no release yet
   assert.equal(card.distributionState, "development/source");
 
