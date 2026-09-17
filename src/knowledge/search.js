@@ -85,10 +85,19 @@ export function searchKnowledge(indexEntries, p) {
 
   const candidates = [];
   let bytes = 0;
+  let truncatedByDocs = false;
+  let truncatedByBytes = false;
   for (const s of scored) {
-    if (candidates.length >= maxDocs || bytes > maxBytes) break;
+    if (candidates.length >= maxDocs) { truncatedByDocs = scored.length > candidates.length; break; }
+    // maxBytes is a HARD upper bound (stabilization §11): project the size
+    // before admitting a candidate — never admit-then-check.
+    const size = approxBytes(s.entry);
+    if (bytes + size > maxBytes) {
+      truncatedByBytes = true;
+      continue; // try smaller remaining candidates within the budget
+    }
+    bytes += size;
     const e = s.entry;
-    bytes += approxBytes(e);
     candidates.push({
       id: e.id,
       path: e.rel,
@@ -108,10 +117,13 @@ export function searchKnowledge(indexEntries, p) {
   return {
     candidates,
     budget: {
-      maxDocs, maxBytes,
+      maxDocs,
+      maxBytes,
       returned: candidates.length,
       matchedTotal: scored.length,
-      truncatedByDocs: scored.length > candidates.length && bytes <= maxBytes,
+      bytesUsed: bytes,
+      truncatedByDocs, // more matches existed than maxDocs allowed
+      truncatedByBytes, // at least one match was skipped for exceeding the byte budget
     },
   };
 }

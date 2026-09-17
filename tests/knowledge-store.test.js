@@ -334,3 +334,25 @@ test("verifyArchives detects tampered content, dangling entries, unregistered fi
   assert.deepEqual(v, { ok: false, violations: v.violations });
   assert.ok(v.violations.length >= 1 && v.violations.every((x) => x.includes("unregistered")));
 });
+
+test("maxBytes is a hard upper bound; truncation reasons are distinct (§11)", () => {
+  const entries = Array.from({ length: 6 }, (_, i) => ({
+    kind: "decision", rel: `implemented/architecture/2026-09-2${i}-doc-${i}.md`,
+    id: `d${i}`, title: `doc ${i} bridge 帧协议`, lifecycle: "implemented", status: "implemented",
+    cls: "architecture", date: `2026-09-2${i}`, hash: "x",
+    digest: { problem: `bridge 帧协议 ${i} 的讨论内容较多一些填充字段以便体积可观` },
+  }));
+  // tight byte budget: must never exceed it even though docs allow more
+  const r = searchKnowledge(entries, { q: "bridge 帧协议", maxDocs: 6, maxBytes: 2400 });
+  assert.ok(r.budget.bytesUsed <= 2400, `bytesUsed ${r.budget.bytesUsed} exceeds budget 2400`);
+  assert.ok(r.budget.truncatedByBytes === true || r.budget.returned === 6);
+  if (r.budget.truncatedByBytes) {
+    assert.ok(r.budget.returned < 6, "byte-truncation must have skipped candidates");
+    assert.ok(r.budget.truncatedByDocs === false || r.candidates.length === r.budget.maxDocs);
+  }
+  // doc budget binds first when bytes are plentiful
+  const r2 = searchKnowledge(entries, { q: "bridge 帧协议", maxDocs: 2, maxBytes: 500_000 });
+  assert.equal(r2.candidates.length, 2);
+  assert.equal(r2.budget.truncatedByDocs, true);
+  assert.equal(r2.budget.truncatedByBytes, false);
+});
