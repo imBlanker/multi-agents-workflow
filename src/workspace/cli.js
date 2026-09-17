@@ -83,16 +83,35 @@ function bridgeCapabilities() {
  * @returns {Promise<number>} resolves 0 after stdin EOF + final flush
  */
 async function bridgeServe(_rest, flags) {
-  const project = expand(typeof flags.project === "string" ? flags.project : process.cwd());
-  const store = KnowledgeStore.open(project);
+  // §8.1: with an explicit --project the root is fixed at startup; without
+  // one, the workspace root arrives via the stdin hello and is authorized
+  // (realpath + existence) before providers are built.
+  const explicitProject = typeof flags.project === "string";
+  const project = explicitProject ? expand(flags.project) : null;
+  /** Build an authorized provider set for a remote-supplied root. */
+  const buildProvidersFor = (root) => {
+    if (typeof root !== "string" || !root.startsWith("/") || root.includes("\0")) {
+      throw new Error("workspace root must be an absolute remote path");
+    }
+    const resolved = fs.realpathSync(root); // throws on missing/symlink loops
+    if (!fs.existsSync(path.join(resolved, ".trellis"))) {
+      throw new Error("workspace root must contain .trellis");
+    }
+    const store2 = KnowledgeStore.open(resolved);
+    return createProviders({ projectDir: resolved, store: store2, machineId });
+  };
+  const store = explicitProject ? KnowledgeStore.open(project) : null;
   const flagId = typeof flags["machine-id"] === "string" ? flags["machine-id"].trim() : "";
   const machineId = flagId || readOrCreateMachineId();
-  const providers = createProviders({ projectDir: project, store, machineId });
+  const providers = explicitProject
+    ? createProviders({ projectDir: project, store, machineId })
+    : {}; // assigned from the client hello via onWorkspace
   const server = new BridgeServer({
     serverId: "mawf-bridge",
     machineId,
     capabilities: bridgeCapabilities(),
     providers,
+    ...(explicitProject ? {} : { onWorkspace: buildProvidersFor }),
   });
   // Server-initiated frames (runtime subscription events) share the same
   // protocol-only stdout — never stderr, never interleaved log noise.

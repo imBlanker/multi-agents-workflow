@@ -85,6 +85,12 @@ export class BridgeServer {
    */
   constructor(opts = {}) {
     this.providers = opts.providers ?? {};
+    // Workspace selection travels via stdin hello (contract §8.1: workspace
+    // paths never appear in the command line). When the server is started
+    // without an explicit --project, `onWorkspace(root)` is called with the
+    // client-provided root during handshake and must return a fresh provider
+    // set — or throw, which refuses the hello with a structured reason.
+    this.onWorkspace = typeof opts.onWorkspace === "function" ? opts.onWorkspace : null;
     this.serverId = opts.serverId ?? "mawf-bridge";
     // Stable machine identity (stabilization 13): survives alias changes and
     // changes when the alias is re-pointed. Servers should derive it from a
@@ -167,6 +173,15 @@ export class BridgeServer {
     this.handshaked = true;
     this.clientId = msg.clientId;
     this.negotiated = negotiate(this.capabilities, Array.isArray(msg.capabilities) ? msg.capabilities : []);
+    const ws = Array.isArray(msg.workspaces) ? msg.workspaces[0] : null;
+    if (ws && typeof ws.root === "string" && typeof this.onWorkspace === "function") {
+      try {
+        this.providers = this.onWorkspace(ws.root) ?? this.providers;
+      } catch (e) {
+        this.refused = true;
+        return [encodeFrame(helloServer({ serverId: this.serverId, machineId: this.machineId ?? this.serverId, accepted: false, reason: `workspace rejected: ${e?.message ?? e}` }))];
+      }
+    }
     return [encodeFrame(helloServer({ serverId: this.serverId, machineId: this.machineId ?? this.serverId, accepted: true, capabilities: this.capabilities }))];
   }
 
