@@ -32,6 +32,7 @@ import { applyGrillSwap, grillSwapStatus } from "./grillswap.js";
 import { readRegistry, resolveWatchList } from "./watchdog/registry.js";
 import { adviseTask, checkFreshness, renderAdvise, deriveTaskProfile } from "./advise.js";
 import { runKnowledge } from "./knowledge/cli.js";
+import { runArchify } from "./archify.js";
 import { loadCatalog, detectPool, deriveStages, judgePool, renderPool, readPoolState, recordJudgment } from "./pool.js";
 import { writeManagedBlocks, removeManagedBlocks } from "./injectblock.js";
 
@@ -139,6 +140,7 @@ export function main(argv = process.argv.slice(2), deps = {}) {
     case "doctor": return cmdDoctor(f, flags);
     case "graph": return cmdGraph(f, flags);
     case "knowledge": return runKnowledge(f, flags);
+    case "archify": return runArchify(f);
     case "version": return cmdVersion();
     case "help": case undefined: return cmdHelp();
     default: return cmdUnknown(cmd);
