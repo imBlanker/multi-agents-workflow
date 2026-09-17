@@ -294,10 +294,14 @@ test("companion serve: SIGINT exits 0; port conflict fails with a clear error", 
     assert.notEqual(exit, 0, "second server on the same port exits nonzero");
     assert.match(second.stderrText(), /already in use|EADDRINUSE/);
 
-    // clean shutdown: SIGINT resolves with exit code 0
+    // Graceful SIGINT exit is POSIX-verified. Windows cannot deliver SIGINT/
+    // SIGTERM gracefully to a spawned child (hard terminate) — there we only
+    // assert that the process terminates on request; graceful path stays a
+    // POSIX guarantee, documented in src/companion/serve.js.
     first.child.kill("SIGINT");
-    const sigintCode = await new Promise((resolve) => first.child.once("exit", (code) => resolve(code)));
-    assert.equal(sigintCode, 0, "SIGINT shuts the companion down cleanly");
+    const code = await new Promise((resolve) => first.child.once("exit", (c) => resolve(c)));
+    if (process.platform === "win32") assert.notEqual(code, null, "companion terminates on request");
+    else assert.equal(code, 0, "SIGINT shuts the companion down cleanly");
   } finally {
     await first.close();
   }

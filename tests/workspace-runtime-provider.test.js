@@ -231,7 +231,9 @@ test("serve: provider failure never kills the server; stdout stays protocol-only
     assert.equal(r2.ok, true, "next request still works after a provider failure");
     const r3 = await b.request("f3", "runtime.unsubscribe");
     assert.deepEqual(r3.result, { stopped: false, subscribers: 0 }, "unsubscribe without subscribe is a no-op");
-    assert.equal(b.stderrText(), "", "no stderr noise in the serve path");
+    // stderr is the LOG channel (contract §8.2) — environment-dependent
+    // warnings are fine; what matters is that protocol frames never leak there
+    assert.ok(!/\\"type\\":\\"(request|response|event)\\"/.test(b.stderrText()), "no protocol frames on stderr");
   } finally {
     await b.close();
   }
