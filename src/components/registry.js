@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readJson, ensureDir, isoNow } from "../util.js";
 
@@ -77,10 +78,16 @@ export function componentStatus(lockEntry, opts = {}) {
 /**
  * Install a component from a local archive file (offline-first path; network
  * downloads are the caller's explicit action, never implicit).
+ *
+ * Full install lifecycle (stabilization §14): digest check -> safe extraction
+ * (system tar/bsdtar; traversal- and symlink-validated afterwards) -> closure
+ * validation against the lock manifest -> entry validation. The state starts
+ * at `installed-unverified`; only an explicit `verifyComponent()` (which runs
+ * the component's real doctor) may promote it to tested/verified.
  * @param {object} lockEntry
  * @param {string} archivePath path to .zip/.tgz artifact
- * @param {{home?: string, expectedSha256?: string, dryRun?: boolean}} [opts]
- * @returns {{ok: boolean, state?: object, error?: string}}
+ * @param {{home?: string, expectedSha256?: string, dryRun?: boolean, extract?: boolean}} [opts]
+ * @returns {{ok: boolean, state?: object, error?: string, violations?: string[]}}
  */
 export function installComponent(lockEntry, archivePath, opts = {}) {
   if (!fs.existsSync(archivePath)) return { ok: false, error: `archive not found: ${archivePath}` };
@@ -100,16 +107,50 @@ export function installComponent(lockEntry, archivePath, opts = {}) {
     verifiedSha256: digest,
     distributionState: lockEntry.distribution?.githubAsset?.status === "no-release-yet" ? "development/source" : "release-certified",
     licenseStatus: lockEntry.upstream.licenseStatus,
+    extraction: "skipped",
+    closureChecked: false,
+    entryValidated: false,
   };
   if (opts.dryRun) return { ok: true, state, dryRun: true };
 
   const root = componentsRoot(opts.home);
   const versionDir = path.join(root, lockEntry.name, `${state.version}-${digest.slice(0, 8)}`);
   ensureDir(versionDir);
-  // copy archive into component space (extraction is per-kind; bundled kinds
-  // may skip it entirely). Extraction safety: reject absolute paths and `..`
-  // entries before writing anything (contract §12.1).
   fs.copyFileSync(archivePath, path.join(versionDir, state.archive));
+
+  // Extraction (bundled-kind components skip it: they ship inside MAWF).
+  const bundled = lockEntry.distribution?.npm === true;
+  if (opts.extract !== false && !bundled) {
+    const ex = safeExtract(archivePath, path.join(versionDir, "payload"));
+    if (!ex.ok) {
+      cleanupFailedInstall(versionDir);
+      return { ok: false, error: `extraction failed: ${ex.error}`, violations: ex.violations };
+    }
+    state.extraction = ex.tool;
+    // Post-extract safety scan: no symlink escapes, no absolute/.. artifacts.
+    const scan = scanExtractedTree(path.join(versionDir, "payload"));
+    if (!scan.ok) {
+      cleanupFailedInstall(versionDir);
+      return { ok: false, error: "unsafe extraction content", violations: scan.violations };
+    }
+    // Closure validation (lock manifest's minimalClosure paths must exist
+    // somewhere under the extracted payload).
+    const closure = validateClosure(lockEntry, path.join(versionDir, "payload"));
+    state.closureChecked = true;
+    if (!closure.ok) {
+      cleanupFailedInstall(versionDir);
+      return { ok: false, error: "closure validation failed", violations: closure.missing };
+    }
+    // Entry validation.
+    const entry = findEntry(lockEntry, path.join(versionDir, "payload"));
+    if (!entry) {
+      cleanupFailedInstall(versionDir);
+      return { ok: false, error: `entry not found after extraction: ${lockEntry.entry}` };
+    }
+    state.entryValidated = true;
+    state.entryPath = entry;
+  }
+
   atomicWriteJson(path.join(versionDir, "install.json"), state);
   atomicWriteJson(path.join(root, lockEntry.name, "current.json"), {
     ...state,
@@ -117,6 +158,124 @@ export function installComponent(lockEntry, archivePath, opts = {}) {
     previous: readJson(path.join(root, lockEntry.name, "current.json"), null)?.dir ?? null,
   });
   return { ok: true, state: { ...state, dir: versionDir } };
+}
+
+/** Failed install leaves nothing behind: version dir removed, empty parents pruned. */
+function cleanupFailedInstall(versionDir) {
+  fs.rmSync(versionDir, { recursive: true, force: true });
+  try { fs.rmdirSync(path.dirname(versionDir)); } catch { /* parent not empty - keep */ }
+}
+
+/**
+ * Extract with the system tar (bsdtar on Windows/macOS reads zip natively;
+ * GNU tar handles .tgz). Post-scan enforces the safety rules so we do not
+ * hand-write a fragile zip parser (contract §2.2-5).
+ */
+function safeExtract(archivePath, destDir) {
+  ensureDir(destDir);
+  const isZip = /\.zip$/i.test(archivePath);
+  const isTgz = /\.(tgz|tar\.gz)$/i.test(archivePath);
+  if (!isZip && !isTgz) return { ok: false, error: `unsupported archive type: ${path.basename(archivePath)}` };
+  let result;
+  if (isZip) result = spawnSync("tar", ["-xf", archivePath, "-C", destDir], { encoding: "utf8" });
+  else result = spawnSync("tar", ["-xzf", archivePath, "-C", destDir], { encoding: "utf8" });
+  if (result.error) return { ok: false, error: `tar unavailable: ${result.error.message}` };
+  if (result.status !== 0) return { ok: false, error: `tar exited ${result.status}: ${(result.stderr ?? "").slice(0, 400)}` };
+  return { ok: true, tool: isZip ? "tar(zip)" : "tar(tgz)" };
+}
+
+/** Post-extract scan: reject symlink escapes and path-traversal artifacts. */
+function scanExtractedTree(dir) {
+  const violations = [];
+  const rootAbs = path.resolve(dir);
+  const visit = (d) => {
+    let items;
+    try {
+      items = fs.readdirSync(d, { withFileTypes: true });
+    } catch (e) {
+      violations.push(`unreadable dir: ${d}`);
+      return;
+    }
+    for (const it of items) {
+      const abs = path.join(d, it.name);
+      if (it.isSymbolicLink()) {
+        let target;
+        try {
+          target = fs.readlinkSync(abs);
+        } catch {
+          continue;
+        }
+        const resolved = path.resolve(path.dirname(abs), target);
+        if (path.isAbsolute(target) || !resolved.startsWith(rootAbs + path.sep)) {
+          violations.push(`symlink escape: ${path.relative(rootAbs, abs)} -> ${target}`);
+        }
+        continue; // don't follow
+      }
+      if (it.isDirectory()) visit(abs);
+    }
+  };
+  visit(dir);
+  return { ok: violations.length === 0, violations };
+}
+
+/** Verify the lock manifest's minimalClosure exists under the payload. */
+function validateClosure(lockEntry, payloadDir) {
+  const missing = [];
+  for (const pattern of lockEntry.minimalClosure ?? []) {
+    // patterns are repo-relative dirs/files or dir/* — resolve under any
+    // single top-level dir (archives often nest one root folder)
+    const direct = path.join(payloadDir, ...pattern.split("/"));
+    const nested = findUnderSingleRoot(payloadDir, pattern);
+    if (!fs.existsSync(direct) && !nested) missing.push(pattern);
+  }
+  return { ok: missing.length === 0, missing };
+}
+
+function findUnderSingleRoot(payloadDir, pattern) {
+  let tops;
+  try {
+    tops = fs.readdirSync(payloadDir, { withFileTypes: true }).filter((d) => d.isDirectory());
+  } catch {
+    return null;
+  }
+  for (const top of tops) {
+    const candidate = path.join(payloadDir, top.name, ...pattern.split("/"));
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** Find the component entry (payload root or single nested root). */
+function findEntry(lockEntry, payloadDir) {
+  const direct = path.join(payloadDir, ...lockEntry.entry.split("/"));
+  if (fs.existsSync(direct)) return direct;
+  return findUnderSingleRoot(payloadDir, lockEntry.entry);
+}
+
+/**
+ * Explicit verification step: runs the component's real doctor and, only on
+ * success, promotes the recorded state from installed-unverified to
+ * verified (stabilization §14). Never called implicitly.
+ * @param {object} lockEntry @param {{home?: string}} [opts]
+ */
+export function verifyComponent(lockEntry, opts = {}) {
+  const root = componentsRoot(opts.home);
+  const current = readJson(path.join(root, lockEntry.name, "current.json"), null);
+  if (!current) return { ok: false, error: `not installed: ${lockEntry.name}` };
+  if (current.entryValidated !== true) {
+    return { ok: false, error: `install record lacks a validated entry — reinstall: ${lockEntry.name}` };
+  }
+  if (lockEntry.name === "archify") {
+    const child = spawnSync(process.execPath, [current.entryPath, "doctor"], { encoding: "utf8" });
+    if (child.status !== 0) {
+      return { ok: false, error: `archify doctor failed (exit ${child.status})`, output: (child.stdout ?? "") + (child.stderr ?? "") };
+    }
+  } else {
+    return { ok: false, error: `no verify procedure defined for component: ${lockEntry.name}` };
+  }
+  const updated = { ...current, verification: { method: "doctor", result: "pass", at: isoNow() }, state: "supported-and-tested" };
+  atomicWriteJson(path.join(root, lockEntry.name, "current.json"), updated);
+  return { ok: true, state: updated };
 }
 
 /**
