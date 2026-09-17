@@ -20,7 +20,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { ERR, protocolError } from "./protocol.js";
 import { searchKnowledge } from "../knowledge/search.js";
-import { displayLabel, makeWorkspaceRef } from "./ref.js";
+
 
 /** Max knowledge body bytes returned by knowledge.get (larger => truncated flag). */
 export const KNOWLEDGE_BODY_MAX_BYTES = 64 * 1024;
@@ -282,7 +282,9 @@ export function createProviders({ projectDir, store, machineId = null }) {
       /** workspace.describe → identity + display label (ref.js §8.4). */
       describe: async () => ({
         machineId: machineId ?? null,
-        label: displayLabel(makeWorkspaceRef({ endpoint: { kind: "local" }, root })),
+        // display uses the RESOLVED NATIVE path: identity normalization may
+        // fold separators (win32), but the label must show real separators
+        label: `local:${root}`,
         root,
         protocolVersion: 1,
       }),
