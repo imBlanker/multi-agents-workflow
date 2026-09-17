@@ -124,7 +124,10 @@ function startCompanion(extraArgs = []) {
     // The child may have exited on its own (e.g. after SIGINT) BEFORE this
     // listener attaches — 'exit' fires once, so guard instead of waiting forever.
     if (child.exitCode !== null || child.signalCode !== null) return;
-    await new Promise((res) => child.once("exit", res));
+    await new Promise((res) => {
+      const t = setTimeout(res, 3000); // Windows CI: exit events can be flaky
+      child.once("exit", () => { clearTimeout(t); res(); });
+    });
   };
   return { child, ready, close, stderrText: () => stderr.join(""), stdoutText: () => stdout.join("") };
 }

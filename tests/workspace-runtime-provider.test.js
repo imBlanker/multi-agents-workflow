@@ -122,9 +122,16 @@ function startServe() {
     return awaitMsg((m) => m.type === "response" && m.id === id, `response ${id} (${method})`);
   };
   const close = async () => {
-    child.stdin.end();
-    child.kill();
-    await new Promise((res) => child.on("exit", res));
+    // Windows reliability: child kill/exit events are flaky on CI runners —
+    // end stdin (graceful server exit), then double-kill, and NEVER wait for
+    // the exit event unbounded.
+    try { child.stdin.end(); } catch { /* already closed */ }
+    try { child.kill(); } catch { /* already dead */ }
+    try { child.kill("SIGKILL"); } catch { /* not on win32 */ }
+    await new Promise((res) => {
+      const t = setTimeout(res, 3000);
+      child.once("exit", () => { clearTimeout(t); res(); });
+    });
   };
   return { child, send, request, awaitMsg, close, received, stderrText: () => stderr.join("") };
 }
