@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { KnowledgeStore, PROBLEM_TYPES, SEVERITIES } from "./store.js";
 import { searchKnowledge, renderContextBlock } from "./search.js";
+import { migrateToDefault, rollbackMigration, planMigration } from "./migrate.js";
 
 /**
  * CLI boundary for store errors: structured, actionable, non-crashing exits.
@@ -201,6 +202,36 @@ export function runKnowledge(f, flags) {
       return bad ? 1 : 0;
     }
 
+    case "migrate": {
+      // Explicit legacy->default migration (contract §5.1): dry-run first,
+      // conflicts never overwritten, every move rollback-recorded.
+      if (flags.rollback) {
+        const r = wrapStoreErrors(() => rollbackMigration(project, String(flags.rollback)));
+        if (typeof r === "number") return r;
+        console.log(`rollback ${flags.rollback}: restored ${r.restored} file(s)${r.skipped.length ? `, skipped ${r.skipped.length}` : ""}`);
+        for (const s of r.skipped) console.log(`  - ${s}`);
+        return 0;
+      }
+      if (flags.plan) {
+        console.log(JSON.stringify(planMigration(project), null, 2));
+        return 0;
+      }
+      const r = migrateToDefault(project, { dryRun: flags["dry-run"] === true });
+      if (r.dryRun) {
+        const moves = r.plans.flatMap((pl) => pl.moves.map((m) => `${path.relative(project, m.from)} -> ${path.relative(project, m.to)}`));
+        console.log(`dry-run: would move ${moves.length} file(s)${r.conflicts.length ? `, skip ${r.conflicts.length} conflict(s)` : ""}`);
+        for (const m of moves.slice(0, 10)) console.log(`  ${m}`);
+        if (moves.length > 10) console.log(`  … +${moves.length - 10} more`);
+        console.log("execute with: mawf knowledge migrate (no --dry-run)");
+        return 0;
+      }
+      console.log(`migrated ${r.moved} file(s) to docs/knowledge/ (migration id: ${r.migrationId ?? "-"})`);
+      for (const c of r.conflicts) console.log(`  conflict (left in place): ${c}`);
+      for (const s of r.skipped ?? []) console.log(`  skipped: ${s}`);
+      console.log(`rollback: mawf knowledge migrate --rollback ${r.migrationId ?? ""}`);
+      return r.ok ? 0 : 1;
+    }
+
     case "reindex": {
       const idx = store.buildIndex();
       console.log(`reindexed ${idx.entries.length} document(s) -> ${store.indexPath()}`);
@@ -292,7 +323,7 @@ export function runKnowledge(f, flags) {
     }
 
     default:
-      console.error("usage: mawf knowledge <status|list|search|context|verify|reindex|get|create|update|archive|verify-doc> [--project dir] [--json]");
+      console.error("usage: mawf knowledge <status|list|search|context|verify|reindex|migrate|get|create|update|archive|verify-doc> [--project dir] [--json]");
       console.error("  durable writes (create/update/archive) MUST go through this CLI so CAS, locks, sidecars and seals hold; direct file writes bypass them and are not sanctioned");
       console.error(`  solution frontmatter enums: problem_type ∈ ${PROBLEM_TYPES.length} values, severity ∈ ${SEVERITIES.join("|")}`);
       return 2;
