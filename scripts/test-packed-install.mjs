@@ -72,8 +72,8 @@ try {
   for (const p of [mawf, path.join(pkgDir, "vendor", "notes-board", "README.md")]) {
     if (!fs.existsSync(p)) fail(`installed package lacks: ${p}`);
   }
-  if (files.some((f) => f.endsWith("vendor/notes-board/board.html"))) {
-    fail("license-blocked upstream board bytes must not ship in the public tarball");
+  if (!files.includes("package/vendor/notes-board/board.html")) {
+    fail("vendor/notes-board/board.html missing from tarball (adapted Board asset)");
   }
   step("isolated install OK, resources present");
 
