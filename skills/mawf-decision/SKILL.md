@@ -61,14 +61,31 @@ Exact header contract, required sections, aliases, and link rules: [references/n
 
 Exactly six closed classes: `feature`, `bug-fix`, `simplification`, `architecture`, `process`, `testing`. A centralized `INDEX.md` at the store root is forbidden. The filename date is the first-proposal date and never changes on transition.
 
-## 5. Interaction protocol (from upstream)
+## 5. Durable writes go through the CLI — never direct file edits
+
+Direct `Write/Edit` to `docs/knowledge/**` bypasses compare-and-swap, locking,
+sidecar provenance, index invalidation and the archive seal — it is not a
+sanctioned route. Author your candidate in a temp file, then commit it:
+
+```bash
+mawf knowledge get <kind> <relPath>            # read + CAS base hash
+mawf knowledge create decision <relPath> --file <candidate.md> --source-task <task>
+mawf knowledge update decision <relPath> --file <candidate.md> --expected-hash <hash>
+mawf knowledge archive implemented/<class>/<file>.md [--superseded-by <relPath>]
+mawf knowledge verify-doc decision <relPath>   # single-doc mechanical check
+```
+
+`update` without the matching `--expected-hash` fails with the current hash so
+you can rebase. Archived notes are sealed: ordinary updates are hard-rejected.
+
+## 6. Interaction protocol (from upstream)
 
 1. Split facts from decisions.
 2. Ask all open questions in ONE numbered round, one `➡️ <recommendation>` per line.
 3. Get confirmation before writing any file.
 4. More than 5 open decisions ⇒ split into multiple notes.
 
-## 6. Before finishing
+## 7. Before finishing
 
 ```bash
 mawf knowledge verify

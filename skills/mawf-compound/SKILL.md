@@ -51,7 +51,13 @@ Evidence-chain sections (canonical English headings): Problem / Symptom / Root c
 
 ## 5. Write boundary
 
-Only the task's coordinator (or an explicitly named writer) writes the durable store; subagents write their own scratch only. Scratch never becomes durable content without passing through the coordinator. Concurrent updates go through the store's locking/atomic-write path — never blind last-write-wins.
+Only the task's coordinator (or an explicitly named writer) writes the durable store; subagents write their own scratch only. Durable writes MUST go through the CLI so compare-and-swap, locking, sidecars, index invalidation and the archive seal all hold — direct `Write/Edit` to `docs/knowledge/**` bypasses them and is not sanctioned:
+
+```bash
+mawf knowledge create solution <category>/<yyyy-mm-dd>-<slug>.md --file <candidate.md> --source-task <task>
+mawf knowledge update solution <relPath> --file <candidate.md> --expected-hash <hash> \
+  --verify-method <method> --verify-result pass     # the ONLY way lastVerified moves
+```
 
 ## 6. Before finishing
 
