@@ -7,6 +7,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -21,6 +24,9 @@ import { CAPABILITIES, ERR, MAX_FRAME_BYTES, helloServer } from "../src/workspac
 import { makeWorkspaceRef } from "../src/workspace/ref.js";
 
 const HELPER = fileURLToPath(new URL("./fixtures/fake-ssh-helper.mjs", import.meta.url));
+
+/** Fresh empty dir (record-dir injection seam). */
+const emptyDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "mawf-ssh-rec-"));
 
 const ref = () => makeWorkspaceRef({ endpoint: { kind: "ssh", host: "devbox" }, root: "/srv/proj" });
 
@@ -139,13 +145,29 @@ test("remote command boundary: shell metacharacters and traversal are rejected (
   assert.equal(validateRemoteCommand("/opt/mawf.helpers/bridge-v1.mjs"), "/opt/mawf.helpers/bridge-v1.mjs");
 });
 
-test("missing helperPath fails with a structured diagnostic suggesting install-helper", async () => {
-  const t = new SshTransport();
-  await assert.rejects(
-    t.connect(ref(), {}),
-    (e) => e.code === ERR.CAPABILITY_MISSING && /mawf bridge install-helper/.test(e.message),
-  );
-  assert.equal(t.child, null, "no process spawned for a missing helper");
+test("no helperPath and no install record falls back to FIXED_REMOTE_COMMAND (§8.2)", async () => {
+  // Behavior change with install records (contract §8.2 PATH probe): without
+  // an explicit helperPath the transport consults the install record and,
+  // finding none, proceeds with the MAWF-owned fixed entry instead of
+  // rejecting. The remote command reaching the argv builder is asserted via
+  // the injected builder — no real ssh is spawned here.
+  /** @type {{host: string, remoteCommand: string}[]} */
+  const seen = [];
+  const t = new SshTransport({
+    sshPath: process.execPath,
+    argvBuilder: (p) => {
+      seen.push(p);
+      return [HELPER, "serve"];
+    },
+    installRecordDir: emptyDir(),
+  });
+  try {
+    const hello = await t.connect(ref(), {});
+    assert.equal(hello.serverId, "fake-helper");
+    assert.equal(seen[0].remoteCommand, FIXED_REMOTE_COMMAND, "fixed entry used when no record exists");
+  } finally {
+    t.close();
+  }
 });
 
 test("handshake, capability negotiation and request roundtrips via the fixture helper", async () => {

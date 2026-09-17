@@ -26,6 +26,7 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 
+import { readInstallRecord } from "./install-record.js";
 import {
   CAPABILITIES,
   DEFAULT_TIMEOUT_MS,
@@ -215,7 +216,8 @@ export class SshTransport extends EventEmitter {
    *           helloTimeoutMs?: number,
    *           maxPreHelloBytes?: number,
    *           requestTimeoutMs?: number,
-   *           killGraceMs?: number}} [opts]
+   *           killGraceMs?: number,
+   *           installRecordDir?: string|null}} [opts]
    *   `argvBuilder` and `spawnFn` are injection seams for tests: tests spawn a
    *   fixture helper via process.execPath directly (no ssh binary, no network)
    *   while exercising this exact code path.
@@ -233,6 +235,9 @@ export class SshTransport extends EventEmitter {
     this._maxPreHelloBytes = opts.maxPreHelloBytes ?? MAX_PRE_HELLO_BYTES;
     this._requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this._killGraceMs = opts.killGraceMs ?? KILL_GRACE_MS;
+    // Install-record dir override (tests). Null = the real
+    // <home>/.mawf/bridge/hosts written by `mawf bridge install-helper`.
+    this._installRecordDir = opts.installRecordDir ?? null;
 
     /** @type {import("node:child_process").ChildProcess|null} the ONLY process we own */
     this.child = null;
@@ -269,9 +274,12 @@ export class SshTransport extends EventEmitter {
    * for the server's hello_ok within the hello timeout.
    *
    * @param {object} workspaceRef a ssh WorkspaceRef (endpoint.kind === "ssh")
-   * @param {{helperPath?: string}} [opts] helperPath is the remote headless
-   *        helper entry (fixed config, the ONLY user-controlled part of the
-   *        remote command line).
+   * @param {{helperPath?: string, installRecordDir?: string}} [opts] without
+   *        an explicit helperPath, the install record for the endpoint host
+   *        (written by `mawf bridge install-helper`) is consulted, falling
+   *        back to FIXED_REMOTE_COMMAND; installRecordDir overrides the
+   *        record dir (tests). helperPath remains the ONLY user-controlled
+   *        part of the remote command line.
    * @returns {Promise<{serverId: string, capabilities: string[],
    *                    negotiated: {shared: string[], clientMissing: string[], serverMissing: string[]}}>}
    */
@@ -288,17 +296,32 @@ export class SshTransport extends EventEmitter {
         protocolError(ERR.BAD_MESSAGE, "connect() requires a ssh WorkspaceRef with endpoint.host"),
       );
     }
-    const helperPath = opts.helperPath;
-    if (!helperPath || typeof helperPath !== "string") {
-      // Structured diagnostic: missing remote helper is a capability gap with a
-      // concrete remediation, not a generic failure.
-      return Promise.reject(
-        protocolError(
-          ERR.CAPABILITY_MISSING,
-          `remote workspace helper not configured for host "${endpoint.host}" — run: mawf bridge install-helper`,
-        ),
-      );
+    // Remote entry resolution (contract §8.2 PATH probe):
+    // 1. explicit helperPath (only ever accepted from MAWF's own install
+    //    record; passes the strict charset gate inside buildSshArgs), else
+    // 2. the install record for this endpoint host, written read-only by
+    //    `mawf bridge install-helper` — its mawfBin IS an absolute path from
+    //    OUR record and still passes validateRemoteCommand, else
+    // 3. the MAWF-owned FIXED_REMOTE_COMMAND.
+    // A corrupt record never crashes connect(): it falls back to the fixed
+    // entry with a log line.
+    let helperPath = typeof opts.helperPath === "string" && opts.helperPath ? opts.helperPath : null;
+    if (!helperPath) {
+      const record = readInstallRecord(endpoint.host, {
+        hostsDir: opts.installRecordDir ?? this._installRecordDir ?? undefined,
+      });
+      if (record && typeof record.mawfBin === "string" && record.mawfBin) {
+        try {
+          helperPath = validateRemoteCommand(String(record.mawfBin));
+        } catch (e) {
+          this.emit(
+            "log",
+            `install record for "${endpoint.host}" has an unusable mawfBin (${e?.message ?? e}) — falling back to the fixed remote entry`,
+          );
+        }
+      }
     }
+    const remoteCommand = helperPath ?? FIXED_REMOTE_COMMAND;
     return new Promise((resolve, reject) => {
       this._connectResolve = resolve;
       this._connectReject = reject;
@@ -307,10 +330,7 @@ export class SshTransport extends EventEmitter {
       try {
         argv = this._argvBuilder({
           host: endpoint.host,
-          // Fixed owned entry by default; an explicit helper path is only
-          // accepted from MAWF's own install record and passes the strict
-          // charset gate inside buildSshArgs (stabilization 12.2).
-          remoteCommand: helperPath ? String(helperPath) : FIXED_REMOTE_COMMAND,
+          remoteCommand,
           batchMode: this._batchMode,
           connectTimeoutMs: this._connectTimeoutMs,
         });
