@@ -31,6 +31,13 @@ import { registerProject } from "./watchdog/registry.js";
 import { applyGrillSwap, grillSwapStatus } from "./grillswap.js";
 import { readRegistry, resolveWatchList } from "./watchdog/registry.js";
 import { adviseTask, checkFreshness, renderAdvise, deriveTaskProfile } from "./advise.js";
+import { runKnowledge } from "./knowledge/cli.js";
+import { runBridge } from "./workspace/cli.js";
+import { runCompanionServe } from "./companion/serve.js";
+import { runArchify } from "./archify.js";
+import { runArchifyRegistry } from "./archify-registry.js";
+import { runComponents } from "./components/cli.js";
+import { installObserver, uninstallObserver, emitEvent, spoolPath, observerCommand } from "./observer.js";
 import { loadCatalog, detectPool, deriveStages, judgePool, renderPool, readPoolState, recordJudgment } from "./pool.js";
 import { writeManagedBlocks, removeManagedBlocks } from "./injectblock.js";
 
@@ -99,7 +106,49 @@ function exit0(o) { if (o?.signal) process.kill(process.pid, o.signal); }
 /**
  * @param {string[]} argv
  */
+/** `mawf observer` — A15 fail-open session observer (install/status/uninstall/emit). */
+function cmdObserver(f, flags) {
+  const [sub] = f;
+  const project = flags.project ? path.resolve(flags.project) : process.cwd();
+  switch (sub) {
+    case "status": {
+      const spool = spoolPath(project);
+      let lines = 0;
+      try { lines = fs.readFileSync(spool, "utf8").split("\n").filter((l) => l.trim()).length; } catch { /* none */ }
+      console.log(`observer command: ${observerCommand()}`);
+      console.log(`spool: ${spool} (${lines} event(s))`);
+      return 0;
+    }
+    case "install": {
+      const r = installObserver({ projectDir: project, hostApp: flags.host || "claude" });
+      console.log(r.changed ? "observer installed" : "observer already installed");
+      return 0;
+    }
+    case "uninstall": {
+      const r = uninstallObserver({ hostApp: flags.host || "claude" });
+      console.log(r.changed ? "observer removed (only mawf-tagged entries touched)" : "observer not installed");
+      return 0;
+    }
+    case "emit": {
+      let raw = "";
+      try { raw = fs.readFileSync(0, "utf8"); } catch { /* empty stdin */ }
+      const r = emitEvent(raw, { projectDir: flags["spool-project"] ? path.resolve(flags["spool-project"]) : project });
+      process.exitCode = 0; // fail-open, always (A15)
+      if (flags.json) console.log(JSON.stringify(r));
+      return 0;
+    }
+    default:
+      console.error("usage: mawf observer <status|install|uninstall|emit> [--project dir] [--host claude]");
+      return 2;
+  }
+}
+
 export function main(argv = process.argv.slice(2), deps = {}) {
+  // `archify` is a raw pass-through boundary (stabilization §5): everything
+  // after the top-level command belongs to the Archify CLI — MAWF's flag
+  // parser must never see it, or --json/--quality/--repo-root would be
+  // eaten as MAWF flags. Order and flag/value pairs are preserved verbatim.
+  if (argv[0] === "archify") return runArchify(argv.slice(1));
   const a = parse(argv);
   const cmd = a._[0];
   const f = a._.slice(1);
@@ -137,6 +186,14 @@ export function main(argv = process.argv.slice(2), deps = {}) {
     case "upgrade": return cmdUpgrade(f, flags, deps);
     case "doctor": return cmdDoctor(f, flags);
     case "graph": return cmdGraph(f, flags);
+    case "knowledge": return runKnowledge(f, flags);
+    case "bridge": return runBridge(f, flags);
+    case "companion": return runCompanionServe(f, flags);
+    case "components": return runComponents(f, flags);
+    case "observer": return cmdObserver(f, flags);
+    // MAWF-owned (rebuildable artifact registry, §10.2) — never reaches the
+    // engine, so normal flag parsing applies.
+    case "archify-registry": return runArchifyRegistry(f, flags);
     case "version": return cmdVersion();
     case "help": case undefined: return cmdHelp();
     default: return cmdUnknown(cmd);
@@ -208,6 +265,19 @@ Commands:
                 npm i -g <name>@latest (npm installs). --dry-run to preview.
                 Then trellis upgrade + applicable project update. --tag is
                 MAWF-only; --no-apply-templates still upgrades Trellis CLI
+  bridge        Workspace bridge: serve (NDJSON stdio read-only RPC over the
+                authorized project root; typed providers only, no exec),
+                machine-id (print/provision the stable machine id),
+                install-helper <alias> (probe the remote over ONE ssh with a
+                fixed node -e probe; record absolute node/mawf entries — no
+                credentials) and status [alias] (informational record list)
+  companion     Loopback companion: serve (Notes Board UI + token-authed
+                POST /rpc over the same read-only providers; binds 127.0.0.1
+                only, per-session token printed to stderr)
+  archify-registry  Rebuildable Archify artifact registry (runtime cache):
+                record <ir> <html> [--receipt r] [--task-dir d] [--project p],
+                list [--json] (staleness vs the recorded IR digest — never
+                re-renders; deleting the registry loses nothing)
   doctor        Environment + capability check
   version       Print version
   help          This message

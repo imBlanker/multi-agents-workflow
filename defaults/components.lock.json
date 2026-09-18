@@ -1,0 +1,150 @@
+{
+  "schema": 1,
+  "comment": "MAWF integration components — locked sources. Each entry pins an exact upstream commit; release assets are used only when their digest matches. 'development/source' status means no public release exists yet (verified 2026-09-16); acquisition falls back to locked-source build, never floating main.",
+  "components": [
+    {
+      "name": "archify",
+      "kind": "engine",
+      "description": "Architecture diagram engine (typed JSON IR -> self-contained HTML viewer)",
+      "upstream": {
+        "repo": "https://github.com/imBlanker/archify",
+        "authorRepo": "https://github.com/tt-a1i/archify",
+        "commit": "c3e15cc60c9a027a6f35a272cab5ea9a7fc5c486",
+        "version": "2.17.0-dev.1",
+        "license": "MIT",
+        "licenseStatus": "ok-mit-with-notices",
+        "notices": [
+          "archify/THIRD_PARTY_NOTICES.md",
+          "LICENSE"
+        ],
+        "noticeConstraints": "Simple Icons brand marks include CC-BY-NC-SA-4.0 entries; MAWF-generated artifacts default to no brand marks.",
+        "releaseChannel": "github-release-or-source-build",
+        "npmWarning": "npm package 'archify' (latest 0.0.4, 2022, justin-calleja) is UNRELATED — never install it as this engine."
+      },
+      "runtime": {
+        "node": ">=18",
+        "dependencies": "none"
+      },
+      "entry": "archify/bin/archify.mjs",
+      "minimalClosure": [
+        "archify/bin",
+        "archify/renderers",
+        "archify/assets/template.html",
+        "archify/assets/JetBrainsMono-OFL.txt",
+        "archify/scripts/check-render-output.mjs",
+        "archify/LICENSE",
+        "archify/THIRD_PARTY_NOTICES.md"
+      ],
+      "optionalClosure": [
+        "archify/bin/preview.mjs",
+        "archify/bin/visual-check.mjs",
+        "archify/delta"
+      ],
+      "install": {
+        "layout": "dir",
+        "optionalFor": [
+          "visual-check: chrome/chromium"
+        ]
+      },
+      "distribution": {
+        "npm": false,
+        "githubAsset": {
+          "repo": "imBlanker/archify",
+          "asset": "archify.zip",
+          "status": "no-release-yet"
+        },
+        "sourceBuild": "scripts/build-archify-component.mjs (zip from locked commit; sha256 recorded on install)"
+      }
+    },
+    {
+      "name": "notes-board",
+      "kind": "web-panel",
+      "description": "Decision/Solution board UI (adapted write-notes Board with workspace datasource)",
+      "upstream": {
+        "repo": "https://github.com/imBlanker/write-notes-like-deepseek",
+        "authorRepo": "https://github.com/czm15053/write-notes-like-deepseek",
+        "commit": "2aef219faf608285f987a85d3f5f1109d6699725",
+        "license": "MIT (declared in README with dangling LICENSE link)",
+        "licenseStatus": "user-authorized-pending-upstream-license",
+        "releaseChannel": "bundled-with-mawf (vendored built asset)",
+        "licenseNote": "Upstream has no LICENSE file (write-notes: README declares MIT, dangling link; trellis-card: none in history). Repository owner imBlanker explicitly authorized treating these forks as fully usable/forkable/developable pending upstream LICENSE (2026-09-17, task 09-17-mawf-four-tool-integration). Provenance and notices retained."
+      },
+      "runtime": {
+        "browser": "static html, offline-capable (system font fallback)"
+      },
+      "entry": "vendor/notes-board/board.html",
+      "install": {
+        "layout": "bundled",
+        "note": "Ships inside the MAWF npm tarball under vendor/notes-board/; no server-side install needed."
+      },
+      "distribution": {
+        "npm": true,
+        "vendoredPath": "vendor/notes-board/"
+      }
+    },
+    {
+      "name": "trellis-card",
+      "kind": "desktop-companion",
+      "description": "Trellis task card desktop app (Tauri2) + headless workspace helper",
+      "upstream": {
+        "repo": "https://github.com/imBlanker/trellis-card",
+        "authorRepo": "https://github.com/czm15053/trellis-card",
+        "commit": "4e24d423141d796f4e5e47e45e447f82f7fd1b40",
+        "version": "0.2.5",
+        "license": "UNLICENSED-UPSTREAM (no LICENSE file in entire history)",
+        "licenseStatus": "user-authorized-pending-upstream-license",
+        "updateCheckNote": "In-app update check points at czm15053/trellis-card (src/app.js:227) — must be disabled in managed mode.",
+        "releaseChannel": "github-release-or-source-build",
+        "licenseNote": "Upstream has no LICENSE file (write-notes: README declares MIT, dangling link; trellis-card: none in history). Repository owner imBlanker explicitly authorized treating these forks as fully usable/forkable/developable pending upstream LICENSE (2026-09-17, task 09-17-mawf-four-tool-integration). Provenance and notices retained."
+      },
+      "runtime": {
+        "desktop": "tauri2 (windows/macos/linux webkit)",
+        "helper": "precompiled binary, no runtime deps"
+      },
+      "entry": "platform installers per release.yml matrix",
+      "install": {
+        "layout": "external-installer",
+        "optionalFor": [
+          "desktop display machine"
+        ],
+        "serverSide": "headless helper only — never the Tauri GUI"
+      },
+      "distribution": {
+        "npm": false,
+        "githubAsset": {
+          "repo": "imBlanker/trellis-card",
+          "status": "no-release-yet",
+          "note": "release.yml exists upstream; fork has not run it"
+        },
+        "sourceBuild": "trellis-card repo: npm ci && npm run build -- --target <triple>; helper target added by integration branch"
+      }
+    },
+    {
+      "name": "compound-references",
+      "kind": "skill-assets",
+      "description": "CE compound knowledge-capture semantics + validators (selective port)",
+      "upstream": {
+        "repo": "https://github.com/EveryInc/compound-engineering-plugin",
+        "commit": "082c83e0537c803ac1d927daafc2e6eb6962dedf",
+        "license": "MIT",
+        "licenseStatus": "ok-mit-keep-notice",
+        "notice": "Portions adapted from EveryInc compound-engineering-plugin (MIT), (c) Every — retained in skill NOTICE files.",
+        "releaseChannel": "bundled-with-mawf (skills/)"
+      },
+      "runtime": {
+        "python": "3.x stdlib only (validators)",
+        "optional": [
+          "gh CLI for merge-state verification"
+        ]
+      },
+      "entry": "skills/mawf-compound/SKILL.md",
+      "install": {
+        "layout": "bundled"
+      },
+      "distribution": {
+        "npm": true,
+        "vendoredPath": "skills/"
+      }
+    }
+  ]
+}
