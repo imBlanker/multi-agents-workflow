@@ -34,5 +34,4 @@ coverage/
 # Nested independent git repos (official mirror + imBlanker's pi/dsh port repos).
 # Never tracked by the MAW repo; each manages its own git history.
 codex-plugins/
-multi-agents-workflow-0.8.1.tgz
-multi-agents-workflow-0.8.2.tgz
+multi-agents-workflow-*.tgz

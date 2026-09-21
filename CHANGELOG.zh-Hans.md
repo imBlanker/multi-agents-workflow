@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-09-21
+
+### Added
+
+- `docs/UPSTREAM_COMPATIBILITY.md` 顶部新增权威的四层级上游登记表（宿主 / 集成契约 / components.lock 四工具 / pool 池，附概念致谢附录）；PR 模板新增逐级「上游更新追踪清单」为合入前必查项，CONTRIBUTING 的 PR 流程同步指向该登记表作为单一事实源。
+- 新增 `2026-09-13 → 2026-09-21` 固定截止审计台账，覆盖全部层级：Claude Code 2.1.270–2.1.278（并更正上一轮对 9 月 12 日发布的记载）、Codex 0.155.0/0.155.1 及 33 条预发布/构建产物行、Pi 0.86.0/0.86.1（补齐基线差距）、dsh 0.1.6 两个 alpha（npm latest 仍为 0.1.5-rc.2）、Trellis 无发布；pi-mcp-adapter 2.34.0/2.35.0、dsh-web 0.3.21–0.3.24、cc-switch 窗口内无新版（未发布的 schema 19 记为观察项）、kickstart 与 codex-plugin-cc 无变化；三级 lock 跟进与四级 catalog 新鲜度逐项记录。本轮无需产品代码适配，亦无需推迟到 0.9 的理论/架构级变更。
+
+### Changed
+
+- compound-references lock 升至 v3.27.0 @ `65dd958d`（溯源刷新；记录上游 #1736/#1738；mawf 为改编文档移植，不含上游字节，无行为变化）。
+
 ## [0.8.1] - 2026-09-12
 
 ### Changed
