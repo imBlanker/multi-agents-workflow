@@ -6,27 +6,201 @@ This registry is the single source of truth for every upstream whose updates can
 
 | Tier | Upstream | Track line (repo / registry) | mawf consumer | Baseline | Last checked |
 | --- | --- | --- | --- | --- | --- |
-| 1 host | Claude Code | npm `@anthropic-ai/claude-code`; changelog `anthropics/claude-code` | `claude -p` (`src/watchdog/dispatch.js`), PreToolUse `Agent\|Task` (`plugin/hooks/hooks.json`, `bin/guard.mjs`), installer assets (`src/installer.js`), cost (`src/cost.js`) | 2.1.269 | 2026-09-12 |
-| 1 host | Codex | `openai/codex` releases; official changelog | `codex exec`/resume/fork, `mcp list --json` (`src/watchdog/dispatch.js`, `src/inventory.js`) | 0.154.0 | 2026-09-12 |
-| 1 host | Pi | npm `@earendil-works/pi-coding-agent`; `earendil-works/pi` releases | canonical agent root, skills/MCP layouts, model cache (`src/piprovider.js`, `src/pi-resources.js`) | 0.85.1 | 2026-09-12 |
-| 1 host | DeepSeek Harness (dsh) | npm `@deepseek-ai/dsh`; `deepseek-ai/deepseek-harness` releases | `--profile`, `--dump-config`, positional headless tasks, default model alias (`src/dshprovider.js`, `src/modelcap.js`) | 0.1.5-rc.2 | 2026-09-12 |
-| 1 host | Trellis | npm `@mindfoldhq/trellis`; `mindfold-ai/Trellis` tags | `init`/`-y`/platform-flag interactive contract (`src/trellis.js`) | 0.6.17 | 2026-09-12 |
-| 2 integration | pi-mcp-adapter | `nicobailon/pi-mcp-adapter` | six configuration layers, same-name overrides, disabled state | 2.33.0 | 2026-09-05 |
-| 2 integration | kickstart (pi-subagents-lite) | `orionpax1997/kickstart.pi` | Agent guidance, array tool lists, provider/model frontmatter; not installed — run its scripts per its tutorial when needed | pi-subagents-lite | 2026-09-05 |
-| 2 integration | dsh-web | `zhu1090093659/dsh-web` | component-local disabled state, conservative skill discovery, staged preset library | 0.3.20 | 2026-09-05 |
-| 2 integration | cc-switch (GUI upstream) | `farion1231/cc-switch` releases, 3.x line | SQLite DB schema (`src/ccswitch.js`), schema 18 cost tables; track line is the GUI upstream — `cc-switch-cli` is a downstream installed tool, not this baseline | 3.20.3 / schema 18 | 2026-09-05 |
-| 2 integration | codex-plugin-cc | `openai/codex-plugin-cc` | out-of-process Codex review gate bridge | — | 2026-09-05 |
-| 3 lock | archify | fork `imBlanker/archify` ← author `tt-a1i/archify` | locked engine adapter (`src/archify.js`, `src/archify-registry.js`) | 2.17.0-dev.1 @ `c3e15cc` | 2026-09-17 |
-| 3 lock | write-notes (notes-board) | fork `imBlanker/write-notes-like-deepseek` ← author `czm15053/write-notes-like-deepseek` | vendored board asset (`vendor/notes-board/`) | @ `2aef219` | 2026-09-17 |
-| 3 lock | trellis-card | fork `imBlanker/trellis-card` ← author `czm15053/trellis-card` | managed component; in-app update check disabled in managed mode | 0.2.5 @ `4e24d42` | 2026-09-17 |
-| 3 lock | compound-references | `EveryInc/compound-engineering-plugin` | adapted skill references (`skills/`, NOTICE retained) | @ `082c83e` | 2026-09-17 |
-| 4 pool | codebase-memory-mcp | `DeusData/codebase-memory-mcp` | optional component pool entry | catalog | — |
-| 4 pool | codegraph | `colbymchenry/codegraph` | optional component pool entry (installed locally, outside mawf update scope) | catalog | — |
-| 4 pool | agent-browser | `vercel-labs/agent-browser` | optional component pool entry (installed locally, outside mawf update scope) | catalog | — |
+| 1 host | Claude Code | npm `@anthropic-ai/claude-code`; changelog `anthropics/claude-code` | `claude -p` (`src/watchdog/dispatch.js`), PreToolUse `Agent\|Task` (`plugin/hooks/hooks.json`, `bin/guard.mjs`), installer assets (`src/installer.js`), cost (`src/cost.js`) | 2.1.278 | 2026-09-21 |
+| 1 host | Codex | `openai/codex` releases; official changelog | `codex exec`/resume/fork, `mcp list --json` (`src/watchdog/dispatch.js`, `src/inventory.js`) | 0.155.1 | 2026-09-21 |
+| 1 host | Pi | npm `@earendil-works/pi-coding-agent`; `earendil-works/pi` releases | canonical agent root, skills/MCP layouts, model cache (`src/piprovider.js`, `src/pi-resources.js`) | 0.86.1 | 2026-09-21 |
+| 1 host | DeepSeek Harness (dsh) | npm `@deepseek-ai/dsh`; `deepseek-ai/deepseek-harness` releases | `--profile`, `--dump-config`, positional headless tasks, default model alias (`src/dshprovider.js`, `src/modelcap.js`) | 0.1.5-rc.2 | 2026-09-21 |
+| 1 host | Trellis | npm `@mindfoldhq/trellis`; `mindfold-ai/Trellis` tags | `init`/`-y`/platform-flag interactive contract (`src/trellis.js`) | 0.6.17 | 2026-09-21 |
+| 2 integration | pi-mcp-adapter | `nicobailon/pi-mcp-adapter` | six configuration layers, same-name overrides, disabled state | 2.35.0 | 2026-09-21 |
+| 2 integration | kickstart (pi-subagents-lite) | `orionpax1997/kickstart.pi` | Agent guidance, array tool lists, provider/model frontmatter; not installed — run its scripts per its tutorial when needed | pi-subagents-lite | 2026-09-21 |
+| 2 integration | dsh-web | `zhu1090093659/dsh-web` | component-local disabled state, conservative skill discovery, staged preset library | 0.3.24 | 2026-09-21 |
+| 2 integration | cc-switch (GUI upstream) | `farion1231/cc-switch` releases, 3.x line | SQLite DB schema (`src/ccswitch.js`), schema 18 cost tables; track line is the GUI upstream — `cc-switch-cli` is a downstream installed tool, not this baseline | 3.20.3 / schema 18 | 2026-09-21 |
+| 2 integration | codex-plugin-cc | `openai/codex-plugin-cc` | out-of-process Codex review gate bridge | 1.0.6 | 2026-09-21 |
+| 3 lock | archify | fork `imBlanker/archify` ← author `tt-a1i/archify` | locked engine adapter (`src/archify.js`, `src/archify-registry.js`) | 2.17.0-dev.1 @ `c3e15cc` | 2026-09-21 |
+| 3 lock | write-notes (notes-board) | fork `imBlanker/write-notes-like-deepseek` ← author `czm15053/write-notes-like-deepseek` | vendored board asset (`vendor/notes-board/`) | @ `2aef219` | 2026-09-21 |
+| 3 lock | trellis-card | fork `imBlanker/trellis-card` ← author `czm15053/trellis-card` | managed component; in-app update check disabled in managed mode | 0.2.5 @ `4e24d42` | 2026-09-21 |
+| 3 lock | compound-references | `EveryInc/compound-engineering-plugin` | adapted skill references (`skills/`, NOTICE retained) | 3.27.0 @ `65dd958d` | 2026-09-21 |
+| 4 pool | codebase-memory-mcp | `DeusData/codebase-memory-mcp` | optional component pool entry | catalog | 2026-09-21 |
+| 4 pool | codegraph | `colbymchenry/codegraph` | optional component pool entry (installed locally, outside mawf update scope) | catalog | 2026-09-21 |
+| 4 pool | agent-browser | `vercel-labs/agent-browser` | optional component pool entry (installed locally, outside mawf update scope) | catalog | 2026-09-21 |
 
 ### Appendix: concept attributions (not tracked)
 
 Referenced for ideas only — no runtime dependency, updates never affect mawf: Anthropic engineering essays, LangChain/LangGraph, Lilian Weng's agent survey, `mbruhler/claude-orchestration`, `garyqlin/glink-engine`, `milanglacier/pi-dynamic-workflow`. See [NOTICE.md](../NOTICE.md).
+
+## Fixed-cutoff formal-release ledger (2026-09-13 → 2026-09-21)
+
+This audit covers every formal release of the five tier-1 hosts after the
+v0.8.2-era cutoff (`2026-09-12T23:59:59Z`) through 2026-09-21 (research
+pass 2026-09-21T03:40Z, with the same-day on-cutoff npm publication
+`pi-mcp-adapter@2.35.0` at 06:45Z included). Tier-2 contracts share the
+window; tier-3 entries are judged window-free by new commits after their
+locked SHA; tier-4 by latest release versus the pool catalog and this
+host. Evidence: `P` primary official registry/release/tag/commit
+metadata (live API/atom feed); `A` archived mawf source/contract greps at
+`main` @ `645e0aa`; `L` live installed-host checks, measured before and
+re-measured after this release's local update pass (claude `2.1.278`,
+codex `0.155.1`, pi `0.86.1`, dsh `0.1.5-rc.2`, trellis `0.6.17`,
+pi-mcp-adapter `2.35.0`, codex-plugin-pi `0.2.1`, dsh-web `0.3.24`,
+cc-switch GUI `3.20.3`, cc-switch-cli `5.10.5`).
+
+### Claude Code
+
+Sources: official [npm publication ledger](https://registry.npmjs.org/@anthropic-ai%2fclaude-code)
+and [changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md).
+Eight formal publications in the window (`latest` = `next` = `2.1.278`;
+`stable` dist-tag remains `2.1.267`). Boundary gap-close: `2.1.270`
+(Sep 12 18:52:44Z) published after the audited baseline `2.1.269`; the
+prior ledger's "no September 12 publications" claim is corrected here.
+
+| Release (UTC) | Delta, mawf consumer, and platform effect | Response / limit |
+| --- | --- | --- |
+| `2.1.270` (Sep 12 18:52:44) — outside window, gap-close | Bash permission re-prompt regression fix; interactive permission behavior only. `claude -p` (`src/watchdog/dispatch.js`) and the PreToolUse `Agent\|Task` matcher (`plugin/hooks/hooks.json`, `bin/guard.mjs`) untouched. | **No action.** `P`; prior-ledger claim corrected. |
+| `2.1.271` (Sep 14 19:45:19) | Remote fast mode, per-command sandbox `allowed_domains`, subagent `omitClaudeMd`, `--accept-command <sha256>` — additive/interactive; `modelPricing.multiplier` affects managed/gateway pricing, not the cc-synced pricing read by `src/cost.js`. | **No action.** `P+A`. |
+| `2.1.272` (Sep 14 23:34:13) | Official note: bug/reliability fixes only; no mapped consumer change. | **No action.** `P`; detail unavailable. |
+| `2.1.273` (Sep 15 18:06:34) | Opt-in gateway hint headers, MCP-disconnect notice; `--output-format stream-json` subagent delivery and permission-checker fidelity changes on output mawf already parses — no `claude -p` grammar or verdict-shape change. | **No action.** `P+A`. |
+| `2.1.274` (Sep 16 22:36:09) | `CLAUDE_CODE_MCP_STARTUP_WAIT_MS` optional knob (recorded, not consumed); headless/SDK no longer make a per-background-task model call (cost win for watchdog-dispatched runs); hooks `$schema` notice fix leaves the guard contract intact. | **No action.** `P+A`. |
+| `2.1.275` (Sep 17 20:20:31) | claude.ai skills/plugins sync opt-outs, plugin install integrity (`npm pack --ignore-scripts`) — host installation flows; conventional assets copied by `src/installer.js` unaffected; `/update-config` `Edit(path)` rules do not touch `src/configgen.js` output. | **No action.** `P+A`. |
+| `2.1.276` (Sep 18 01:39:31) | Single gateway-proxy regression fix on the `ANTHROPIC_BASE_URL` request path mawf neither sets nor ships. | **No action.** `P`. |
+| `2.1.277` (Sep 18 16:22:26) | AGENTS.md fallback read (additive); `claude -p` internal errors now report and exit 1 instead of hanging — strictly narrows the failure surface consumed by `src/watchdog/dispatch.js`; stray Haiku auto-title spend removed from non-SDK `-p`; deprecated TaskOutput removed (unconsumed). | **No action.** `P+A`. |
+| `2.1.278` (Sep 19 01:48:59) | Server-side classifier for interactive auto mode (opt-out env) with billing notice — outside the headless `-p` contract; `/status` row is TUI. | **No action.** `P`. Local `L`: upgraded to `2.1.278` in this release's update pass. |
+
+As of cutoff: stable latest `2.1.278`; no separate prerelease channel.
+
+### Codex
+
+Source: official [release inventory](https://api.github.com/repos/openai/codex/releases?per_page=100)
+corroborated by the npm ledger. Two stable Rust CLIs, 32 Rust prereleases
+(every alpha body is the bare line "Release x.y.z" — deltas unresolved by
+construction; official order is non-monotonic, including patched
+`alpha.x.y` tags), and one CI-only build artifact. No `python-v*` release
+in the window.
+
+| Release (UTC) | Delta, mawf consumer, and platform effect | Response / limit |
+| --- | --- | --- |
+| [`0.155.0`](https://github.com/openai/codex/releases/tag/rust-v0.155.0) (Sep 17 23:14:43) | Experimental `/voice`, TUI reasoning summaries, daemon update schedules, Bedrock credential commands, tmux/MCP-OAuth/approval hardening; session-start hooks distinguish forked sessions (#44349 — mawf ships no codex hooks). Consumed contracts unchanged: `codex exec [resume\|fork <id>] --` and `-m` (`src/watchdog/dispatch.js`), `codex mcp list --json` (`src/inventory.js`); no JSON schema break announced. | **No action.** `P+A`; live `mcp list --json` shape re-check rides the local update pass. |
+| [`0.155.1`](https://github.com/openai/codex/releases/tag/rust-v0.155.1) (Sep 18 20:03:04) | TUI-only reasoning-summary default fix; non-interactive `codex exec` out of scope. | **No action.** `P+A+L` (local already `0.155.1`). |
+| `rusty-v8-v152.2.0` (Sep 16 12:58:44) | CI/dependency build artifact (rusty_v8 static library); absent from user packages on any OS. | **No action; build artifact only.** `P`. |
+| `0.155.0-alpha.4` (Sep 14 11:48:08) | Release-only body; no stable consumed or OS contract. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.2.4` (Sep 14 23:04:27) | Release-only body; order non-monotonic. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.5` (Sep 15 00:31:51) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.6` (Sep 15 02:00:26) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.7` (Sep 15 21:09:02) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.8` (Sep 15 22:26:34) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.9` (Sep 16 01:34:34) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.2.5` (Sep 16 13:17:47) | Release-only body; order non-monotonic. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.10` (Sep 16 04:20:06) | Release-only body; order non-monotonic. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.11` (Sep 16 17:13:20) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.12` (Sep 16 18:25:35) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.2.6` (Sep 16 20:03:32) | Release-only body; order non-monotonic. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.13` (Sep 16 21:43:35) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.14` (Sep 16 23:06:38) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.15` (Sep 17 01:21:10) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.16` (Sep 17 04:34:06) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.17` (Sep 17 21:16:29) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.18` (Sep 17 22:37:07) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.1` (Sep 18 00:23:01) | New 0.156.0 prerelease line; release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.155.0-alpha.9.2` (Sep 18 03:09:42) | Patched alpha; order non-monotonic. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.2` (Sep 18 04:56:20) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.3` (Sep 18 18:20:37) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.4` (Sep 18 21:18:45) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.5` (Sep 19 00:22:35) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.6` (Sep 19 02:18:41) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.7` (Sep 19 04:08:15) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.8` (Sep 19 17:20:24) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.9` (Sep 20 00:17:45) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.10` (Sep 20 21:18:52) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.11` (Sep 20 22:49:40) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| `0.156.0-alpha.12` (Sep 21 00:06:46) | Release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+| [`0.156.0-alpha.13`](https://github.com/openai/codex/releases/tag/rust-v0.156.0-alpha.13) (Sep 21 02:15:06) | Newest tag at the research cutoff; release-only body. | **No action; prerelease unsupported.** `P`; detail unresolved. |
+
+As of cutoff: stable latest `0.155.1`; newest prerelease
+`0.156.0-alpha.13`.
+
+### Pi
+
+Sources: official [Pi releases](https://github.com/earendil-works/pi/releases)
+and [npm ledger](https://registry.npmjs.org/@earendil-works%2fpi-coding-agent).
+The window closes the full baseline gap: `0.85.1` is followed directly by
+`0.86.0` and `0.86.1`, both stable; no prerelease ahead of `0.86.1`.
+
+| Release (UTC) | Delta, consumer, and platform effect | Response / limit |
+| --- | --- | --- |
+| [`0.86.0`](https://github.com/earendil-works/pi/releases/tag/v0.86.0) (Sep 19 23:14:16 npm) | Prompt cache warming, `/bug`, transcript-aware `before_agent_start`, offline Radius model catalog overlay, per-model compaction budgets. **Breaking changes confined to the extension/custom-provider API** (normalized `TranscriptContext`, JSON-compatible tool arguments, fail-closed `user_bash`) — mawf ships no Pi extension or custom provider, so that surface is outside mawf's boundary. Agent-root files read by `src/piprovider.js` (`settings.json`, `models.json`, `models-store.json`, `mcp.json`, `auth.json`) and the resource layouts read by `src/pi-resources.js` unchanged; catalog content churn is data consumed generically by id-driven rules in `src/modelcap.js`. | **No action.** `P+A`; exact `models-store.json` cache-schema drift under the Radius overlay unresolved — watch at the next release. |
+| [`0.86.1`](https://github.com/earendil-works/pi/releases/tag/v0.86.1) (Sep 20 11:16:39 npm) | Meta provider via `/login` (additive row); Node persistent compile cache (host-owned); `/bug`, clipboard, z.ai context-overflow, Cerebras tool-schema fixes. No consumer-layout change. | **No action.** `P+A+L` (local `0.86.1`; never downgrade to 0.85.x). |
+
+As of cutoff: stable latest `0.86.1`; no newer prerelease.
+
+### DeepSeek Harness (dsh)
+
+Sources: official [dsh releases](https://github.com/deepseek-ai/deepseek-harness/releases)
+and [npm ledger](https://registry.npmjs.org/@deepseek-ai%2fdsh). Both
+window releases are prereleases; npm `latest` remains `0.1.5-rc.2` — no
+stable/rc advance in the window.
+
+| Release (UTC) | Delta, consumer, and platform effect | Response / limit |
+| --- | --- | --- |
+| [`0.1.6-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.1) (Sep 15 03:23:13 npm) — prerelease | Headless additions strictly additive to the grammar mawf consumes (`--profile headless <prompt>` positional retained): stdin task input, `--session-id` resume, `--json` events. Migration notes (Messages-protocol default for DeepSeek, PTC rename, async `agent/created`, deprecated sync Session APIs) are host-owned wire/internals; provider/model rows still arrive via `dsh --profile <p> --dump-config` parsed by `src/dshprovider.js`. | **No action; prerelease unsupported.** `P+A`. Watch at 0.1.6 rc/stable: dump-config provider-row shape under the Messages default. |
+| [`0.1.6-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.2) (Sep 17 13:30:16 GitHub) — prerelease | Plugin manager with runtime dependency resolution/unload — potentially touches the manifest reading in `src/dsh-plugin-inventory.js`; manifest format change not specified (detail unresolved). Default model list removes V4 Flash / V4 Flash Vision Exp — id-driven rules in `src/modelcap.js` go dormant, not broken; `agent-default-model` selection contract unchanged. New `dsh <profile>` launch syntax additive. | **No action; prerelease unsupported.** `P+A`. Watch at 0.1.6 rc/stable: plugin-inventory format and default-model list contents. |
+
+As of cutoff: stable latest `0.1.5-rc.2` (unchanged); newest prerelease
+`0.1.6-alpha.2`. Local `L`: `0.1.5-rc.2` after this release's update pass
+(from a stale `0.1.2-rc.1`).
+
+### Trellis
+
+Sources: official [npm ledger](https://registry.npmjs.org/%40mindfoldhq%2Ftrellis)
+and [tags](https://github.com/mindfold-ai/Trellis/tags). No publication,
+tag, or commit since 2026-09-13.
+
+| Release (UTC) | Delta, consumer, and platform effect | Response / limit |
+| --- | --- | --- |
+| (none in window) | No `0.6.18`/new beta activity. The `init`/`-y`/platform-flag interactive contract consumed by `src/trellis.js` is unchanged; the v0.8.1 interactive-init repair stands. | **No action.** `P+A+L` (local `0.6.17`). |
+
+As of cutoff: stable latest `0.6.17`; newest prerelease `0.7.0-beta.4`
+(both unchanged; mawf's fallback selects `@latest`, not `beta`).
+
+### Tier-2 integration contracts
+
+| Contract | Window finding | mawf consumer effect | Response / limit |
+| --- | --- | --- | --- |
+| pi-mcp-adapter | `v2.34.0` (Sep 14 20:53) and `v2.35.0` (Sep 21 06:45, on-cutoff tail); releases note faster startup, OAuth Client ID Metadata Documents, opt-in `encrypted-file` credential store, and state "existing configurations continue to work". Repo releases list lacks a `v2.33.0` entry while the tag exists — baseline per tag; reason unresolved. | Six configuration layers, same-name overrides, disabled state: intact (additions opt-in). | **No action.** `P+L` (local `2.35.0` after the update pass). |
+| kickstart (pi-subagents-lite) | No commits/releases since Sep 9 (pre-window). | None. Not installed by policy — run its scripts per its tutorial when needed. | **No action.** `P`. |
+| dsh-web | `v0.3.21` (Sep 12, boundary), `v0.3.22` (Sep 13), `v0.3.23` (Sep 16), `v0.3.24` (Sep 20): no breaking migrations, no renamed persistent identifiers; tool-family pagination with on-demand `tool_activate` is runtime presentation; presets sync to `~/.dsh/.agent-presets` at boot, reinforcing staged semantics. | Component-local disabled overrides, conservative skill discovery, staged preset library: intact. | **No action.** `P+L` (profile web bundle `@linxin666/dsh-web-all` updated to `0.3.24`; effective next profile boot). |
+| cc-switch (GUI upstream) | No release in window (= baseline `v3.20.3`, Sep 11). Unreleased main line adds a schema 18→19 additive migration (`06082e18`, #7383, Sep 15: idempotent `enabled_mcode` column on `mcp_servers`/`skills`). | Read-only consumption on schema 18 (`src/ccswitch.js`) unaffected. | **No action; watch.** `P+A`. Re-check read-only paths when a release ships schema 19. Downstream cc-switch-cli updated `5.10.4 → 5.10.5` locally, outside this baseline. |
+| codex-plugin-cc | No release (`v1.0.6`, Jul 8); no commits since Sep 13. | Subprocess review-gate contract unchanged. | **No action.** `P`. |
+
+### Tier-3 components.lock follow-up (window-free)
+
+| Component (locked) | New upstream activity | mawf consumer effect | Response |
+| --- | --- | --- | --- |
+| archify (`c3e15cc` = 2.17.0-dev.1) | +8 commits: delta arrowhead fix (#434), fast-uri dependency fix (#347), six docs/ci; no new release. | IR/render contracts untouched. | **Record only; lock not bumped.** `P`. |
+| write-notes (`2aef219`) | +1 commit `a6073d39` (Sep 17): DSH note-format sync, import auto-seal. | Format-contract impact unresolved. | **Record only; lock not bumped.** `P`. Diff check delegated to the P2 persistent-knowledge work as a precondition. |
+| trellis-card (`4e24d42` = 0.2.5) | +2 commits; released `v0.2.6` (rpm CI + version bump only). | None; in-app update check stays disabled in managed mode. | **Record only; lock not bumped** (zero-risk alignment available if wanted). `P`. |
+| compound-references (`082c83e`) | +11 commits; released `compound-engineering-v3.27.0` (Sep 19) including #1736 (extract-metadata resumed-session preamble fix) and #1738 (manual-only skills stay manual-only on Codex). | mawf ships an adapted doc port — CE-format semantics captured by the `mawf knowledge` CLI, not upstream tooling — so no bundled bytes change; the provenance refresh keeps the lock current. | **Lock bumped to 3.27.0 @ `65dd958d` in this release**; registry tests green. #1738 noted for the four-host skill injection work. `P+A`. |
+
+### Tier-4 pool catalog freshness
+
+| Component | Latest (UTC) | Local / catalog delta | Response |
+| --- | --- | --- | --- |
+| codebase-memory-mcp | `v0.11.0` (Sep 15; 171 merged PRs) | Catalog entry to verify against. | **Record only.** `P`. |
+| codegraph | `v1.6.0` (Aug 26, out of window) | Local `1.5.0` — pre-existing gap, not window news. | **Record only; no local update (outside this release's scope).** `P`. |
+| agent-browser | `v0.38.1` (Sep 16; `v0.38.0` + `v0.38.1` in window) | Local `0.33.2` — five minors behind. | **Record only; no local update (outside this release's scope).** `P`. |
+
+### Fixed-cutoff conclusion (2026-09-21)
+
+All formal tier-1 releases in the window are classified above. No release
+requires a mawf product-code adaptation, and nothing rises to a
+deferrable theory/architecture concern. The single product action in this
+release is the compound-references lock bump (provenance only; no
+behavior change). Watch items carried to the next milestone: Codex
+`mcp list --json` live shape; Pi `models-store.json` cache-schema drift
+under the Radius overlay; dsh 0.1.6 plugin-inventory format versus
+`src/dsh-plugin-inventory.js` and default-model list versus dormant
+`src/modelcap.js` rules; cc-switch schema 19 read-only recheck once
+released; write-notes `a6073d39` diff check (P2 precondition); and
+compound #1738 for the four-host skill injection work. Platform deltas in
+the window are host-owned throughout.
 
 ## Audit history
 
