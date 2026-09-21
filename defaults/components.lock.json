@@ -125,7 +125,8 @@
       "description": "CE compound knowledge-capture semantics + validators (selective port)",
       "upstream": {
         "repo": "https://github.com/EveryInc/compound-engineering-plugin",
-        "commit": "082c83e0537c803ac1d927daafc2e6eb6962dedf",
+        "commit": "65dd958da881843868daa219c7f0a5a0e694d9db",
+        "version": "3.27.0",
         "license": "MIT",
         "licenseStatus": "ok-mit-keep-notice",
         "notice": "Portions adapted from EveryInc compound-engineering-plugin (MIT), (c) Every — retained in skill NOTICE files.",
