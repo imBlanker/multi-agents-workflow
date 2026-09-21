@@ -89,9 +89,10 @@ Common types:
 1. Open a PR against `main` (see `.github/PULL_REQUEST_TEMPLATE.md`).
 2. Reference the issue with `Closes #N` in the PR body.
 3. Make sure `npm test` passes locally and CI is green.
-4. Keep PRs focused — **one logical change per PR.**
-5. Update the README and `examples/` if your change affects user-facing behavior.
-6. Workflow-file changes need one extra check: scheduled GitHub Actions run from the default branch, so after merging workflow changes, smoke-test them with `workflow_dispatch`.
+4. Before opening the PR, run the upstream tracking checklist from the PR template against the registry in [`docs/UPSTREAM_COMPATIBILITY.md`](./docs/UPSTREAM_COMPATIBILITY.md).
+5. Keep PRs focused — **one logical change per PR.**
+6. Update the README and `examples/` if your change affects user-facing behavior.
+7. Workflow-file changes need one extra check: scheduled GitHub Actions run from the default branch, so after merging workflow changes, smoke-test them with `workflow_dispatch`.
 
 ## Governance & cc-switch policy
 

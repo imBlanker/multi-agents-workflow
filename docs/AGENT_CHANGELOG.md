@@ -6,6 +6,28 @@ coding agents operating this repo). Human narrative: [`../CHANGELOG.md`](../CHAN
 
 Package: `multi-agents-workflow` · CLI: `mawf` · Node ≥ 20.17 · zero runtime deps.
 
+## 0.8.3 (2026-09-21)
+
+```yaml
+version: 0.8.3
+semver_impact: patch
+compatibility:
+  cutoff: "tier-1 hosts after the 2026-09-12T23:59:59Z cutoff through 2026-09-21; tiers 2-4 per the upstream registry"
+  result: "no newly released host contract required a mawf code adaptation; nothing deferred to 0.9"
+added:
+  - "authoritative four-tier upstream registry in docs/UPSTREAM_COMPATIBILITY.md; PR template enforces a per-tier upstream tracking checklist; CONTRIBUTING PR flow references the registry"
+  - "fixed-cutoff ledger 2026-09-13..2026-09-21 across tiers 1-4; registry baselines and last-checked dates refreshed to 2026-09-21"
+changed:
+  - "compound-references lock bumped to v3.27.0 @ 65dd958d (provenance only; no bundled bytes change)"
+upgrade:
+  npm: "npm i -g multi-agents-workflow@0.8.3"
+  checkout: "mawf upgrade"
+smoke: "mawf doctor && mawf --version"
+evidence_limits:
+  local: "suite 534/524/0/10 at the release commit; live-host checks limited to version probes and the local tier-1/2 update pass"
+  ci: "Ubuntu/Windows x Node 22/24 must pass before release; local runs do not imply CI results"
+```
+
 ## 0.8.1 (2026-09-12)
 
 ```yaml

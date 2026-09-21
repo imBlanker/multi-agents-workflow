@@ -6,6 +6,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-09-21
+
+### Added
+
+- Authoritative four-tier upstream registry (hosts / integration contracts / components.lock tools / pool catalog, plus a concept-attribution appendix) at the top of `docs/UPSTREAM_COMPATIBILITY.md`. The PR template now requires a per-tier upstream tracking checklist before every PR, and CONTRIBUTING's PR flow points at the registry as the single source of truth.
+- Fixed-cutoff ledger `2026-09-13 → 2026-09-21` across all tiers: Claude Code 2.1.270–2.1.278 (prior-ledger Sep-12 claim corrected), Codex 0.155.0/0.155.1 plus 33 prerelease/artifact rows, Pi 0.86.0/0.86.1 (0.85.1 baseline gap closed), dsh 0.1.6 alphas (npm `latest` stays 0.1.5-rc.2), Trellis quiet; pi-mcp-adapter 2.34.0/2.35.0, dsh-web 0.3.21–0.3.24, cc-switch quiet with an unreleased schema-19 watch, kickstart and codex-plugin-cc quiet; tier-3 lock follow-ups and tier-4 catalog freshness recorded. No product-code adaptation required; nothing deferred to 0.9.
+
+### Changed
+
+- compound-references lock bumped to v3.27.0 @ `65dd958d` (provenance refresh; upstream #1736/#1738 noted; mawf ships an adapted doc port, so no bundled bytes change).
+
 ## [0.8.1] - 2026-09-12
 
 ### Changed
