@@ -1,4 +1,36 @@
-# Upstream compatibility through 2026-09-12
+# Upstream compatibility through 2026-09-21
+
+## Upstream registry (authoritative)
+
+This registry is the single source of truth for every upstream whose updates can affect mawf. The PR template's upstream tracking checklist and CONTRIBUTING's PR flow reference this section — do not copy the list elsewhere. Tracking policy: an upstream change that does not touch mawf's theory or architecture is tracked directly into the current release; only theory/architecture-level changes are recorded and deferred to the next minor (0.9). Evidence classes P/A/L are defined in the ledger sections below.
+
+| Tier | Upstream | Track line (repo / registry) | mawf consumer | Baseline | Last checked |
+| --- | --- | --- | --- | --- | --- |
+| 1 host | Claude Code | npm `@anthropic-ai/claude-code`; changelog `anthropics/claude-code` | `claude -p` (`src/watchdog/dispatch.js`), PreToolUse `Agent\|Task` (`plugin/hooks/hooks.json`, `bin/guard.mjs`), installer assets (`src/installer.js`), cost (`src/cost.js`) | 2.1.269 | 2026-09-12 |
+| 1 host | Codex | `openai/codex` releases; official changelog | `codex exec`/resume/fork, `mcp list --json` (`src/watchdog/dispatch.js`, `src/inventory.js`) | 0.154.0 | 2026-09-12 |
+| 1 host | Pi | npm `@earendil-works/pi-coding-agent`; `earendil-works/pi` releases | canonical agent root, skills/MCP layouts, model cache (`src/piprovider.js`, `src/pi-resources.js`) | 0.85.1 | 2026-09-12 |
+| 1 host | DeepSeek Harness (dsh) | npm `@deepseek-ai/dsh`; `deepseek-ai/deepseek-harness` releases | `--profile`, `--dump-config`, positional headless tasks, default model alias (`src/dshprovider.js`, `src/modelcap.js`) | 0.1.5-rc.2 | 2026-09-12 |
+| 1 host | Trellis | npm `@mindfoldhq/trellis`; `mindfold-ai/Trellis` tags | `init`/`-y`/platform-flag interactive contract (`src/trellis.js`) | 0.6.17 | 2026-09-12 |
+| 2 integration | pi-mcp-adapter | `nicobailon/pi-mcp-adapter` | six configuration layers, same-name overrides, disabled state | 2.33.0 | 2026-09-05 |
+| 2 integration | kickstart (pi-subagents-lite) | `orionpax1997/kickstart.pi` | Agent guidance, array tool lists, provider/model frontmatter; not installed — run its scripts per its tutorial when needed | pi-subagents-lite | 2026-09-05 |
+| 2 integration | dsh-web | `zhu1090093659/dsh-web` | component-local disabled state, conservative skill discovery, staged preset library | 0.3.20 | 2026-09-05 |
+| 2 integration | cc-switch (GUI upstream) | `farion1231/cc-switch` releases, 3.x line | SQLite DB schema (`src/ccswitch.js`), schema 18 cost tables; track line is the GUI upstream — `cc-switch-cli` is a downstream installed tool, not this baseline | 3.20.3 / schema 18 | 2026-09-05 |
+| 2 integration | codex-plugin-cc | `openai/codex-plugin-cc` | out-of-process Codex review gate bridge | — | 2026-09-05 |
+| 3 lock | archify | fork `imBlanker/archify` ← author `tt-a1i/archify` | locked engine adapter (`src/archify.js`, `src/archify-registry.js`) | 2.17.0-dev.1 @ `c3e15cc` | 2026-09-17 |
+| 3 lock | write-notes (notes-board) | fork `imBlanker/write-notes-like-deepseek` ← author `czm15053/write-notes-like-deepseek` | vendored board asset (`vendor/notes-board/`) | @ `2aef219` | 2026-09-17 |
+| 3 lock | trellis-card | fork `imBlanker/trellis-card` ← author `czm15053/trellis-card` | managed component; in-app update check disabled in managed mode | 0.2.5 @ `4e24d42` | 2026-09-17 |
+| 3 lock | compound-references | `EveryInc/compound-engineering-plugin` | adapted skill references (`skills/`, NOTICE retained) | @ `082c83e` | 2026-09-17 |
+| 4 pool | codebase-memory-mcp | `DeusData/codebase-memory-mcp` | optional component pool entry | catalog | — |
+| 4 pool | codegraph | `colbymchenry/codegraph` | optional component pool entry (installed locally, outside mawf update scope) | catalog | — |
+| 4 pool | agent-browser | `vercel-labs/agent-browser` | optional component pool entry (installed locally, outside mawf update scope) | catalog | — |
+
+### Appendix: concept attributions (not tracked)
+
+Referenced for ideas only — no runtime dependency, updates never affect mawf: Anthropic engineering essays, LangChain/LangGraph, Lilian Weng's agent survey, `mbruhler/claude-orchestration`, `garyqlin/glink-engine`, `milanglacier/pi-dynamic-workflow`. See [NOTICE.md](../NOTICE.md).
+
+## Audit history
+
+### Fixed-cutoff audit through 2026-09-12 (v0.8.1 era)
 
 This fixed-cutoff audit covers every formal Claude Code, Codex, Pi, DeepSeek
 Harness (dsh), and Trellis release after mawf v0.7.2 (2026-09-03) through
