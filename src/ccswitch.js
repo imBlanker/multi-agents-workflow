@@ -86,7 +86,11 @@ function sqlStr(s) {
  *  v17 (cc-switch v3.20.0 / cli v5.10.2) adds the `session_usage_dedup`
  *  ledger + pi app management; v18 adds nullable session-log byte cursors.
  *  Both retain the provider/usage contracts read by MAW. */
-export const SUPPORTED_CC_SCHEMA = 18;
+// cc-switch schema 19 (v3.20.4) adds MiniMax enable columns and schema 20
+// (v4.0.2) adds a Pi sync column — both migrations are add-column only; the
+// tables mawf reads (providers/model_pricing/settings/proxy_request_logs)
+// are untouched, so v19/v20 databases read exactly like v18.
+export const SUPPORTED_CC_SCHEMA = 20;
 
 /**
  * Read everything MAW needs from cc-switch in one shot.
