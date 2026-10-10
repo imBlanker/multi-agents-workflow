@@ -145,8 +145,8 @@ test("scanInventory: full 4-host fixture — all hosts present with expected sur
   assert.equal(pi.subagentRunner?.tool, "Agent");
   assert.equal(pi.subagentRunner?.status, "discovered", "workspace presence is not configured package evidence");
   assert.equal(pi.subagentRunner?.ready, false, "static inventory must not claim live readiness");
-  assert.ok(pi.mcps.some((m) => m.name === "exa" && m.source === "pi-mcp.json"));
-  assert.ok(pi.mcps.some((m) => m.name === "context7" && m.source === "pi-mcp.json"));
+  assert.ok(pi.mcps.some((m) => m.name === "exa" && m.source === "pi-agent/mcp.json"));
+  assert.ok(pi.mcps.some((m) => m.name === "context7" && m.source === "pi-agent/mcp.json"));
   assert.equal(pi.mcps.length, 3);
   assert.ok(pi.mcps.some(m => m.name === "proj-mcp" && m.source === "shared-project"));
   assert.ok(pi.models.some((m) => m.id === "glm-4.5-air"), JSON.stringify(pi.models));

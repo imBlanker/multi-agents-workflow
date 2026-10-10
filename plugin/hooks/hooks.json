@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --input-type=commonjs -e \"Promise.resolve().then(()=>import(require('node:url').pathToFileURL(require('node:path').resolve(process.env.CLAUDE_PLUGIN_ROOT,'../bin/guard.mjs')).href)).then(m=>m.main()).catch(()=>process.exit(2))\""
+            "command": "node --input-type=commonjs -e \"Promise.resolve().then(()=>import(require('node:url').pathToFileURL(require('node:path').resolve(process.env.CLAUDE_PLUGIN_ROOT,'../bin/guard.mjs')).href)).then(m=>m.main()).catch(()=>process.exit(2))\"",
+            "onFailure": "block"
           }
         ]
       }

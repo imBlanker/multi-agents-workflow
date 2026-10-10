@@ -88,3 +88,11 @@ test("configured cost hook intercepts Agent and legacy Task before launch", (t) 
     } else assert.equal(hooks.length, 0, `${toolName} is not a spawn`);
   }
 });
+
+test("hooks manifest fails closed at the host layer too (onFailure:block, Claude Code 2.1.288+/2.1.295 semantics)", () => {
+  const repo = fileURLToPath(new URL("../", import.meta.url));
+  const config = JSON.parse(fs.readFileSync(path.join(repo, "plugin", "hooks", "hooks.json"), "utf8"));
+  const group = config.hooks.PreToolUse[0];
+  assert.equal(group.matcher, "^(Agent|Task)$");
+  for (const hook of group.hooks) assert.equal(hook.onFailure, "block");
+});

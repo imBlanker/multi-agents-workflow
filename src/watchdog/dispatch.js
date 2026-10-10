@@ -20,6 +20,10 @@ import { ensureSnapshot, isGitProject, reconcileSnapshot } from "./snapshot.js";
 import { signature, findCase, appendCase, precedentText } from "./knowledge.js";
 import { spendSince } from "../ccswitch.js";
 
+// Default per-phase window. Claude Code >= 2.1.292 makes headless `claude -p`
+// wait for background commands to finish before exiting, so phases that spawn
+// long-running background work can now legitimately exceed older expectations;
+// callers can override via cfg.phaseWindowSec before resorting to the timeout.
 export const PHASE_WINDOW_SEC = 15 * 60;
 export const VERDICT_RE = /RESCUE-DONE outcome=(resolved|failed|blocked)/;
 
@@ -145,7 +149,11 @@ export function hostCommand(args) {
   const p = args.prompt.replace(/\s+$/, "");
   switch (args.host) {
     case "claude":
-      return { bin: "claude", args: ["-p", ...(args.model ? ["--model", args.model] : []), p], cwd: args.workspace };
+      // Pin the pre-2.1.285 semantics explicitly: since 2.1.285 an unset
+      // permission mode defaults headless -p to "auto" on third-party
+      // endpoints (cc-switch proxy users hit that path); "default" restores
+      // the previous uniform behavior.
+      return { bin: "claude", args: ["-p", "--permission-mode", "default", ...(args.model ? ["--model", args.model] : []), p], cwd: args.workspace };
     case "pi":
       // pi -p has no per-run model flag; the price valve is enforced where
       // the host supports per-run model selection. pi runs its configured

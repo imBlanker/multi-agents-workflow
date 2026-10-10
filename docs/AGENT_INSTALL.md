@@ -7,6 +7,7 @@
 ## 0. Identity & scope
 - MAW = `multi-agents-workflow`, CLI `mawf`, MIT, zero runtime deps (Node ≥ 20.17).
 - **Supported hosts: Claude Code, Codex, Pi Agent, and DeepSeek Harness (dsh).** If the user runs Gemini CLI / opencode / others, tell them MAW does not support their host.
+- **Pi host note (since pi 1.0.1):** npm installs of `@earendil-works/pi-coding-agent` no longer ship `npm-shrinkwrap.json`, so transitive dependencies are not pinned. For reproducible machines, install with an explicit version (e.g. `npm i -g @earendil-works/pi-coding-agent@1.1.0`) or adopt the pi.dev managed installer (`pi update` offers the migration).
 - Repo: <https://github.com/imBlanker/multi-agents-workflow>
 
 ## 1. Fork-first (ask the user)

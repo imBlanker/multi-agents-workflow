@@ -210,22 +210,34 @@ export function readPiRunner(opts = {}) {
   return { name: runner ? "pi-subagents-lite" : null, tool: runner ? "Agent" : null, configured: !!runner?.configured, installed: !!runner?.installed, status: !runner ? "unknown" : !runner.installed ? "missing" : !runner.configured ? "discovered" : enabled ? "configured" : "disabled", ready: false, note: "Pi core has no built-in subagents; confirm Agent is loaded in the live session before spawning." };
 }
 
-/** Read the six documented adapter layers, preserving same-name provenance.
+/** Read the adapter's documented configuration sources (nine steps since
+ * pi-mcp-adapter v5 — the four shared `mcp.json` layers never renamed),
+ * preserving same-name provenance. Adapter-owned `mcp-adapter.json` layers
+ * exist since adapter v3.0; the two Pi-owned `mcp.json` files are re-read by
+ * the adapter since v5 on Pi 0.99+ with field translation — Pi's
+ * `enabled:false` / `exposure:"hidden"` spells disabled here too. The
+ * opt-in ancestor-directory step (adapter step 6) stays out of scope.
  * Only safe metadata leaves this boundary. No endpoints, commands or auth data.
  * @param {{piDir?:string,projectDir?:string,homeDir?:string}} [opts]
  */
 export function readPiMcps(opts = {}) {
   const piDir = resolvePiAgentDir(opts.piDir), projectDir = opts.projectDir ?? process.cwd(), homeDir = opts.homeDir ?? home();
-  const layers = [[path.join(homeDir, ".config", "mcp", "mcp.json"), "shared-global"], [path.join(homeDir, ".agents", "mcp.json"), "agents-global"], [path.join(homeDir, ".agents", "mcp", "mcp.json"), "agents-mcp-global"], [path.join(piDir, "mcp.json"), "pi-global"], [path.join(projectDir, ".mcp.json"), "shared-project"], [path.join(projectDir, ".pi", "mcp.json"), "pi-project"]];
+  const layers = [[path.join(homeDir, ".config", "mcp", "mcp.json"), "shared-global"], [path.join(homeDir, ".agents", "mcp.json"), "agents-global"], [path.join(homeDir, ".agents", "mcp", "mcp.json"), "agents-mcp-global"], [path.join(piDir, "mcp.json"), "pi-global"], [path.join(piDir, "mcp-adapter.json"), "pi-adapter-global"], [path.join(projectDir, ".mcp.json"), "shared-project"], [path.join(projectDir, ".pi", "mcp.json"), "pi-project"], [path.join(projectDir, ".pi", "mcp-adapter.json"), "pi-adapter-project"]];
   const rows = new Map();
   for (const [file, source] of layers) {
     const servers = readJson(file, {})?.mcpServers;
     if (!object(servers)) continue;
+    const piOwned = source === "pi-global" || source === "pi-project";
     for (const [name, definition] of Object.entries(servers)) {
       if (!object(definition)) continue;
       const previous = rows.get(name);
       const transport = typeof definition.url === "string" ? "http" : typeof definition.command === "string" ? "stdio" : typeof definition.socket === "string" ? "socket" : previous?.transport ?? "unknown";
-      const disabled = Object.hasOwn(definition, "disabled") ? definition.disabled === true : previous?.disabled ?? false;
+      // Pi-owned files carry Pi's spelling; the adapter translates
+      // enabled:false / exposure:"hidden" into disabled:true at read time.
+      const hasSignal = Object.hasOwn(definition, "disabled") || Object.hasOwn(definition, "enabled") || Object.hasOwn(definition, "exposure");
+      const disabled = piOwned
+        ? hasSignal ? definition.disabled === true || definition.enabled === false || definition.exposure === "hidden" : (previous?.disabled ?? false)
+        : Object.hasOwn(definition, "disabled") ? definition.disabled === true : previous?.disabled ?? false;
       rows.set(name, { name, source, provenance: [...(previous?.provenance ?? []), { source, path: file }], disabled, status: disabled ? "disabled" : "configured", transport, trust: source.endsWith("project") ? "project-trust-required" : previous?.trust ?? "user-global", connected: false });
     }
   }

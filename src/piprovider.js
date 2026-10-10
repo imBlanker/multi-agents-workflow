@@ -38,6 +38,41 @@ export function findPiAgentDir(piDir) {
  *   impl: "pi-files"
  * } | null}
  */
+
+/** Merge the Pi-owned `mcp.json` with the adapter-owned `mcp-adapter.json`
+ * from the same directory (whole-entry replacement, adapter wins — the same
+ * later-wins rule pi-mcp-adapter v3+ documents). Pi-owned entries spell
+ * disabled as `enabled:false` / `exposure:"hidden"`; translated to
+ * `disabled:true` here so callers see one shape.
+ * @param {string} dir pi agent dir
+ */
+function readPiMcpFace(dir) {
+  const base = readJson(path.join(dir, "mcp.json"), { mcpServers: {} });
+  const adapter = readJson(path.join(dir, "mcp-adapter.json"), { mcpServers: {} });
+  const servers = {};
+  for (const [name, def] of Object.entries(base?.mcpServers ?? {})) {
+    if (!def || typeof def !== "object") continue;
+    const disabled = def.disabled === true || def.enabled === false || def.exposure === "hidden";
+    servers[name] = disabled ? { ...def, disabled: true } : def;
+  }
+  Object.assign(servers, adapter?.mcpServers ?? {});
+  return { mcpServers: servers };
+}
+
+/** Chat-capable model ids from a models-store entry. Since pi 0.99 the
+ * remote catalog overlay carries image/classifier entries with an explicit
+ * `type`; only typed non-chat entries are excluded (legacy untyped entries
+ * are chat) so the overlay cannot leak non-chat ids into chat model lists.
+ * @param {{models?: unknown[]}} [entry]
+ */
+function chatModelIds(entry) {
+  const raw = Array.isArray(entry?.models) ? entry.models : [];
+  return raw
+    .filter((m) => typeof m === "string" || m?.type === undefined || m?.type === "chat")
+    .map((m) => (typeof m === "string" ? m : m?.id))
+    .filter(Boolean);
+}
+
 export function readPiConfig(piDir) {
   const dir = findPiAgentDir(piDir);
   if (!dir || !exists(dir)) return null;
@@ -45,7 +80,7 @@ export function readPiConfig(piDir) {
     settings: readJson(path.join(dir, "settings.json"), {}),
     models: readJson(path.join(dir, "models.json"), { providers: {} }),
     modelsStore: readJson(path.join(dir, "models-store.json"), {}),
-    mcp: readJson(path.join(dir, "mcp.json"), { mcpServers: {} }),
+    mcp: readPiMcpFace(dir),
     authPresent: exists(path.join(dir, "auth.json")),
     impl: "pi-files",
   };
@@ -138,8 +173,7 @@ export function readPiAsCc(opts = {}) {
   // extends that provider's model list instead of duplicating it.
   const store = cfg.modelsStore && typeof cfg.modelsStore === "object" ? cfg.modelsStore : {};
   for (const [name, entry] of Object.entries(store)) {
-    const raw = Array.isArray(entry?.models) ? entry.models : [];
-    const ids = raw.map((m) => (typeof m === "string" ? m : m?.id)).filter(Boolean);
+    const ids = chatModelIds(entry);
     if (!ids.length) continue;
     const existing = allProviders.find((p) => p.id === name);
     if (existing) {
@@ -198,10 +232,7 @@ export function enrichPiDbRowsWithModelsJson(cc, piDir) {
   if (!cfg) return cc;
   const providersMap = (cfg.models && cfg.models.providers) || {};
   const store = cfg.modelsStore && typeof cfg.modelsStore === "object" ? cfg.modelsStore : {};
-  const idsFor = (entry) => {
-    const raw = Array.isArray(entry?.models) ? entry.models : [];
-    return raw.map((m) => (typeof m === "string" ? m : m?.id)).filter(Boolean);
-  };
+  const idsFor = chatModelIds;
   for (const row of cc.allProviders) {
     if (row.app_type !== "pi") continue;
     const sc = row.settingsConfig || {};
