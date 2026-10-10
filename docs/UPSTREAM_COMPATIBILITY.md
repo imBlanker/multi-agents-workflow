@@ -143,8 +143,10 @@ Sources: npm `@mindfoldhq/trellis` and `mindfold-ai/Trellis` tags. Zero
 releases in the window (latest remains `0.6.17`, 2026-09-11). Two unreleased
 `main` commits touch only the archive script path, not mawf's
 `init`/`-y`/platform-flag/update/upgrade contract. **No action.** Local:
-project instances (this workspace and mawf-repo) upgraded 0.6.15 → 0.6.17
-via `trellis update` in this release's wrap-up.
+the tracking workspace's `.trellis` instance upgraded 0.6.15 → 0.6.17 via
+`trellis update` chained by `mawf upgrade`; mawf-repo itself carries no
+`.trellis` instance (the round PRD assumed otherwise — corrected here; the
+npm `latest` stays 0.6.17 and the CLI was verified at that version).
 
 ### Tier-2 integration contracts
 
@@ -176,6 +178,11 @@ Catalog baselines recorded here; local installs intentionally not updated
 (pool policy).
 
 ### Fixed-cutoff conclusion (2026-10-10)
+
+Release smoke evidence: v0.8.4 published by the user at 2026-10-10T00:48:53Z —
+registry `latest` = `0.8.4`, `gitHead` = `d91f3c49a90e8a788f46aad938b6b3856881dd03`
+(= merge of PR #40, tag `v0.8.4`); local real-machine gates green after
+`mawf upgrade` (doctor 0 fail, `inventory --verify` exit 0, `advise` exit 0).
 
 Zero theory/architecture changes absorbed; ten adaptation items land in
 0.8.4 (schema guard 18→20, pi-mcp-adapter nine-source read-face alignment
