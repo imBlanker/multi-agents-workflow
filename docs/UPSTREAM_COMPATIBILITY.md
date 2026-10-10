@@ -1,4 +1,4 @@
-# Upstream compatibility through 2026-09-21
+# Upstream compatibility through 2026-10-10
 
 ## Upstream registry (authoritative)
 
@@ -6,27 +6,188 @@ This registry is the single source of truth for every upstream whose updates can
 
 | Tier | Upstream | Track line (repo / registry) | mawf consumer | Baseline | Last checked |
 | --- | --- | --- | --- | --- | --- |
-| 1 host | Claude Code | npm `@anthropic-ai/claude-code`; changelog `anthropics/claude-code` | `claude -p` (`src/watchdog/dispatch.js`), PreToolUse `Agent\|Task` (`plugin/hooks/hooks.json`, `bin/guard.mjs`), installer assets (`src/installer.js`), cost (`src/cost.js`) | 2.1.278 | 2026-09-21 |
-| 1 host | Codex | `openai/codex` releases; official changelog | `codex exec`/resume/fork, `mcp list --json` (`src/watchdog/dispatch.js`, `src/inventory.js`) | 0.155.1 | 2026-09-21 |
-| 1 host | Pi | npm `@earendil-works/pi-coding-agent`; `earendil-works/pi` releases | canonical agent root, skills/MCP layouts, model cache (`src/piprovider.js`, `src/pi-resources.js`) | 0.86.1 | 2026-09-21 |
-| 1 host | DeepSeek Harness (dsh) | npm `@deepseek-ai/dsh`; `deepseek-ai/deepseek-harness` releases | `--profile`, `--dump-config`, positional headless tasks, default model alias (`src/dshprovider.js`, `src/modelcap.js`) | 0.1.5-rc.2 | 2026-09-21 |
-| 1 host | Trellis | npm `@mindfoldhq/trellis`; `mindfold-ai/Trellis` tags | `init`/`-y`/platform-flag interactive contract (`src/trellis.js`) | 0.6.17 | 2026-09-21 |
-| 2 integration | pi-mcp-adapter | `nicobailon/pi-mcp-adapter` | six configuration layers, same-name overrides, disabled state | 2.35.0 | 2026-09-21 |
-| 2 integration | kickstart (pi-subagents-lite) | `orionpax1997/kickstart.pi` | Agent guidance, array tool lists, provider/model frontmatter; not installed — run its scripts per its tutorial when needed | pi-subagents-lite | 2026-09-21 |
-| 2 integration | dsh-web | `zhu1090093659/dsh-web` | component-local disabled state, conservative skill discovery, staged preset library | 0.3.24 | 2026-09-21 |
-| 2 integration | cc-switch (GUI upstream) | `farion1231/cc-switch` releases, 3.x line | SQLite DB schema (`src/ccswitch.js`), schema 18 cost tables; track line is the GUI upstream — `cc-switch-cli` is a downstream installed tool, not this baseline | 3.20.3 / schema 18 | 2026-09-21 |
-| 2 integration | codex-plugin-cc | `openai/codex-plugin-cc` | out-of-process Codex review gate bridge | 1.0.6 | 2026-09-21 |
-| 3 lock | archify | fork `imBlanker/archify` ← author `tt-a1i/archify` | locked engine adapter (`src/archify.js`, `src/archify-registry.js`) | 2.17.0-dev.1 @ `c3e15cc` | 2026-09-21 |
-| 3 lock | write-notes (notes-board) | fork `imBlanker/write-notes-like-deepseek` ← author `czm15053/write-notes-like-deepseek` | vendored board asset (`vendor/notes-board/`) | @ `2aef219` | 2026-09-21 |
-| 3 lock | trellis-card | fork `imBlanker/trellis-card` ← author `czm15053/trellis-card` | managed component; in-app update check disabled in managed mode | 0.2.5 @ `4e24d42` | 2026-09-21 |
-| 3 lock | compound-references | `EveryInc/compound-engineering-plugin` | adapted skill references (`skills/`, NOTICE retained) | 3.27.0 @ `65dd958d` | 2026-09-21 |
-| 4 pool | codebase-memory-mcp | `DeusData/codebase-memory-mcp` | optional component pool entry | catalog | 2026-09-21 |
-| 4 pool | codegraph | `colbymchenry/codegraph` | optional component pool entry (installed locally, outside mawf update scope) | catalog | 2026-09-21 |
-| 4 pool | agent-browser | `vercel-labs/agent-browser` | optional component pool entry (installed locally, outside mawf update scope) | catalog | 2026-09-21 |
+| 1 host | Claude Code | npm `@anthropic-ai/claude-code`; changelog `anthropics/claude-code` | `claude -p` (`src/watchdog/dispatch.js`), PreToolUse `Agent\|Task` (`plugin/hooks/hooks.json`, `bin/guard.mjs`), installer assets (`src/installer.js`), cost (`src/cost.js` via cc-switch proxy logs) | 2.1.296 | 2026-10-10 |
+| 1 host | Codex | `openai/codex` releases; official changelog | `codex exec`/resume/fork, `mcp list --json` (`src/watchdog/dispatch.js`, `src/inventory.js`) | 0.162.1 | 2026-10-10 |
+| 1 host | Pi | npm `@earendil-works/pi-coding-agent`; `earendil-works/pi` releases | canonical agent root, skills/MCP layouts, model cache (`src/piprovider.js`, `src/pi-resources.js`) | 1.1.0 | 2026-10-10 |
+| 1 host | DeepSeek Harness (dsh) | npm `@deepseek-ai/dsh`; `deepseek-ai/deepseek-harness` releases | `--profile`, `--dump-config`, positional headless tasks, default model alias (`src/dshprovider.js`, `src/modelcap.js`) | 0.2.0-rc.2 | 2026-10-10 |
+| 1 host | Trellis | npm `@mindfoldhq/trellis`; `mindfold-ai/Trellis` tags | `init`/`-y`/platform-flag interactive contract (`src/trellis.js`) | 0.6.17 | 2026-10-10 |
+| 2 integration | pi-mcp-adapter | `nicobailon/pi-mcp-adapter` | configuration layers (9 sources since adapter v5; mawf read face aligned in 0.8.4), same-name whole-entry overrides, disabled state (`enabled:false`→`disabled:true` translation on Pi-owned layers) | 5.2.0 | 2026-10-10 |
+| 2 integration | kickstart (pi-subagents-lite) | `orionpax1997/kickstart.pi` | Agent guidance, array tool lists, provider/model frontmatter; not installed — run its scripts per its tutorial when needed | pi-subagents-lite | 2026-10-10 |
+| 2 integration | dsh-web | `zhu1090093659/dsh-web` | component-local disabled state, conservative skill discovery, staged preset library | 0.4.5 | 2026-10-10 |
+| 2 integration | cc-switch (GUI upstream) | `farion1231/cc-switch` releases, 3.x→4.x line | SQLite DB schema guard (`SUPPORTED_CC_SCHEMA` = 20 since 0.8.4); migrations 19/20 are add-column and do not touch tables mawf reads; track line is the GUI upstream — `cc-switch-cli` is a downstream installed tool, not this baseline | 4.0.6 / schema 20 | 2026-10-10 |
+| 2 integration | codex-plugin-cc | `openai/codex-plugin-cc` | out-of-process Codex review gate bridge | 1.0.6 (market; npm mirror 1.1.1, npm line renamed `codex-claude-companion`) | 2026-10-10 |
+| 3 lock | archify | fork `imBlanker/archify` ← author `tt-a1i/archify` | locked engine adapter (`src/archify.js`, `src/archify-registry.js`) | 2.17.0-dev.1 @ `c3e15cc` (author v3.0.1 observed, deferred 0.9) | 2026-10-10 |
+| 3 lock | write-notes (notes-board) | fork `imBlanker/write-notes-like-deepseek` ← author `czm15053/write-notes-like-deepseek` | vendored board asset (`vendor/notes-board/`) | @ `2aef219` (author +2 commits, deferred 0.9) | 2026-10-10 |
+| 3 lock | trellis-card | fork `imBlanker/trellis-card` ← author `czm15053/trellis-card` | managed component; in-app update check disabled in managed mode | 0.2.5 @ `4e24d42` (author v0.2.6 = CI-only, equivalent) | 2026-10-10 |
+| 3 lock | compound-references | `EveryInc/compound-engineering-plugin` | adapted skill references (`skills/`, NOTICE retained) | 3.27.0 @ `65dd958d` (#1738 already in lock; v3.30.x deferred 0.9) | 2026-10-10 |
+| 4 pool | codebase-memory-mcp | `DeusData/codebase-memory-mcp` | optional component pool entry | catalog (v0.11.0 fresh) | 2026-10-10 |
+| 4 pool | codegraph | `colbymchenry/codegraph` | optional component pool entry (installed locally, outside mawf update scope) | catalog (v1.6.2 latest) | 2026-10-10 |
+| 4 pool | agent-browser | `vercel-labs/agent-browser` | optional component pool entry (installed locally, outside mawf update scope) | catalog (v0.39.0 latest) | 2026-10-10 |
 
 ### Appendix: concept attributions (not tracked)
 
 Referenced for ideas only — no runtime dependency, updates never affect mawf: Anthropic engineering essays, LangChain/LangGraph, Lilian Weng's agent survey, `mbruhler/claude-orchestration`, `garyqlin/glink-engine`, `milanglacier/pi-dynamic-workflow`. See [NOTICE.md](../NOTICE.md).
+
+## Fixed-cutoff formal-release ledger (2026-09-22 → 2026-10-10)
+
+This audit covers every formal release of the five tier-1 hosts after the
+v0.8.3-era cutoff (`2026-09-21T23:59:59Z`) through 2026-10-10 (research
+passes 2026-10-09T20:54Z–21:59Z; dist-tags re-verified 2026-10-09T22:22Z
+during the local update pass). Tier-2 contracts share the window; tier-3
+entries are judged by new commits/releases after their locked SHA; tier-4 by
+latest release versus the pool catalog. Evidence: `P` primary official
+registry/release/tag metadata; `A` archived source/release-notes analysis;
+`L` live installed-host checks (measured before and re-measured after this
+release's local update pass: claude `2.1.296`, codex `0.162.1`, pi `1.1.0`,
+dsh `0.2.0-rc.2`, trellis `0.6.17`, pi-mcp-adapter `5.2.0`, pi-web-access
+`0.38.0`, dsh-web family `0.4.5` + genui `0.11.4` + console `0.5.43`,
+codex-plugin-cc npm `1.1.1`, cc-switch GUI pacman `cc-switch-bin` pending
+4.0.6 / DB schema currently `19`, cc-switch-cli `5.11.0`).
+
+### Claude Code
+
+Sources: official npm publication ledger and `anthropics/claude-code`
+CHANGELOG. Seventeen formal publications in the window (`latest` = `next` =
+`2.1.296`; `stable` dist-tag = `2.1.287`; `2.1.279` skipped, never published).
+
+| Release (UTC) | Delta, mawf consumer, and platform effect | Response / limit |
+| --- | --- | --- |
+| `2.1.280` (Sep 22) | Opus 5.5 online (1M ctx); default model shifts. Pricing reaches mawf only through cc-switch `proxy_request_logs`/`model_pricing` (`src/cost.js` reads measured spend, no hardcoded tables) | No direct action; pricing handled via cc-switch schema support (below) |
+| `2.1.281`–`2.1.283` (Sep 23–25) | resume/stream fixes; `--agents` JSON-file opt-in; `-p` no longer loads interactive UI (faster startup) | **No action.** `P` |
+| `2.1.284` (Sep 28) | Sonnet 5.5 online | Same as 280 |
+| `2.1.285` (Sep 29) | **`-p`/SDK default to auto permission mode when unset on third-party endpoints or telemetry-off** — mawf users run through the cc-switch proxy (custom base URL), so this hits `src/watchdog/dispatch.js`'s `claude -p` call | **Adapted in 0.8.4**: explicit `--permission-mode` in dispatch |
+| `2.1.286` (Sep 30) | retry budget consolidation; hook non-text output fix (guard output already plain text) | **No action.** `P+A` |
+| `2.1.287` (Oct 1) | Claude Mods introduced (host deep-extension point); `stable` tag = this version | Recorded; **Mods evaluation deferred to 0.9** |
+| `2.1.288` (Oct 2) | headless SIGTERM-handling fix (watchdog timeout path); **PreToolUse matcher failures now block instead of allow (fail-closed)** | **Adapted in 0.8.4**: guard regression on `^(Agent\|Task)$` + SIGTERM smoke |
+| `2.1.289`–`2.1.291` (Oct 3–6) | plugin marketplace fixes; skill lookup by SKILL.md `name` (more tolerant); regression patches | **No action.** `P` |
+| `2.1.292` (Oct 6) | `-p` now waits for background commands to finish (no 5s cut); `-p` first turn skips HTTP/SSE MCP `resources/list`; stdio MCP protocol 2026-07-28 default | **Adapted in 0.8.4**: watchdog timeout budget re-checked; installer stdio-MCP smoke |
+| `2.1.293` (Oct 7) | Haiku 5.5 online (with >100K tier) | Same as 280 |
+| `2.1.294` (Oct 8) | directive-hook fixes only (mawf uses command hooks) | **No action.** `P` |
+| `2.1.295` (Oct 8) | hooks `onFailure:"block"` opt-in; `-p` multi-turn text shape (per-turn printing) | **Adapted in 0.8.4**: `onFailure` evaluated for guard; dispatch text-parse compatibility checked |
+| `2.1.296` (Oct 9) | **Sonnet 5.5 cache-read corrected $0.20→$0.10**; headless skips disabled `.mcp.json`/plugin servers; MCP description cap 4096 | **No action** (pricing via cc-switch); local `L`: upgraded to `2.1.296` in this pass |
+
+Deferred to 0.9: Claude Mods deep plugin surface (2.1.287+) and the built-in
+Workflow tool (`CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`, 2.1.296) — both overlap
+mawf's own watchdog/dispatch/orchestration theory.
+
+### Codex
+
+Sources: official release inventory corroborated by the npm ledger. Fourteen
+stable CLIs in the window (`0.156.0` → `0.162.1`); ~60 prerelease tags not
+chased (alpha bodies remain bare "Release x.y.z"). All three mawf contracts
+intact: `exec`/`resume`/`fork` CLI surface had exactly one window commit
+(`--cyber-access-program`, optional, 0.161.0); `mcp list --json` shape is
+additive-only (`[{name, enabled, disabled_reason, transport, …,
+auth_status}]`, five `mcp_cmd.rs` commits, none output-shape); mawf writes
+none of the changed `config.toml` keys (`tui.prompt_suggestions` removed
+0.159.0, alias normalization 0.158.0). The prior watch on `mcp list --json`
+is **closed**. `plugin-creator` skill removal (0.159.0) shifts inventory
+counts only. **No code adaptation required**; local `L`: upgraded to
+`0.162.1` (daemon-feature startup fix, #52648). Deferred to 0.9: `runReview`
+`delegate` subcommand drift vs companion `task` family (pre-existing), and
+the hardcoded `1.0.6` cache segment in `findCodexCompanion` (fallback scan
+covers re-versioned market caches — verified live: market cache now holds
+both `0.2.0` and `1.0.6` companion copies).
+
+### Pi
+
+Sources: npm ledger and `earendil-works/pi` releases, cross-checked against
+the locally installed 1.0.0 CHANGELOG. Eleven formal releases in the window
+(`0.87.0` published ~7h before the prior cutoff is included to close the
+0.86.1→1.1.0 gap): `0.87.0/.1`, `0.99.0/.1/.2`, `1.0.0`–`1.0.4`, `1.1.0`.
+The 1.x line is a substantive rewrite (codemode, built-in MCP, tool_search
+as `builtin:` extensions, catalog overlay across chat/image/classifier,
+npm-shrinkwrap removed, TUI fullscreen default). Verified exemptions for
+mawf: dispatch invokes pi strictly headless (`pi -p`), so fullscreen/`--tui-mode`
+changes do not apply (interactive/tmux paths are a 0.9/P4 concern); mawf
+references no `mcp__` tool names and passes no `--tools` (0.99.2 name
+normalization and 1.0.4 MCP-retention semantics exempt); `~/.pi/agent/`
+layout and `pi update --extensions` verified working live (`L`). Adapted in
+0.8.4: model-cache overlay consistency check (0.99.x catalog/overlay
+changes) and install-side version pinning docs (shrinkwrap removal). Deferred
+to 0.9: OSC 7501 program-status and `agent_settled.aborted` consumption (P5
+panels), `context_edit` session-entry tolerance, Azure provider rename
+(unused locally). Local `L`: upgraded to `1.1.0`.
+
+### DeepSeek Harness (dsh)
+
+Sources: npm `@deepseek-ai/dsh` ledger and `deepseek-ai/deepseek-harness`
+releases. Window releases: `0.1.5-rc.3` (npm-only patch, no GH notes —
+A-gap, superseded by the 0.1.7 line), `0.1.6-alpha.1/.2` (covered by the
+prior ledger), `0.1.7-alpha.1/.2`, `0.1.7-rc.1/.2`, `0.2.0-rc.1`,
+`0.2.0-rc.2` (= `latest`); `0.2.1-alpha.1/.2` on the alpha tag, not chased.
+No declared breaking change touches mawf's four consumed contracts
+(`--profile`, `--dump-config` shape, positional headless tasks,
+`agent-default-model`); breaking chores land on host-internal surfaces
+(Session log V4, PTC/workflow internals, plugin-dev API, official DeepSeek
+adapter Messages-only). Watch items resolved: Session format stays unconsumed
+by mawf; plugin-inventory manifest format has no declared change (runtime
+re-verified in this release, `L`); default-model list dropped V4 Flash /
+V4 Flash Vision Exp and pi-ai 0.87.1 pruned some third-party IDs —
+`src/modelcap.js` id-driven regex rules go dormant, not broken. Headless
+additions (`--session-id`, `--json` NDJSON, stdin tasks) are additive.
+Adapted in 0.8.4: five post-upgrade runtime verifications with fresh fixtures
+(`--dump-config` provider/model rows, plugin-inventory read face,
+`config-catalog` mcp-client key, headless positional smoke, dormant-rule
+confirmation). User-config note (not mawf code): the official DeepSeek
+adapter is Messages-API-only; legacy official root overrides must move to
+`https://api.deepseek.com/anthropic`. Deferred to 0.9: 0.2.1-alpha surfaces
+(invariant plugin removal, stats→activity/usage split, subpath package.json,
+`DSH_AGENTS_HOME`, `working_directory` tool). Local `L`: upgraded to
+`0.2.0-rc.2`; npm blocked native postinstall scripts (koffi/esbuild/…) per
+the documented tolerance — binary works, revisit only on runtime failure.
+
+### Trellis
+
+Sources: npm `@mindfoldhq/trellis` and `mindfold-ai/Trellis` tags. Zero
+releases in the window (latest remains `0.6.17`, 2026-09-11). Two unreleased
+`main` commits touch only the archive script path, not mawf's
+`init`/`-y`/platform-flag/update/upgrade contract. **No action.** Local:
+project instances (this workspace and mawf-repo) upgraded 0.6.15 → 0.6.17
+via `trellis update` in this release's wrap-up.
+
+### Tier-2 integration contracts
+
+| Upstream | Window deltas | Response / limit |
+| --- | --- | --- |
+| pi-mcp-adapter (2.36.0 → 5.2.0, 11 releases) | **3.0.0**: adapter-owned layers renamed `mcp.json`→`mcp-adapter.json` (`<Pi agent dir>` and project `.pi/`, no compat read; shared layers untouched); **4.0.0**: `mcpScript` default-off, describe-ambiguity contract; **5.0.0** (Pi 0.99+): adapter takes over `/mcp`, writes `-builtin:mcp`, re-reads Pi-owned `~/.pi/agent/mcp.json` + `.pi/mcp.json` with field translation (`enabled:false`→`disabled:true`), source count 6→9, `disabled` persistence moved to project `.pi/mcp-adapter.json`; **5.2.0**: MCP SDK GHSA-6qxp-vccf-f47h fix (cross-host redirects no longer followed) | **Adapted in 0.8.4**: `src/pi-resources.js` layer table fixed — pre-existing bug (layer 4 read `~/.pi/mcp.json`, never an adapter path; correct `~/.pi/agent/mcp.json`), plus the two `mcp-adapter.json` sources, `enabled:false` translation, 9-step order; `src/piprovider.js` reads `mcp-adapter.json` in parallel; `src/inventory.js` display name fixed. mawf imports no `pi-mcp-adapter/config` module (export renames exempt). Deferred 0.9: host-managed embedding. Local `L`: upgraded to 5.2.0 |
+| dsh-web (0.4.0 → 0.4.5) | family restructure (satellite repos, tombstones, `@linxin666/dsh-update` split out), host floor raised to `>=0.2.0-rc.2` at 0.4.5; 0.3.24→0.4.5 fresh resolution bypasses the 0.4.0/0.4.1 lockfile defect | **No code action** (consumed via dsh profile); Local `L`: family → 0.4.5, genui → 0.11.4, console → 0.5.43, dsh-at-file ref current (= upstream HEAD `da602d1`); `dsh-plugin-terminal@0.2.0` (npm latest) incompatible with dsh 0.2.0-rc.2 peerDeps — stays installed-but-denied pending an upstream-compatible release (user may grant an exact-version exemption) |
+| cc-switch GUI (3.20.4 → 4.0.6) | **schema 19** (v3.20.4, MiniMax enable columns) and **schema 20** (v4.0.2, Pi sync column) — both add-column, tables mawf reads untouched; v4 config-ownership refactor may touch settings keys | **Adapted in 0.8.4**: `SUPPORTED_CC_SCHEMA` 18→20 with migration-comment and v19/v20 tests; local `L` correction: machine was already at pacman `cc-switch-bin 3.20.4-1` with DB `user_version=19` (the 18-guard was live-warned); GUI 4.0.6 install via AUR (sudo step user-run), CLI 5.11.0 staged same-round |
+| cc-switch-cli (5.10.5 → 5.11.0) | aligns schema 20 | Local `L`: upgraded to 5.11.0 (binary staged, first run after GUI); downstream tool, not part of this baseline |
+| kickstart | docs-only commits (pi-mcp-adapter `mcp-adapter.json` note corroborated) | **No action.** |
+| codex-plugin-cc (npm 1.0.6 → 1.1.1) | bin aliases added; **npm package renamed `codex-claude-companion`** (Kenmege project, distinct from the OpenAI marketplace plugin) | Local `L`: npm line → 1.1.1; rename migration deferred until `codex-claude-companion` has a stable (non-rc) release; marketplace companion unchanged functionally (cache re-versioned `0.2.0` alongside `1.0.6`, companion script verified in both) |
+
+### Tier-3 components.lock follow-up
+
+All four locks hold; no bumps in 0.8.4. archify: author `v3.0.0`/`v3.0.1`
+(667 commits ahead; lifecycle schema v2, renderer redesign) — theory-level,
+deferred to 0.9 with a fresh MAWF-locked re-validation. write-notes: two
+commits (skill-asset relocation, Chinese-status gate) — deferred to the
+four-tool-integration track. trellis-card: author `v0.2.6` is CI-only and
+pre-window (watch closed; lock stays at `4e24d42`, functionally equivalent).
+compound-references: #1738 merged **before** the locked `65dd958d` (watch
+closed); `v3.30.x` releases deferred to 0.9.
+
+### Tier-4 pool catalog freshness
+
+codebase-memory-mcp `v0.11.0` (fresh, pre-window); codegraph `v1.6.1`/
+`v1.6.2` (Sep 29 / Oct 3); agent-browser `v0.38.2`/`v0.39.0` (Oct 1 / Oct 9).
+Catalog baselines recorded here; local installs intentionally not updated
+(pool policy).
+
+### Fixed-cutoff conclusion (2026-10-10)
+
+Zero theory/architecture changes absorbed; ten adaptation items land in
+0.8.4 (schema guard 18→20, pi-mcp-adapter nine-source read-face fix incl.
+the pre-existing layer-4 path bug, explicit `--permission-mode` for
+`claude -p`, guard fail-closed regression + `onFailure` evaluation, watchdog
+timeout re-check, dsh runtime re-verification with fixtures, model-cache
+overlay check, registry/catalog refresh, install pinning docs). Prior
+watches closed: Codex `mcp list --json`, compound #1738, trellis-card
+v0.2.6, dsh Session format. Deferred to 0.9: Claude Mods + Workflow tool,
+pi OSC 7501/`aborted`/`context_edit`, codex `delegate` drift, dsh 0.2.1-alpha
+surfaces, pi-mcp-adapter host-managed, archify v3, write-notes, compound
+v3.30.x, cc-switch-cli rename follow-ups (codex-claude-companion stable).
 
 ## Fixed-cutoff formal-release ledger (2026-09-13 → 2026-09-21)
 
