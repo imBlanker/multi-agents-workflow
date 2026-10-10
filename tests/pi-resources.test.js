@@ -91,19 +91,34 @@ test("Pi runner readiness stays unverified for configured/disabled/discovered pa
   assert.equal(readPiRunner(f).status, "disabled");
 });
 
-test("Pi MCP six-layer merge keeps disabled patches/provenance and never exposes secrets or live claims", (t) => {
+test("Pi MCP merge covers the adapter v5 read face (8 files) with Pi-owned translation, adapter-owned disabled persistence, provenance and no secrets", (t) => {
   const f = fixture(t);
-  const files = [path.join(f.homeDir, ".config", "mcp", "mcp.json"), path.join(f.homeDir, ".agents", "mcp.json"), path.join(f.homeDir, ".agents", "mcp", "mcp.json"), path.join(f.piDir, "mcp.json"), path.join(f.projectDir, ".mcp.json"), path.join(f.projectDir, ".pi", "mcp.json")];
-  for (const [i, p] of files.entries()) f.write(p, { mcpServers: { same: i === 0 ? { command: "secret-command", args: ["SECRET"], env: { TOKEN: "SECRET" } } : i === 3 ? { url: "https://SECRET", headers: { Authorization: "SECRET" }, disabled: true } : i === 5 ? { disabled: false } : { disabled: true }, [`layer${i}`]: { disabled: i === 1 ? "true" : true } } });
+  const files = [path.join(f.homeDir, ".config", "mcp", "mcp.json"), path.join(f.homeDir, ".agents", "mcp.json"), path.join(f.homeDir, ".agents", "mcp", "mcp.json"), path.join(f.piDir, "mcp.json"), path.join(f.piDir, "mcp-adapter.json"), path.join(f.projectDir, ".mcp.json"), path.join(f.projectDir, ".pi", "mcp.json"), path.join(f.projectDir, ".pi", "mcp-adapter.json")];
+  const same = [
+    { command: "secret-command", args: ["SECRET"], env: { TOKEN: "SECRET" } }, // shared-global
+    { disabled: true },
+    { disabled: true },
+    { url: "https://SECRET", headers: { Authorization: "SECRET" }, enabled: false }, // pi-global, Pi spelling
+    { disabled: true }, // pi-adapter-global
+    { disabled: true }, // shared-project
+    { url: "https://ok", enabled: true }, // pi-project: explicit enable clears prior disabled
+    { disabled: false }, // pi-adapter-project: adapter disabled persistence face
+  ];
+  for (const [i, p] of files.entries()) f.write(p, { mcpServers: { same: same[i], [`layer${i}`]: { disabled: i === 1 ? "true" : true }, ...(i === 3 ? { pihidden: { command: "x", enabled: false } } : {}), ...(i === 6 ? { piexposure: { command: "x", exposure: "hidden" } } : {}), ...(i === 4 ? { adapteronly: { command: "a" } } : {}) } });
   f.write(path.join(f.homeDir, ".claude.json"), { mcpServers: { unrelated: { command: "do-not-import" } } });
-  const rows = readPiMcps(f), same = rows.find((r) => r.name === "same");
-  assert.equal(same.provenance.length, 6);
-  assert.equal(same.source, "pi-project");
-  assert.equal(same.transport, "http");
-  assert.equal(same.disabled, false);
-  assert.equal(same.status, "configured");
-  assert.equal(same.trust, "project-trust-required");
+  const rows = readPiMcps(f), row = rows.find((r) => r.name === "same");
+  assert.equal(row.provenance.length, 8);
+  assert.equal(row.source, "pi-adapter-project");
+  assert.equal(row.transport, "http");
+  assert.equal(row.disabled, false);
+  assert.equal(row.status, "configured");
+  assert.equal(row.trust, "project-trust-required");
   assert.equal(rows.find((r) => r.name === "layer1").disabled, false);
+  // Pi-owned spelling translates to disabled
+  assert.equal(rows.find((r) => r.name === "pihidden").disabled, true);
+  assert.equal(rows.find((r) => r.name === "piexposure").disabled, true);
+  // adapter-owned source carries its own rows
+  assert.equal(rows.find((r) => r.name === "adapteronly").source, "pi-adapter-global");
   assert.equal(rows.some((r) => r.name === "unrelated"), false);
   assert.ok(rows.every((r) => !r.connected));
   assert.ok(!JSON.stringify(rows).includes("SECRET"));

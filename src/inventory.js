@@ -533,7 +533,7 @@ function scanPi(o) {
     source: p.source.startsWith("npm:") ? "npm" : p.source,
     loaded: null }));
   const mcps = readPiMcps({ piDir: o.piDir, projectDir: o.projectDir }).map(m => ({ ...m,
-    source: m.source === "pi-global" ? "pi-mcp.json" : m.source }));
+    source: m.source === "pi-global" ? "pi-agent/mcp.json" : m.source === "pi-adapter-global" ? "pi-agent/mcp-adapter.json" : m.source === "pi-adapter-project" ? ".pi/mcp-adapter.json" : m.source }));
   const harnessNote = ["Static resource evidence only: configured/discovered does not prove a tool is loaded; project resources require Pi trust.", ...discovery.notes].join(" ");
   const global = isFile(path.join(o.piDir, "AGENTS.md")) ? path.join(o.piDir, "AGENTS.md") : null;
   const piAsCc = readPiAsCc({ piDir: o.piDir, ccSwitch: { modelPricing: o.cc?.modelPricing }, piManaged: piManagedByCcSwitch(o.cc), piSpendMeasured: piSessionUsagePresent({ dbPath: o.cc?.dbPath }) });

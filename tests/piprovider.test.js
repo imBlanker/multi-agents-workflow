@@ -55,7 +55,11 @@ function piFixture() {
   );
   fs.writeFileSync(
     path.join(dir, "mcp.json"),
-    JSON.stringify({ mcpServers: { exa: { url: "https://mcp.exa.ai/mcp" } } }),
+    JSON.stringify({ mcpServers: { exa: { url: "https://mcp.exa.ai/mcp" }, off: { command: "x", enabled: false } } }),
+  );
+  fs.writeFileSync(
+    path.join(dir, "mcp-adapter.json"),
+    JSON.stringify({ mcpServers: { deep: { command: "d" }, exa: { url: "https://adapter.example/mcp" } } }),
   );
   fs.writeFileSync(
     path.join(dir, "auth.json"),
@@ -66,20 +70,24 @@ function piFixture() {
     path.join(dir, "models-store.json"),
     JSON.stringify({
       "openai-codex": { models: ["gpt-5.5", "gpt-5.4-mini"] },
-      "zai-coding-cn": { models: ["glm-4.7", "glm-5-turbo"] },
+      "zai-coding-cn": { models: ["glm-4.7", "glm-5-turbo", { id: "glm-5.5-vision", type: "chat" }, { id: "glm-image-gen", type: "image" }] },
     }),
   );
   return dir;
 }
 
-test("readPiConfig reads settings/models/mcp + auth presence", () => {
+test("readPiConfig reads settings/models/mcp (Pi-owned + adapter face) + auth presence", () => {
   const dir = piFixture();
   const cfg = readPiConfig(dir);
   assert.equal(cfg.settings.defaultProvider, "deep-worker");
   assert.equal(cfg.settings.defaultModel, "deepseek-v4-flash");
   assert.ok(cfg.models.providers["deep-worker"]);
   assert.equal(cfg.authPresent, true);
-  assert.deepEqual(Object.keys(cfg.mcp.mcpServers), ["exa"]);
+  // adapter-owned mcp-adapter.json whole-entry overrides the Pi-owned file
+  assert.deepEqual(Object.keys(cfg.mcp.mcpServers), ["exa", "off", "deep"]);
+  assert.equal(cfg.mcp.mcpServers.exa.url, "https://adapter.example/mcp");
+  // Pi-owned enabled:false spells disabled after translation
+  assert.equal(cfg.mcp.mcpServers.off.disabled, true);
 });
 
 test("readPiAsCc produces cc-switch-shaped object with app_type:pi providers", () => {
@@ -123,10 +131,12 @@ test("readPiAsCc merges models-store.json catalogs into the switchable pool", ()
   // catalog-only provider becomes a provider_type pi-catalog row
   assert.equal(byName["zai-coding-cn"].provider_type, "pi-catalog");
   assert.equal(byName["zai-coding-cn"].is_current, 0);
-  assert.deepEqual(byName["zai-coding-cn"].settings_config._piModels.sort(), ["glm-4.7", "glm-5-turbo"]);
+  assert.deepEqual(byName["zai-coding-cn"].settings_config._piModels.sort(), ["glm-4.7", "glm-5-turbo", "glm-5.5-vision"]);
+  // pi 0.99+ catalog overlay: typed non-chat entries never leak into chat lists
+  assert.ok(!byName["zai-coding-cn"].settings_config._piModels.includes("glm-image-gen"));
   // every switchable model is enumerated for capability selection
   const all = candidatesForAppType(cc, "pi").map((c) => c.model).sort();
-  assert.deepEqual(all, ["deepseek-v4-flash", "glm-4.7", "glm-5-turbo", "glm-5.2", "gpt-5.4-mini", "gpt-5.5"]);
+  assert.deepEqual(all, ["deepseek-v4-flash", "glm-4.7", "glm-5-turbo", "glm-5.2", "glm-5.5-vision", "gpt-5.4-mini", "gpt-5.5"]);
 });
 
 test("SECURITY: readPiAsCc output never contains apiKey or key bytes", () => {
@@ -144,7 +154,7 @@ test("candidatesForAppType(cc,'pi') enumerates every provider x model", () => {
   const cands = candidatesForAppType(cc, "pi");
   assert.deepEqual(
     cands.map((c) => c.model).sort(),
-    ["deepseek-v4-flash", "glm-4.7", "glm-5-turbo", "glm-5.2", "gpt-5.4-mini", "gpt-5.5"],
+    ["deepseek-v4-flash", "glm-4.7", "glm-5-turbo", "glm-5.2", "glm-5.5-vision", "gpt-5.4-mini", "gpt-5.5"],
   );
   assert.ok(cands.every((c) => c.appType === "pi"));
   assert.ok(cands.find((c) => c.model === "deepseek-v4-flash" && c.isCurrent));
