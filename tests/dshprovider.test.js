@@ -314,3 +314,20 @@ llm-deepseek: []
   assert.doesNotMatch(JSON.stringify(cc), /SENTINEL_INVALID_ID/);
   assert.doesNotThrow(() => candidatesForAppType(cc, "dsh"));
 });
+
+test("0.2.0-rc.2 live dump shape: quoted JS-tag disabled stays inert, plugin rows and default-model extract", () => {
+  const dump = [
+    "# == @deepseek-ai/dsh-base",
+    "- id: plugin-manager",
+    "  name: '@deepseek-ai/dsh-plugin-manager'",
+    "  disabled: !!js '!ctx.get(''profileContext'')'",
+    "- id: llm",
+    "  name: '@deepseek-ai/dsh-llm'",
+    "# == profile-web",
+    "- id: agent-default-model",
+    "  config:",
+    "    provider: deepseek-official",
+    "    model: deepseek-v4-pro",
+  ].join("\n");
+  assert.deepEqual(dshDefaultModel({ dumpConfig: dump }), { provider: "deepseek-official", model: "deepseek-v4-pro" });
+});
