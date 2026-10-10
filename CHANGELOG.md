@@ -6,6 +6,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-10-10
+
+### Added
+
+- Fixed-cutoff ledger `2026-09-22 → 2026-10-10` across all tiers: Claude Code 2.1.280–2.1.296 (17 releases; 2.1.279 never published), Codex 0.156.0–0.162.1 (14 stable releases; ~60 prereleases not chased), Pi 0.87.0–1.1.0 (11 releases closing the 0.86.1→1.x major-line gap), dsh 0.1.5-rc.3–0.2.0-rc.2 (npm `latest` channel), Trellis quiet; pi-mcp-adapter 2.36.0–5.2.0 (3.0/4.0/5.0 breakings), dsh-web 0.4.0–0.4.5, cc-switch 3.20.4–4.0.6 (schema 19 and 20 both landed), cc-switch-cli 5.11.0, codex-plugin-cc npm 1.1.1 (upstream renamed to `codex-claude-companion`); tier-3 locks hold (archify v3.0.x, write-notes, compound v3.30.x deferred to 0.9); tier-4 catalog baselines refreshed (codegraph v1.6.2, agent-browser v0.39.0). Prior watches closed: Codex `mcp list --json` shape, compound #1738, trellis-card v0.2.6, dsh Session format.
+
+### Changed
+
+- Upstream registry baselines refreshed to the locally certified set: Claude Code 2.1.296, Codex 0.162.1, Pi 1.1.0, dsh 0.2.0-rc.2; pi-mcp-adapter 5.2.0, dsh-web 0.4.5, cc-switch 4.0.6 / schema 20, codex-plugin-cc npm 1.1.1.
+
+### Fixed
+
+- `src/ccswitch.js` schema guard now supports cc-switch schema 19 (MiniMax enable columns, v3.20.4) and 20 (Pi sync column, v4.0.2) — both add-column-only migrations that touch no table mawf reads; v19/v20 databases previously tripped the unsupported-schema doctor warning.
+- Pi MCP read face aligned with pi-mcp-adapter v5: `src/pi-resources.js` reads the adapter-owned `mcp-adapter.json` layers (global and project; the project one carries `disabled` persistence), translates Pi-owned `enabled:false` / `exposure:"hidden"` into `disabled:true`, and orders all sources per the adapter's nine-step precedence; `src/piprovider.js` reads `mcp-adapter.json` alongside `mcp.json` (whole-entry override); `src/inventory.js` Pi MCP display names now match real files.
+- Pi model cache: catalog-overlay entries with an explicit non-chat `type` (image/classifier, pi 0.99+) no longer leak into chat model lists.
+- Watchdog `claude -p` invocations pin `--permission-mode default` explicitly (Claude Code 2.1.285 defaults unset headless runs on third-party endpoints to auto mode; cc-switch proxy users hit that path).
+- The PreToolUse guard hook declares `onFailure: "block"` (Claude Code 2.1.295), completing fail-closed semantics alongside 2.1.288's matcher-failure blocking.
+
+### Documentation
+
+- `docs/AGENT_INSTALL.md` notes that pi 1.0.1+ npm installs no longer pin transitive dependencies (npm-shrinkwrap removed) — pin versions explicitly or adopt the pi.dev managed installer.
+
 ## [0.8.3] - 2026-09-21
 
 ### Added

@@ -6,6 +6,28 @@
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-10-10
+
+### 新增
+
+- 新增 `2026-09-22 → 2026-10-10` 固定截止审计台账，覆盖全部层级：Claude Code 2.1.280–2.1.296（17 个正式版，2.1.279 未发布跳号）、Codex 0.156.0–0.162.1（14 个稳定版，约 60 个预发布不追）、Pi 0.87.0–1.1.0（11 个发布，补齐 0.86.1→1.x 跨 major 线差距）、dsh 0.1.5-rc.3–0.2.0-rc.2（npm `latest` 通道）、Trellis 无发布；pi-mcp-adapter 2.36.0–5.2.0（3.0/4.0/5.0 三次破坏性发布）、dsh-web 0.4.0–0.4.5、cc-switch 3.20.4–4.0.6（schema 19 与 20 均已落地）、cc-switch-cli 5.11.0、codex-plugin-cc npm 1.1.1（上游已改名 `codex-claude-companion`）；三级 lock 全部维持（archify v3.0.x、write-notes、compound v3.30.x 留 0.9）；四级 catalog 基线刷新（codegraph v1.6.2、agent-browser v0.39.0）。旧观察项关账：Codex `mcp list --json` 形状、compound #1738、trellis-card v0.2.6、dsh Session 格式。
+
+### 变更
+
+- 上游登记表基线刷新为本机已验证组合：Claude Code 2.1.296、Codex 0.162.1、Pi 1.1.0、dsh 0.2.0-rc.2；pi-mcp-adapter 5.2.0、dsh-web 0.4.5、cc-switch 4.0.6 / schema 20、codex-plugin-cc npm 1.1.1。
+
+### 修复
+
+- `src/ccswitch.js` schema 守卫支持 cc-switch schema 19（v3.20.4 MiniMax 启用列）与 20（v4.0.2 Pi 同步列）——两次迁移均只加列、不触及 mawf 读取的表；此前 v19/v20 数据库会误触发「不支持的 schema」doctor 告警。
+- Pi MCP 读取面对齐 pi-mcp-adapter v5：`src/pi-resources.js` 新读 adapter 自有的两个 `mcp-adapter.json` 层（全局与项目层，后者承载 `disabled` 持久化），将 Pi 自有层的 `enabled:false` / `exposure:"hidden"` 翻译为 `disabled:true`，并按 adapter 九步优先级排序；`src/piprovider.js` 并行读 `mcp-adapter.json`（同名整条目覆盖）；`src/inventory.js` 的 Pi MCP 显示名改为与真实文件一致。
+- Pi 模型缓存：带显式非 chat `type`（image/classifier，pi 0.99+）的目录 overlay 条目不再混入 chat 模型清单。
+- Watchdog 的 `claude -p` 调用显式固定 `--permission-mode default`（Claude Code 2.1.285 起第三方端点上未设置权限模式的 headless 运行默认 auto mode，经 cc-switch 代理的用户给中该路径）。
+- PreToolUse 守卫 hook 声明 `onFailure: "block"`（Claude Code 2.1.295），与 2.1.288 的 matcher 失败阻断共同构成完整的 fail-closed 语义。
+
+### 文档
+
+- `docs/AGENT_INSTALL.md` 注明 pi 1.0.1+ 的 npm 安装不再钉传递依赖（npm-shrinkwrap 已移除）——需显式钉版本或改用 pi.dev 托管安装器。
+
 ## [0.8.3] - 2026-09-21
 
 ### Added

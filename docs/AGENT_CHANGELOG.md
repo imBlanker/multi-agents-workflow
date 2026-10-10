@@ -6,6 +6,36 @@ coding agents operating this repo). Human narrative: [`../CHANGELOG.md`](../CHAN
 
 Package: `multi-agents-workflow` · CLI: `mawf` · Node ≥ 20.17 · zero runtime deps.
 
+## 0.8.4 (2026-10-10)
+
+```yaml
+version: 0.8.4
+semver_impact: patch
+compatibility:
+  cutoff: "tier-1 hosts after the 2026-09-21T23:59:59Z cutoff through 2026-10-10; tiers 2-4 per the upstream registry"
+  result: "consumer-affecting window changes adapted (cc-switch schema 19/20 guard, pi-mcp-adapter v5 read face, claude -p permission pinning, guard onFailure block, overlay type filter); theory/architecture items deferred to 0.9"
+added:
+  - "fixed-cutoff ledger 2026-09-22..2026-10-10 across tiers 1-4; registry baselines refreshed to the locally certified set (claude 2.1.296, codex 0.162.1, pi 1.1.0, dsh 0.2.0-rc.2, pi-mcp-adapter 5.2.0, dsh-web 0.4.5, cc-switch 4.0.6/schema 20, codex-plugin-cc npm 1.1.1)"
+  - "prior watches closed: codex mcp list --json shape, compound #1738 (already in lock), trellis-card v0.2.6 (CI-only), dsh Session format (unconsumed surface)"
+fixed:
+  - "SUPPORTED_CC_SCHEMA 18->20: cc-switch v3.20.4/v4.0.2 add-column migrations no longer trip the unsupported-schema doctor warning (v19/v20 fixture tests added)"
+  - "pi MCP read face follows pi-mcp-adapter v5: adapter-owned mcp-adapter.json layers (incl. project disabled persistence), Pi-owned enabled:false/exposure:hidden translation, adapter nine-step order; piprovider reads mcp-adapter.json with whole-entry override; inventory display names match real files"
+  - "pi model cache: typed non-chat catalog-overlay entries (image/classifier, pi 0.99+) excluded from chat model lists"
+  - "watchdog claude -p pins --permission-mode default (2.1.285 defaults unset headless runs to auto on third-party endpoints; cc-switch proxy path)"
+  - "PreToolUse guard declares onFailure block (2.1.295) completing fail-closed semantics"
+docs:
+  - "AGENT_INSTALL: pi 1.0.1+ npm installs no longer pin transitive deps (shrinkwrap removed); pin explicitly or use the pi.dev managed installer"
+deferred_0_9:
+  - "claude Mods deep plugins + built-in Workflow tool; pi OSC 7501/aborted/context_edit; codex runReview delegate drift; dsh 0.2.1-alpha surfaces; pi-mcp-adapter host-managed embedding; archify v3.0.x; write-notes; compound v3.30.x; codex-claude-companion rename migration"
+upgrade:
+  npm: "npm i -g multi-agents-workflow@0.8.4"
+  checkout: "mawf upgrade"
+smoke: "mawf doctor && mawf --version"
+evidence_limits:
+  local: "suite 527/0/10 at the release commit; live-host checks limited to version probes, dsh --dump-config/plugin-inventory parse, mcp-client settings surface, and the local tier-1/2 update pass (cc-switch GUI 4.0.6 install pending its sudo step)"
+  ci: "Ubuntu/Windows x Node 22/24 must pass before release; local runs do not imply CI results"
+```
+
 ## 0.8.3 (2026-09-21)
 
 ```yaml
