@@ -150,7 +150,7 @@ via `trellis update` in this release's wrap-up.
 
 | Upstream | Window deltas | Response / limit |
 | --- | --- | --- |
-| pi-mcp-adapter (2.36.0 → 5.2.0, 11 releases) | **3.0.0**: adapter-owned layers renamed `mcp.json`→`mcp-adapter.json` (`<Pi agent dir>` and project `.pi/`, no compat read; shared layers untouched); **4.0.0**: `mcpScript` default-off, describe-ambiguity contract; **5.0.0** (Pi 0.99+): adapter takes over `/mcp`, writes `-builtin:mcp`, re-reads Pi-owned `~/.pi/agent/mcp.json` + `.pi/mcp.json` with field translation (`enabled:false`→`disabled:true`), source count 6→9, `disabled` persistence moved to project `.pi/mcp-adapter.json`; **5.2.0**: MCP SDK GHSA-6qxp-vccf-f47h fix (cross-host redirects no longer followed) | **Adapted in 0.8.4**: `src/pi-resources.js` layer table fixed — pre-existing bug (layer 4 read `~/.pi/mcp.json`, never an adapter path; correct `~/.pi/agent/mcp.json`), plus the two `mcp-adapter.json` sources, `enabled:false` translation, 9-step order; `src/piprovider.js` reads `mcp-adapter.json` in parallel; `src/inventory.js` display name fixed. mawf imports no `pi-mcp-adapter/config` module (export renames exempt). Deferred 0.9: host-managed embedding. Local `L`: upgraded to 5.2.0 |
+| pi-mcp-adapter (2.36.0 → 5.2.0, 11 releases) | **3.0.0**: adapter-owned layers renamed `mcp.json`→`mcp-adapter.json` (`<Pi agent dir>` and project `.pi/`, no compat read; shared layers untouched); **4.0.0**: `mcpScript` default-off, describe-ambiguity contract; **5.0.0** (Pi 0.99+): adapter takes over `/mcp`, writes `-builtin:mcp`, re-reads Pi-owned `~/.pi/agent/mcp.json` + `.pi/mcp.json` with field translation (`enabled:false`→`disabled:true`), source count 6→9, `disabled` persistence moved to project `.pi/mcp-adapter.json`; **5.2.0**: MCP SDK GHSA-6qxp-vccf-f47h fix (cross-host redirects no longer followed) | **Adapted in 0.8.4**: `src/pi-resources.js` layer table gained the two `mcp-adapter.json` sources, Pi-owned `enabled:false`/`exposure:"hidden"` translation and adapter-order placement (the Pi-owned layer-4 path `~/.pi/agent/mcp.json` was already correct — resolved via `resolvePiAgentDir` honoring `$PI_CODING_AGENT_DIR`; an earlier draft of this row claiming a layer-4 path bug was wrong); `src/piprovider.js` reads `mcp-adapter.json` in parallel (whole-entry override) and filters typed non-chat catalog-overlay models; `src/inventory.js` display names fixed. mawf imports no `pi-mcp-adapter/config` module (export renames exempt). Deferred 0.9: host-managed embedding. Local `L`: upgraded to 5.2.0 |
 | dsh-web (0.4.0 → 0.4.5) | family restructure (satellite repos, tombstones, `@linxin666/dsh-update` split out), host floor raised to `>=0.2.0-rc.2` at 0.4.5; 0.3.24→0.4.5 fresh resolution bypasses the 0.4.0/0.4.1 lockfile defect | **No code action** (consumed via dsh profile); Local `L`: family → 0.4.5, genui → 0.11.4, console → 0.5.43, dsh-at-file ref current (= upstream HEAD `da602d1`); `dsh-plugin-terminal@0.2.0` (npm latest) incompatible with dsh 0.2.0-rc.2 peerDeps — stays installed-but-denied pending an upstream-compatible release (user may grant an exact-version exemption) |
 | cc-switch GUI (3.20.4 → 4.0.6) | **schema 19** (v3.20.4, MiniMax enable columns) and **schema 20** (v4.0.2, Pi sync column) — both add-column, tables mawf reads untouched; v4 config-ownership refactor may touch settings keys | **Adapted in 0.8.4**: `SUPPORTED_CC_SCHEMA` 18→20 with migration-comment and v19/v20 tests; local `L` correction: machine was already at pacman `cc-switch-bin 3.20.4-1` with DB `user_version=19` (the 18-guard was live-warned); GUI 4.0.6 install via AUR (sudo step user-run), CLI 5.11.0 staged same-round |
 | cc-switch-cli (5.10.5 → 5.11.0) | aligns schema 20 | Local `L`: upgraded to 5.11.0 (binary staged, first run after GUI); downstream tool, not part of this baseline |
@@ -178,11 +178,12 @@ Catalog baselines recorded here; local installs intentionally not updated
 ### Fixed-cutoff conclusion (2026-10-10)
 
 Zero theory/architecture changes absorbed; ten adaptation items land in
-0.8.4 (schema guard 18→20, pi-mcp-adapter nine-source read-face fix incl.
-the pre-existing layer-4 path bug, explicit `--permission-mode` for
-`claude -p`, guard fail-closed regression + `onFailure` evaluation, watchdog
-timeout re-check, dsh runtime re-verification with fixtures, model-cache
-overlay check, registry/catalog refresh, install pinning docs). Prior
+0.8.4 (schema guard 18→20, pi-mcp-adapter nine-source read-face alignment
+including the two new `mcp-adapter.json` sources and Pi-owned translation,
+explicit `--permission-mode` for `claude -p`, guard fail-closed regression +
+`onFailure` evaluation, watchdog timeout note, dsh runtime re-verification
+with fixtures, model-cache overlay type filter, registry/catalog refresh,
+install pinning docs). Prior
 watches closed: Codex `mcp list --json`, compound #1738, trellis-card
 v0.2.6, dsh Session format. Deferred to 0.9: Claude Mods + Workflow tool,
 pi OSC 7501/`aborted`/`context_edit`, codex `delegate` drift, dsh 0.2.1-alpha
