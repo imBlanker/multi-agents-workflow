@@ -95,7 +95,7 @@ test("buildPhaseBPrompt: transcript handoff, trellis discipline when present, sn
 
 test("hostCommand: headless invocations per host; codex native resume/fork", () => {
   const ws = "/tmp/ws";
-  assert.deepEqual(hostCommand({ host: "claude", prompt: "hi", model: "m1", workspace: ws }), { bin: "claude", args: ["-p", "--model", "m1", "hi"], cwd: ws });
+  assert.deepEqual(hostCommand({ host: "claude", prompt: "hi", model: "m1", workspace: ws }), { bin: "claude", args: ["-p", "--permission-mode", "default", "--model", "m1", "hi"], cwd: ws });
   assert.deepEqual(hostCommand({ host: "pi", prompt: "hi", workspace: ws }), { bin: "pi", args: ["-p", "hi"], cwd: ws });
   assert.deepEqual(hostCommand({ host: "dsh", prompt: "hi", workspace: ws }), { bin: "dsh", args: ["--profile", "headless", "hi"], cwd: ws });
   assert.deepEqual(hostCommand({ host: "codex", prompt: "hi", model: "m2", workspace: ws }), { bin: "codex", args: ["exec", "-m", "m2", "hi"], cwd: ws });
