@@ -202,7 +202,8 @@ export class BridgeServer {
       return [encodeFrame(protoResponse({ id, ok: true, result: { cancelled: false } }))];
     }
     const required = METHOD_CAPS[msg.method];
-    if (required && !this.capabilities.includes(required)) {
+    const snapshotRead = msg.method === "runtime.snapshot" && this.capabilities.includes(CAPABILITIES.RUNTIME_READ);
+    if (required && !this.capabilities.includes(required) && !snapshotRead) {
       return [errorLine(id, ERR.CAPABILITY_MISSING, `capability ${required} is not offered by this bridge`)];
     }
     const dot = msg.method.indexOf(".");

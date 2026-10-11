@@ -242,6 +242,14 @@ test("companion serve: /rpc routes the bridge allowlist with structured frames",
     const describe = await rpc(port, token, "d1", "workspace.describe", {});
     assert.equal(describe.frame.ok, true);
     assert.equal(describe.frame.result.root, fs.realpathSync(fixture));
+
+    // Card polling needs snapshots, but HTTP has no event push channel.
+    const snapshot = await rpc(port, token, "r1", "runtime.snapshot", {});
+    assert.equal(snapshot.frame.ok, true);
+    assert.ok(Array.isArray(snapshot.frame.result.sessions));
+    const subscribe = await rpc(port, token, "r2", "runtime.subscribe", {});
+    assert.equal(subscribe.frame.ok, false);
+    assert.equal(subscribe.frame.error.code, "capability_missing");
   } finally {
     await s.close();
   }

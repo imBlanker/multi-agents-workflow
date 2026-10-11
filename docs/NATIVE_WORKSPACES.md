@@ -75,3 +75,7 @@ that need to enumerate and fetch complete specification documents.
 The companion source revision is pinned in defaults/components.lock.json. Native
 workspaces require the matching Card adapter; old desktop builds that discover
 only .trellis/tasks must be upgraded from the pinned source before use.
+
+Companion HTTP advertises `runtime.read` for polling snapshots. It does not
+advertise `runtime.events` or accept event subscriptions; stdio bridge clients
+with the existing event capability continue to read snapshots unchanged.
