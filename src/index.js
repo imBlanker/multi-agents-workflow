@@ -1,3 +1,4 @@
+import { runControl } from "./control.js";
 import { workspaceLayout } from "./workspace/backend.js";
 import { runSession } from "./workspace/sessions.js";
 import { fileURLToPath } from "node:url";
@@ -155,6 +156,8 @@ export function main(argv = process.argv.slice(2), deps = {}) {
   const cmd = a._[0];
   const f = a._.slice(1);
   const flags = a.flags;
+  // Pure Core control paths bypass legacy migration and external discovery.
+  if (cmd === "mode" || cmd === "integrations" || (cmd === "config" && f[0] === "settings")) return runControl(cmd, f, flags);
   // --version / -v prints the version regardless of position (standard CLI
   // convention); without this the flag fell through to help.
   // Legacy `.maw` -> `.mawf` migration first (single choke point; idempotent).
@@ -221,6 +224,9 @@ function cmdHelp() {
 Usage: mawf <command> [options]
 
 Commands:
+  mode          list|status|dynamic|fixed-1 (only new top-level runs change)
+  integrations  list|enable ID|disable ID [--dry-run] [--json]
+  config settings  Show settings; --set JSON atomically updates user fields
   session       start|heartbeat|stop native session (--id, --platform, --task)
   init          Snapshot cc-switch, then initialize a .mawf/ workspace
                 (cc-switch project-profile sync is DECOUPLED by default; set
