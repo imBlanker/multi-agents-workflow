@@ -79,44 +79,68 @@ export function writeAtomic(file, value) {
   return value;
 }
 
+// Lamport bakery protocol with atomic, complete per-contender claims. Claims
+// are never reused, so dead-owner reclamation cannot unlink a newer owner.
 export function withLock(root, key, fn, opts = {}) {
   if (!/^[a-zA-Z0-9._-]+$/.test(key)) throw stateError('INVALID_LOCK_KEY', 'Lock key must be a plain identifier');
   if (fn?.constructor?.name === 'AsyncFunction') throw stateError('ASYNC_LOCK_CALLBACK', 'withLock requires a synchronous callback');
+  const timeout = opts.timeoutMs ?? 5000;
+  if (!Number.isFinite(timeout) || timeout < 0) throw stateError('INVALID_LOCK_TIMEOUT', 'Lock timeout must be finite and nonnegative');
   assertSafePath(root);
   fs.mkdirSync(root, { recursive: true });
-  const lock = path.join(root, `.${key}.lock`);
-  const owner = { ...processIdentity(), token: crypto.randomUUID(), acquiredAt: new Date().toISOString() };
-  const deadline = Date.now() + (opts.timeoutMs ?? 5000);
-  while (true) {
-    try {
-      fs.mkdirSync(lock, { mode: 0o700 });
-      try { writeAtomic(path.join(lock, 'owner.json'), owner); }
-      catch (error) { fs.rmSync(lock, { recursive: true, force: true }); throw error; }
-      break;
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-      const previous = readStrict(path.join(lock, 'owner.json'), null);
-      if (Date.now() >= deadline) throw stateError('STATE_LOCKED', `State lock ${key} is held or its owner cannot be confirmed; state was not changed`);
-      if (previous && processAlive(previous) === false) {
-        const recovery = path.join(lock, 'recovery');
-        try {
-          fs.mkdirSync(recovery);
-          const current = readStrict(path.join(lock, 'owner.json'), null);
-          if (current?.token === previous.token && processAlive(current) === false) fs.rmSync(lock, { recursive: true, force: true });
-          else fs.rmdirSync(recovery);
-        } catch (recoveryError) { if (!['EEXIST', 'ENOENT'].includes(recoveryError.code)) throw recoveryError; }
+  const token = crypto.randomUUID();
+  const prefix = `.${key}.claim-`;
+  const claimPath = path.join(root, `${prefix}${token}.json`);
+  const claim = { ...processIdentity(), token, phase: 'choosing', ticket: null, acquiredAt: new Date().toISOString() };
+  const deadline = Date.now() + timeout;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/;
+  function claims() {
+    const result = [];
+    for (const name of fs.readdirSync(root)) {
+      if (!name.startsWith(prefix) || !uuid.test(name.slice(prefix.length))) continue;
+      const file = path.join(root, name);
+      const other = readStrict(file, undefined);
+      if (other === undefined) continue; // A concurrent release is normal.
+      if (!other || typeof other !== 'object' || other.token !== name.slice(prefix.length, -5)
+        || !Number.isSafeInteger(other.pid) || other.pid <= 0 || typeof other.hostname !== 'string'
+        || !['choosing', 'waiting'].includes(other.phase)
+        || (other.phase === 'waiting' && (!Number.isSafeInteger(other.ticket) || other.ticket < 1))
+        || (other.phase === 'choosing' && other.ticket !== null)) {
+        throw stateError('INVALID_STATE', `Invalid lock claim: ${file}`);
+      }
+      if (other.token !== token && processAlive(other) === false) {
+        // A UUID claim names one process incarnation forever. Multiple readers
+        // may remove this same dead claim; none can remove another incarnation.
+        try { fs.unlinkSync(file); } catch (error) { if (error.code !== 'ENOENT') throw error; }
         continue;
       }
-      if (Date.now() >= deadline) throw stateError('STATE_LOCKED', `State lock ${key} is held or its owner cannot be confirmed; state was not changed`);
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      result.push(other);
     }
+    return result;
   }
   try {
+    // writeAtomic's temporary filename is not a public claim. A crash before
+    // publication leaves no ownerless claim; a crash afterward leaves identity.
+    writeAtomic(claimPath, claim);
+    const maximum = claims().reduce((max, other) => Math.max(max, other.ticket ?? 0), 0);
+    if (maximum >= Number.MAX_SAFE_INTEGER) throw stateError('LOCK_TICKET_OVERFLOW', 'Cannot allocate another safe lock ticket');
+    claim.ticket = maximum + 1;
+    claim.phase = 'waiting';
+    writeAtomic(claimPath, claim);
+    while (true) {
+      const preceding = claims().some(other => other.token !== token && (
+        other.phase === 'choosing' || other.ticket < claim.ticket ||
+        (other.ticket === claim.ticket && other.token < token)
+      ));
+      if (!preceding) break;
+      if (Date.now() >= deadline) throw stateError('STATE_LOCKED', `State lock ${key} is held or an earlier contender cannot be confirmed; state was not changed`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
     const result = fn();
     if (result && typeof result.then === 'function') throw stateError('ASYNC_LOCK_CALLBACK', 'withLock requires a synchronous callback');
     return result;
   } finally {
-    const current = readStrict(path.join(lock, 'owner.json'), null);
-    if (current?.token === owner.token) fs.rmSync(lock, { recursive: true, force: true });
+    // Only our never-reused claim is released, even after validation/timeout.
+    try { fs.unlinkSync(claimPath); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
 }

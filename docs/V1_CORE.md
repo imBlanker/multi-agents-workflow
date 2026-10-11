@@ -40,11 +40,14 @@ planning work packages; this first Core slice does not claim those are complete.
   `isEnabled(settings,id)`, `capabilityStatus(settings,id)`,
   `disableImpact(settings,id)`, `setIntegration(project,id,enabled)`.
 
-Locks verify PID, machine identity and Linux process start identity rather than
-expiring by age. A confirmed dead owner can be recovered. An ownerless lock or
-unverifiable live identity fails closed after a bounded wait. Other platforms
-can detect nonexistent PIDs but cannot prove PID continuity with this version;
-unknown ownership is never permission to reclaim. Async callbacks are not
+Locks use complete, atomically published UUID claims and Lamport bakery ticket
+ordering. They verify PID, machine identity and Linux process start identity
+rather than expiring by age. Confirmed dead claims can be removed without
+unlinking a later owner; a crash before publication leaves only an ignored
+temporary file. Other platforms can detect nonexistent PIDs but cannot prove
+PID continuity with this version; unknown ownership participates in normal
+ticket ordering and is never permission to reclaim. Earlier unverifiable
+contenders cause bounded waiting and fail closed. Invalid claim data fails closed. Async callbacks are not
 supported. File persistence is not a defense against a hostile process that
 can concurrently modify the same filesystem paths.
 
