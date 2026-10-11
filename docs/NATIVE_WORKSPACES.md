@@ -71,3 +71,7 @@ stolen from an unknown process. Native task/context leaf symlinks are rejected,
 including links introduced after provider creation. Native project.specs also
 returns a `files` array (root-relative Markdown artifact entries) for clients
 that need to enumerate and fetch complete specification documents.
+
+The companion source revision is pinned in defaults/components.lock.json. Native
+workspaces require the matching Card adapter; old desktop builds that discover
+only .trellis/tasks must be upgraded from the pinned source before use.
