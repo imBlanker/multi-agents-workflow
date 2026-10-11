@@ -1,3 +1,4 @@
+import { workspaceLayout } from "./backend.js";
 // @ts-check
 // `mawf bridge` — CLI surface for the workspace bridge (P4.2).
 //
@@ -94,8 +95,8 @@ async function bridgeServe(_rest, flags) {
       throw new Error("workspace root must be an absolute remote path");
     }
     const resolved = fs.realpathSync(root); // throws on missing/symlink loops
-    if (!fs.existsSync(path.join(resolved, ".trellis"))) {
-      throw new Error("workspace root must contain .trellis");
+    if (!workspaceLayout(resolved).native && !fs.existsSync(path.join(resolved, ".trellis"))) {
+      throw new Error("workspace root must contain a valid MAWF workspace marker or .trellis");
     }
     const store2 = KnowledgeStore.open(resolved);
     return createProviders({ projectDir: resolved, store: store2, machineId });

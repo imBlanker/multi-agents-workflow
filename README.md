@@ -312,3 +312,9 @@ The badge at the top always shows the live star count (via [shields.io](https://
 ---
 
 License: **MIT** — see [`LICENSE`](./LICENSE).
+
+## Native workspaces
+
+An explicit native workspace marker disables the Trellis lifecycle while retaining
+legacy integration for other projects. See [native workspace storage, migration,
+and session hooks](docs/NATIVE_WORKSPACES.md).

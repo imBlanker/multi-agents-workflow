@@ -1,3 +1,4 @@
+import { workspaceLayout } from "../workspace/backend.js";
 // @ts-check
 // Watchdog rescue dispatch (PRD R4/R5): host selection (fixed order
 // claude→pi→dsh→codex, skip stalled/unavailable/tried), price-valve model
@@ -115,7 +116,9 @@ export function buildPhaseBPrompt(args) {
     `Its transcript is at ${inc.file} — read it, summarize the recent state, and CONTINUE the unfinished task from there.`,
     `Work from ${workspaceDefault()} via absolute paths into the target project.`,
   ];
-  if (args.trellis) {
+  if (workspaceLayout(inc.projectDir).native) {
+    lines.push("", "Native MAWF workspace: read docs/plans for active PRDs/designs and docs/engineering/specs for engineering contracts. Continue the identified task and record progress in its plan; do not initialize another workflow.");
+  } else if (args.trellis) {
     lines.push(
       ``,
       `This is a mawf+trellis workspace. Respect the trellis discipline:`,

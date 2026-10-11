@@ -311,3 +311,7 @@ node bin/mawf.js doctor
 ---
 
 授權條款：**MIT** —— 見 [`LICENSE`](./LICENSE)。
+
+## 原生工作區
+
+透過明確的原生工作區標記停用 Trellis 生命週期，同時保留其他專案的相容適配。詳見[儲存、遷移和工作階段介面](docs/NATIVE_WORKSPACES.md)。

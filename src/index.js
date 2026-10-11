@@ -1,3 +1,5 @@
+import { workspaceLayout } from "./workspace/backend.js";
+import { runSession } from "./workspace/sessions.js";
 import { fileURLToPath } from "node:url";
 // @ts-check
 // CLI dispatch for `mawf`. All subcommands are plain functions so they can be
@@ -188,6 +190,7 @@ export function main(argv = process.argv.slice(2), deps = {}) {
     case "graph": return cmdGraph(f, flags);
     case "knowledge": return runKnowledge(f, flags);
     case "bridge": return runBridge(f, flags);
+    case "session": return runSession(f, flags);
     case "companion": return runCompanionServe(f, flags);
     case "components": return runComponents(f, flags);
     case "observer": return cmdObserver(f, flags);
@@ -218,6 +221,7 @@ function cmdHelp() {
 Usage: mawf <command> [options]
 
 Commands:
+  session       start|heartbeat|stop native session (--id, --platform, --task)
   init          Snapshot cc-switch, then initialize a .mawf/ workspace
                 (cc-switch project-profile sync is DECOUPLED by default; set
                 MAW_CC_PROJECT_SYNC=1 to temporarily re-enable)
@@ -258,13 +262,13 @@ Commands:
                 hosts); configs are KEPT unless --purge-config (--keep-config
                 wins if both); --restore-routing rolls cc-switch proxy_config
                 back to the pre-init snapshot; Trellis-owned files are kept
-  update        Refresh MAWF, then run trellis update in Trellis projects
+  update        Refresh MAWF; optional legacy Trellis project update
                 (TTY: native prompts; redirected: exactly --skip-all), then
                 re-ensure MAWF overlays. --force is never passed to Trellis
   upgrade       Self-upgrade: git fetch + ff-only pull (checkout installs);
                 npm i -g <name>@latest (npm installs). --dry-run to preview.
-                Then trellis upgrade + applicable project update. --tag is
-                MAWF-only; --no-apply-templates still upgrades Trellis CLI
+                Legacy mode: trellis upgrade + project update. --tag is
+                MAWF-only; native workspace markers disable Trellis stages
   bridge        Workspace bridge: serve (NDJSON stdio read-only RPC over the
                 authorized project root; typed providers only, no exec),
                 machine-id (print/provision the stable machine id),
@@ -309,6 +313,7 @@ function cmdUnknown(cmd) {
 // --- init ---
 function cmdInit(f, flags) {
   const project = flags.project ? path.resolve(flags.project) : process.cwd();
+  const nativeWorkspace = workspaceLayout(project).native;
   const user = flags.u || flags.user || "";
   if (!user) { out(`init requires -u <user-name> (e.g. mawf init -u alice)`, false); return; }
   ensureDir(path.join(project, ".mawf", "agents"));
@@ -407,6 +412,10 @@ function cmdInit(f, flags) {
   }
 
   // 3) trellis init -u <user> as the mandatory next step (unless --no-trellis)
+  if (nativeWorkspace) {
+    out("  native MAWF workspace: initialized; Trellis lifecycle disabled");
+    return;
+  }
   if (flags["no-trellis"]) {
     out(`  trellis init: skipped (--no-trellis). Next step: run \`trellis init -u ${user}\`.`);
     return;
@@ -981,6 +990,7 @@ export function repairMawOverlays(project, deps = {}) {
     for (const { dir } of watchList(registry(), {}, { exists: (p) => pathExists(p) })) dirs.add(dir);
     for (const dir of dirs) {
       try {
+        if (workspaceLayout(dir).native) continue;
         const st = status(dir);
         if (st.trellisBrainstormPresent && (!st.wrapperCurrent || st.missing.length)) {
           const g = apply(dir);
@@ -999,6 +1009,7 @@ export function repairMawOverlays(project, deps = {}) {
 /** Injected lifecycle seam used by isolated order/failure tests. */
 export function runUpdateLifecycle(opts = {}, deps = {}) {
   const project = opts.project ? path.resolve(opts.project) : process.cwd();
+  const nativeWorkspace = workspaceLayout(project).native;
   const stages = [];
   let maw;
   try {
@@ -1011,14 +1022,14 @@ export function runUpdateLifecycle(opts = {}, deps = {}) {
 
   const trellisProject = (deps.exists || exists)(path.join(project, ".trellis"));
   let trellis = null;
-  if (!opts.mawfOnly && trellisProject) {
+  if (!opts.mawfOnly && !nativeWorkspace && trellisProject) {
     trellis = (deps.runTrellis || runTrellisCommand)({
       project, command: "update", stdinIsTTY: opts.stdinIsTTY,
       stdoutIsTTY: opts.stdoutIsTTY, detection: opts.detection, runner: opts.runner,
     });
     stages.push(trellis);
   } else if (!opts.mawfOnly) {
-    stages.push({ stage: "trellis update", ok: true, skipped: true, reason: "not a Trellis project" });
+    stages.push({ stage: "trellis update", ok: true, skipped: true, reason: nativeWorkspace ? "native MAWF workspace opted out" : "not a Trellis project" });
   }
 
   // Trellis can write some files before failing, so this must be unconditional.
@@ -1030,6 +1041,7 @@ export function runUpdateLifecycle(opts = {}, deps = {}) {
 /** Injected lifecycle seam for MAWF -> Trellis upgrade/update ordering. */
 export function runUpgradeLifecycle(opts = {}, deps = {}) {
   const project = opts.project ? path.resolve(opts.project) : process.cwd();
+  const nativeWorkspace = workspaceLayout(project).native;
   const dryRun = opts.dryRun === true;
   const applyTemplates = opts.applyTemplates !== false;
   const stages = [];
@@ -1038,6 +1050,14 @@ export function runUpgradeLifecycle(opts = {}, deps = {}) {
   });
   stages.push({ stage: "mawf upgrade", ok: maw.ok, result: maw });
   if (!maw.ok) return { ok: false, project, stages, maw };
+
+  if (nativeWorkspace) {
+    const trellisUpgrade = { stage: "trellis upgrade", ok: true, skipped: true, reason: "native MAWF workspace opted out" };
+    stages.push(trellisUpgrade);
+    const overlay = applyTemplates && !dryRun ? (deps.repairOverlays || repairMawOverlays)(project) : null;
+    if (overlay) stages.push({ stage: "mawf overlay repair", ...overlay, ok: overlay.ok !== false });
+    return { ok: overlay?.ok !== false, project, stages, maw, trellisUpgrade, overlay };
+  }
 
   const trellisUpgrade = (deps.runTrellis || runTrellisCommand)({
     project, command: "upgrade", dryRun, detection: opts.detection,
@@ -1118,13 +1138,14 @@ function cmdUpgrade(f, flags, deps = {}) {
     const failures = [];
     if (r.trellisUpdate?.ok === false) failures.push("trellis update failed");
     if (r.overlay?.ok === false) failures.push("MAWF overlay repair failed");
-    write(`upgrade partially succeeded: MAWF and Trellis CLI upgraded, but ${failures.join(" and ")}`, false);
+    write(`upgrade partially succeeded: MAWF completed, but ${failures.join(" and ")}`, false);
     writeOverlayErrors(write, r.overlay);
     process.exitCode = 1;
     return;
   }
   if (flags["dry-run"] === true) { write(`upgrade dry-run ok (mode: ${r.maw.mode}; nothing changed)`); return; }
   write(`upgraded mawf${r.maw.from && r.maw.to ? ` ${r.maw.from} -> ${r.maw.to}` : ""} (mode: ${r.maw.mode}; templates: ${r.maw.appliedTemplates === true ? "refreshed" : r.maw.appliedTemplates === false ? "not refreshed" : "n/a"})`);
+  if (r.trellisUpgrade?.skipped) { write("  native MAWF workspace: Trellis lifecycle disabled"); return; }
   write(`  trellis CLI: upgraded${applyTemplates && r.trellisUpdate ? "; project templates updated; MAWF overlays re-ensured" : "; project templates skipped"}`);
 }
 

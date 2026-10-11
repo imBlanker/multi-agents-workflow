@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ## [Unreleased]
 
+### Added
+
+- Explicit native workspace storage and persistent Trellis lifecycle opt-out; legacy workspaces remain supported.
+- Native task/spec/artifact providers, standalone session hooks with serialized state transitions, and a framework-independent brainstorm skill.
+- Migration boundary tests and packed-install checks excluding private workspace assets.
+
 ## [0.8.4] - 2026-10-10
 
 ### Added

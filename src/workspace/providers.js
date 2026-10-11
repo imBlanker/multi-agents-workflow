@@ -1,3 +1,4 @@
+import { workspaceLayout, assertNativePath } from "./backend.js";
 // @ts-check
 // Typed read-only workspace providers for `mawf bridge serve` (P4.2).
 //
@@ -134,6 +135,11 @@ function sha256File(abs) {
  */
 export function createProviders({ projectDir, store, machineId = null }) {
   const root = fs.realpathSync(path.resolve(projectDir));
+  const layout = workspaceLayout(root);
+  // Re-check native leaf paths at read time, not just storage roots at startup.
+  const nativeFile = (absolute) => layout.native
+    ? assertNativePath(root, path.relative(root, absolute).split(path.sep).join("/"))
+    : absolute;
   /** per-server-instance snapshot epoch for project.tasks */
   let taskEpoch = 0;
 
@@ -145,7 +151,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
   // only unique within one workspace, and clients subscribing across several
   // bridged workspaces need a stable READABLE composite (no new crypto).
   const RUNTIME_CHANNEL = "runtime";
-  const RUNTIME_SESSIONS_DIR = path.join(root, ".trellis", ".runtime", "sessions");
+  const RUNTIME_SESSIONS_DIR = path.join(root, layout.sessions);
   const RUNTIME_INCIDENTS_DIR = path.join(root, ".mawf", "watchdog", "incidents");
   const machineKey = typeof machineId === "string" && machineId.trim() !== "" ? machineId.trim() : "unknown";
   /** Runtime state version: 0 = initial baseline, +1 per detected change. */
@@ -170,7 +176,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
    * @param {string} abs @param {string} sessionId
    */
   function readSessionFile(abs, sessionId) {
-    const j = JSON.parse(fs.readFileSync(abs, "utf8"));
+    const j = JSON.parse(fs.readFileSync(nativeFile(abs), "utf8"));
     if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("not a JSON object");
     return {
       sessionId,
@@ -178,6 +184,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
       currentTask: typeof j.current_task === "string" ? j.current_task : null,
       lastSeenAt: typeof j.last_seen_at === "string" ? j.last_seen_at : null,
       scopedKey: runtimeScopedKey(sessionId),
+      ...(layout.native ? { status: typeof j.status === "string" ? j.status : "unknown", endedAt: typeof j.ended_at === "string" ? j.ended_at : null } : {}),
     };
   }
 
@@ -228,7 +235,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
     for (const ent of listDir(RUNTIME_SESSIONS_DIR)) {
       if (!ent.isFile() || !ent.name.endsWith(".json")) continue;
       try {
-        const digest = createHash("sha256").update(fs.readFileSync(path.join(RUNTIME_SESSIONS_DIR, ent.name))).digest("hex").slice(0, 12);
+        const digest = createHash("sha256").update(fs.readFileSync(nativeFile(path.join(RUNTIME_SESSIONS_DIR, ent.name)))).digest("hex").slice(0, 12);
         parts.push(`${ent.name}:${digest}`);
       } catch {
         parts.push(`${ent.name}:unreadable`); // vanished/unreadable mid-poll
@@ -360,7 +367,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
     /** @type {Record<string, unknown>} */
     const out = { id, name: id };
     try {
-      const raw = fs.readFileSync(path.join(taskDir, "task.json"), "utf8");
+      const raw = fs.readFileSync(nativeFile(path.join(taskDir, "task.json")), "utf8");
       const tj = JSON.parse(raw);
       if (tj && typeof tj === "object" && !Array.isArray(tj)) {
         for (const k of ["name", "title", "status", "priority", "updatedAt"]) {
@@ -382,7 +389,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
   function collectFileRefs(jsonlPath, out) {
     let text;
     try {
-      text = fs.readFileSync(jsonlPath, "utf8");
+      text = fs.readFileSync(nativeFile(jsonlPath), "utf8");
     } catch {
       return;
     }
@@ -406,6 +413,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
    * @param {ArtifactEntry[]} out
    */
   function walkArtifacts(dir, out) {
+    if (layout.native) nativeFile(dir);
     for (const ent of listDir(dir)) {
       if (ent.name.startsWith(".")) continue;
       const abs = path.join(dir, ent.name);
@@ -458,12 +466,12 @@ export function createProviders({ projectDir, store, machineId = null }) {
     project: {
       /** Single authorized project per server; direct-child `.trellis/tasks` check only. */
       list: async () => ({
-        projects: [{ id: path.basename(root), hasTrellis: hasVisibleEntries(path.join(root, ".trellis", "tasks")) }],
+        projects: [{ id: path.basename(root), hasTrellis: !layout.native && hasVisibleEntries(path.join(root, layout.tasks)), ...(layout.native ? { backend: "mawf", hasWorkspace: true } : {}) }],
       }),
 
       /** Flat task dirs under `<root>/.trellis/tasks/`; epoch is per-instance monotonic. */
       tasks: async () => {
-        const tasksDir = path.join(root, ".trellis", "tasks");
+        const tasksDir = path.join(root, layout.tasks);
         const tasks = [];
         for (const ent of listDir(tasksDir)) {
           if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
@@ -482,10 +490,10 @@ export function createProviders({ projectDir, store, machineId = null }) {
         if (!id || id === "." || id === ".." || id.includes("/") || id.includes("\\") || id.includes("\0")) {
           throw notFound("task.get requires a single-segment task id");
         }
-        const taskDir = authorize(path.join(".trellis", "tasks", id));
+        const taskDir = authorize(path.join(layout.tasks, id));
         /** @type {Record<string, unknown>} */
         const out = { id, task: null };
-        const tjPath = path.join(taskDir, "task.json");
+        const tjPath = nativeFile(path.join(taskDir, "task.json"));
         if (fs.existsSync(tjPath)) {
           try {
             out.task = JSON.parse(fs.readFileSync(tjPath, "utf8"));
@@ -501,7 +509,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
 
       /** `.trellis/spec/` entries: name + filled boolean (no content). */
       specs: async () => {
-        const specDir = path.join(root, ".trellis", "spec");
+        const specDir = path.join(root, layout.specs);
         const specs = [];
         for (const ent of listDir(specDir)) {
           if (ent.name.startsWith(".")) continue;
@@ -512,12 +520,17 @@ export function createProviders({ projectDir, store, machineId = null }) {
           specs.push({ name: ent.name, filled });
         }
         specs.sort((a, b) => a.name.localeCompare(b.name));
+        if (layout.native) {
+          const files = [];
+          walkArtifacts(specDir, files);
+          return { specs, files: files.filter((f) => f.rel.endsWith(".md")).sort((a, b) => a.rel.localeCompare(b.rel)) };
+        }
         return { specs };
       },
 
       /** implement.jsonl/check.jsonl `file:` edges per task dir (bounded). */
       relations: async () => {
-        const tasksDir = path.join(root, ".trellis", "tasks");
+        const tasksDir = path.join(root, layout.tasks);
         const groups = [];
         for (const ent of listDir(tasksDir)) {
           if (!ent.isDirectory() || ent.name.startsWith(".")) continue;
@@ -673,8 +686,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
       list: async () => {
         /** @type {ArtifactEntry[]} */
         const artifacts = [];
-        walkArtifacts(path.join(root, ".trellis", "tasks"), artifacts);
-        walkArtifacts(path.join(root, "docs", "architecture"), artifacts);
+        for (const relative of layout.artifacts) walkArtifacts(path.join(root, relative), artifacts);
         artifacts.sort((a, b) => a.rel.localeCompare(b.rel));
         return { artifacts };
       },

@@ -311,3 +311,7 @@ node bin/mawf.js doctor
 ---
 
 许可证：**MIT** —— 见 [`LICENSE`](./LICENSE)。
+
+## 原生工作区
+
+通过明确的原生工作区标记停用 Trellis 生命周期，同时保留其他项目的兼容适配。详见[存储、迁移和会话接口](docs/NATIVE_WORKSPACES.md)。
