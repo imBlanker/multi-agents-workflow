@@ -12,6 +12,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 - Native task/spec/artifact providers, standalone session hooks with serialized state transitions, and a framework-independent brainstorm skill.
 - Migration boundary tests and packed-install checks excluding private workspace assets.
 
+- Accept server-native Windows absolute workspace paths during lazy bridge handshakes; clean up test children even when a handshake assertion fails.
+
 ## [0.8.4] - 2026-10-10
 
 ### Added

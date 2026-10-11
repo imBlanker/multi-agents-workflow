@@ -91,7 +91,7 @@ async function bridgeServe(_rest, flags) {
   const project = explicitProject ? expand(flags.project) : null;
   /** Build an authorized provider set for a remote-supplied root. */
   const buildProvidersFor = (root) => {
-    if (typeof root !== "string" || !root.startsWith("/") || root.includes("\0")) {
+    if (typeof root !== "string" || !path.isAbsolute(root) || root.includes("\0")) {
       throw new Error("workspace root must be an absolute remote path");
     }
     const resolved = fs.realpathSync(root); // throws on missing/symlink loops
