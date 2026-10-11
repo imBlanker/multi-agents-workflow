@@ -14,8 +14,6 @@ import path from "node:path";
 import { portOwner, dshLaunch } from "./platform/index.js";
 import { exists, isFile, readJson, writeJson, ensureDir, readText } from "./util.js";
 import { parseYamlSubset } from "./util.js";
-import { scanInventory } from "./inventory.js";
-import { detectHost } from "./host.js";
 
 const DEFAULTS = {
   weights: { capabilityFit: 30, skillMatch: 30, modelFit: 25, costFit: 15 },
@@ -64,7 +62,7 @@ function utc8Stamp(clock) {
 function defaultCurrentHost() {
   const env = (process.env.MAW_HOST || "").toLowerCase();
   if (HOST_ALIASES[env]) return HOST_ALIASES[env];
-  return detectHost().app;
+  return "unknown";
 }
 
 /**
@@ -252,7 +250,7 @@ export function adviseTask(opts = {}) {
   const stayBonus = Number(cfg.stayBonus ?? DEFAULTS.stayBonus);
   const marginNeeded = Number(cfg.margin ?? DEFAULTS.margin);
 
-  const inventory = opts.inventory ?? scanInventory({ projectDir });
+  const inventory = opts.inventory ?? { hosts: [] };
   const profile = opts.task
     ? { text: opts.task, difficulty: Number(opts.difficulty) || 3, domain: opts.domain || "" }
     : (() => {

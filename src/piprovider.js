@@ -7,7 +7,7 @@
 // SECURITY: auth.json keys and models.json `apiKey` fields are NEVER returned.
 // We only report auth/config presence so downstream can show "configured".
 import path from "node:path";
-import { exists, readJson, home } from "./util.js";
+import { exists, readJson, home, resolvePiAgentRoot } from "./util.js";
 
 /**
  * Resolve the chosen Pi home, even before it exists (installer use).
@@ -15,7 +15,7 @@ import { exists, readJson, home } from "./util.js";
  * @returns {string}
  */
 export function resolvePiAgentDir(piDir) {
-  return piDir ?? (process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || path.join(home(), ".pi", "agent"));
+  return resolvePiAgentRoot(piDir);
 }
 
 /** @param {string} [piDir] @returns {string} chosen Pi home when present, else "" */
@@ -73,14 +73,14 @@ function chatModelIds(entry) {
     .filter(Boolean);
 }
 
-export function readPiConfig(piDir) {
+export function readPiConfig(piDir, opts = {}) {
   const dir = findPiAgentDir(piDir);
   if (!dir || !exists(dir)) return null;
   return {
     settings: readJson(path.join(dir, "settings.json"), {}),
     models: readJson(path.join(dir, "models.json"), { providers: {} }),
     modelsStore: readJson(path.join(dir, "models-store.json"), {}),
-    mcp: readPiMcpFace(dir),
+    mcp: opts.readMcp === true ? readPiMcpFace(dir) : { mcpServers: {} },
     authPresent: exists(path.join(dir, "auth.json")),
     impl: "pi-files",
   };
@@ -118,7 +118,7 @@ export function piCostRateNote(spendMeasured) {
  * @returns {any | null}
  */
 export function readPiAsCc(opts = {}) {
-  const cfg = readPiConfig(opts.piDir);
+  const cfg = readPiConfig(opts.piDir, { readMcp: opts.readMcp === true });
   if (!cfg) return null;
   const settings = cfg.settings || {};
   const providersMap = (cfg.models && cfg.models.providers) || {};

@@ -113,7 +113,7 @@ export function readCcSwitch(opts = {}) {
   const vRow = (r.all("PRAGMA user_version") || [])[0];
   const schemaVersion = num(vRow ? vRow.user_version : 0);
   const schemaSupported = schemaVersion <= SUPPORTED_CC_SCHEMA;
-  const allProviders = r.all(
+  const allProviders = opts.models === false ? [] : r.all(
     "SELECT id, app_type, name, is_current, provider_type, cost_multiplier, limit_daily_usd, limit_monthly_usd, website_url, category, sort_index, settings_config FROM providers ORDER BY app_type, is_current DESC, sort_index"
   );
   // Parse each provider's settings_config into `settingsConfig` so callers can
@@ -138,7 +138,7 @@ export function readCcSwitch(opts = {}) {
     }
   }
 
-  const pricingRows = r.all(
+  const pricingRows = opts.pricing === false ? [] : r.all(
     "SELECT model_id, display_name, input_cost_per_million, output_cost_per_million, cache_read_cost_per_million, cache_creation_cost_per_million FROM model_pricing"
   );
   const modelPricing = {};
@@ -154,7 +154,7 @@ export function readCcSwitch(opts = {}) {
     };
   }
 
-  const settingsRows = r.all("SELECT key, value FROM settings");
+  const settingsRows = opts.settings === true ? r.all("SELECT key, value FROM settings") : [];
   const settings = {};
   for (const s of settingsRows) settings[s.key] = s.value;
 

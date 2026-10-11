@@ -1,3 +1,5 @@
+import { readSettings } from '../settings.js';
+import { isEnabled } from '../integrations.js';
 // @ts-check
 // `mawf companion serve` — loopback HTTP companion (P5.1, task
 // 09-17-mawf-four-tool-integration).
@@ -196,14 +198,14 @@ function originAllowed(origin, port) {
  * surface WITHOUT runtime event channels (no push transport in P5.1).
  * @returns {string[]}
  */
-function companionCapabilities() {
+function companionCapabilities(settings) {
   return [
     CAPABILITIES.PROJECT_READ,
-    CAPABILITIES.KNOWLEDGE_READ,
+    ...(isEnabled(settings, "knowledge") ? [CAPABILITIES.KNOWLEDGE_READ] : []),
     CAPABILITIES.ARTIFACT_READ,
     CAPABILITIES.RUNTIME_READ,
     CAPABILITIES.CHUNKED_ARTIFACTS,
-    CAPABILITIES.TERMINAL_META,
+    ...(isEnabled(settings, "workspace-runtime-tmux") ? [CAPABILITIES.TERMINAL_META] : []),
   ];
 }
 
@@ -317,21 +319,23 @@ export async function runCompanionServe(f, flags) {
 
   // Assets are loaded once; a missing/mangled vendored board is a startup
   // error, never a mid-request surprise.
-  const boardHtml = injectCompanionBootstrap(fs.readFileSync(BOARD_PATH, "utf8"));
-  const datasourceSrc = fs.readFileSync(DATASOURCE_PATH, "utf8");
+  const selection = readSettings(projectDir);
+  const boardEnabled = isEnabled(selection, "notes-board");
+  const boardHtml = boardEnabled ? injectCompanionBootstrap(fs.readFileSync(BOARD_PATH, "utf8")) : "<!doctype html><title>MAWF companion</title><p>Notes Board is disabled. Use the selected workspace RPC capabilities.</p>";
+  const datasourceSrc = boardEnabled ? fs.readFileSync(DATASOURCE_PATH, "utf8") : "";
   const bootstrapPage = tokenBootstrapPage(TOKEN_KEY);
 
   const token = crypto.randomBytes(32).toString("base64url");
   // sha256 both sides so timingSafeEqual gets equal-length buffers (no length leak).
   const expectedTokenHash = crypto.createHash("sha256").update(token).digest();
 
-  const store = KnowledgeStore.open(projectDir);
+  const store = isEnabled(selection, "knowledge") ? KnowledgeStore.open(projectDir) : null;
   const machineId = readOrCreateMachineId();
   const providers = createProviders({ projectDir, store, machineId });
   const bridgeServer = new BridgeServer({
     serverId: "mawf-companion",
     machineId,
-    capabilities: companionCapabilities(),
+    capabilities: companionCapabilities(selection),
     providers,
   });
   // Internal handshake up front: /rpc requests then flow through the SAME

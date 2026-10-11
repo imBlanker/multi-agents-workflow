@@ -1,3 +1,5 @@
+import { readSettings } from '../settings.js';
+import { isEnabled } from '../integrations.js';
 import { workspaceLayout } from "./backend.js";
 // @ts-check
 // `mawf bridge` — CLI surface for the workspace bridge (P4.2).
@@ -64,14 +66,14 @@ export function readOrCreateMachineId(h = home()) {
 }
 
 /** Capability set offered by `mawf bridge serve` (read-only + transport features). */
-function bridgeCapabilities() {
+function bridgeCapabilities(project) {
   return [
     CAPABILITIES.PROJECT_READ,
-    CAPABILITIES.KNOWLEDGE_READ,
+    ...(project && isEnabled(readSettings(project), "knowledge") ? [CAPABILITIES.KNOWLEDGE_READ] : []),
     CAPABILITIES.ARTIFACT_READ,
     CAPABILITIES.CHUNKED_ARTIFACTS,
     CAPABILITIES.RUNTIME_EVENTS,
-    CAPABILITIES.TERMINAL_META,
+    ...(project && isEnabled(readSettings(project), "workspace-runtime-tmux") ? [CAPABILITIES.TERMINAL_META] : []),
     CAPABILITIES.EVENT_RESUME,
     CAPABILITIES.CANCEL,
   ];
@@ -98,10 +100,10 @@ async function bridgeServe(_rest, flags) {
     if (!workspaceLayout(resolved).native && !fs.existsSync(path.join(resolved, ".trellis"))) {
       throw new Error("workspace root must contain a valid MAWF workspace marker or .trellis");
     }
-    const store2 = KnowledgeStore.open(resolved);
+    const store2 = isEnabled(readSettings(resolved), "knowledge") ? KnowledgeStore.open(resolved) : null;
     return createProviders({ projectDir: resolved, store: store2, machineId });
   };
-  const store = explicitProject ? KnowledgeStore.open(project) : null;
+  const store = explicitProject && isEnabled(readSettings(project), "knowledge") ? KnowledgeStore.open(project) : null;
   const flagId = typeof flags["machine-id"] === "string" ? flags["machine-id"].trim() : "";
   const machineId = flagId || readOrCreateMachineId();
   const providers = explicitProject
@@ -110,7 +112,7 @@ async function bridgeServe(_rest, flags) {
   const server = new BridgeServer({
     serverId: "mawf-bridge",
     machineId,
-    capabilities: bridgeCapabilities(),
+    capabilities: bridgeCapabilities(project),
     providers,
     ...(explicitProject ? {} : { onWorkspace: buildProvidersFor }),
   });

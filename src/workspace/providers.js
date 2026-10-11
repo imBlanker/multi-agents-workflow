@@ -1,3 +1,5 @@
+import { readSettings } from '../settings.js';
+import { isEnabled } from '../integrations.js';
 import { workspaceLayout, assertNativePath } from "./backend.js";
 // @ts-check
 // Typed read-only workspace providers for `mawf bridge serve` (P4.2).
@@ -605,6 +607,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
     knowledge: {
       /** Index summaries only — bodies stay on disk until knowledge.get. */
       list: async () => {
+        if (!store) throw new Error("knowledge capability disabled");
         const idx = store.index();
         return { entries: idx.entries, total: idx.entries.length, builtAt: idx.builtAt ?? null };
       },
@@ -617,6 +620,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
        *           maxDocs?: number, maxBytes?: number, now?: string}} [p]
        */
       search: async (p) => {
+        if (!store) throw new Error("knowledge capability disabled");
         /** @type {{q: string, kinds?: string[], includeArchived?: boolean,
          *          maxDocs?: number, maxBytes?: number, now?: string}} */
         const q = { ...(p ?? {}), q: typeof p?.q === "string" ? p.q : "" };
@@ -630,6 +634,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
        * @param {{path?: string, rel?: string, kind?: string}} p
        */
       get: async (p) => {
+        if (!store) throw new Error("knowledge capability disabled");
         const relPath = typeof p?.path === "string" ? p.path : typeof p?.rel === "string" ? p.rel : "";
         if (!relPath) throw providerError(ERR.BAD_MESSAGE, "knowledge.get requires path");
         let kind = p?.kind;
@@ -750,6 +755,7 @@ export function createProviders({ projectDir, store, machineId = null }) {
        * bounded probe, fail-open with { available: false, reason } (§8.7).
        */
       snapshot: async () => {
+        if (!isEnabled(readSettings(root), "workspace-runtime-tmux")) return { available: false, reason: "workspace-runtime-tmux disabled" };
         let out;
         try {
           out = execFileSync("tmux", ["list-panes", "-a", "-F", TMUX_FORMAT], {

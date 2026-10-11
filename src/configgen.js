@@ -111,7 +111,7 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
     // When the host is pi (or this specific agent is pi-native), also
     // materialize the native pi agent file so pi-subagents can spawn it
     // directly. Non-destructive: only `maw-*` files are managed (pruned below).
-    if (a.appType === "pi" || a.agent === "pi") {
+    if (opts.materializePi === true && (a.appType === "pi" || a.agent === "pi")) {
       const piAgentsDir = path.join(projectRoot, ".pi", "agents");
       files.push(writeText(path.join(piAgentsDir, `maw-${slug(a.role)}.md`), piAgentFileMd(a, plan)));
     }
@@ -133,7 +133,7 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
   // NEVER touch trellis-* or other non-maw pi agent files.
   try {
     const piAgentsDir = path.join(projectRoot, ".pi", "agents");
-    if (exists(piAgentsDir)) {
+    if (opts.materializePi === true && exists(piAgentsDir)) {
       const keepPi = new Set(plan.agents.filter((a) => a.appType === "pi" || a.agent === "pi").map((a) => `maw-${slug(a.role)}`));
       for (const f of fs.readdirSync(piAgentsDir)) {
         if (f.startsWith("maw-") && f.endsWith(".md") && !keepPi.has(f.slice(0, -3))) {

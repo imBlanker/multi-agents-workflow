@@ -62,12 +62,12 @@ export function acquire(stateDir, cfg, who) {
   }
 
   // 1. cost-rate check (authoritative: real spend from cc-switch logs)
-  const total = costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds });
+  const total = cfg.usageEnabled === true ? costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { ratePerMin: 0, totalUsd: null, requestCount: 0, impl: "usage-unavailable", basis: "unknown" };
   if (total.ratePerMin >= cfg.totalLimitUsdPerMin) {
     return { allowed: false, reason: `total cost-rate ${total.ratePerMin} USD/min >= limit ${cfg.totalLimitUsdPerMin}`, running: Object.keys(s.running).length, ratePerMin: total.ratePerMin, remainingConcurrency: Math.max(0, cfg.maxConcurrency - Object.keys(s.running).length) };
   }
   // per-session rate as a proxy for per-agent rate
-  const per = perSessionRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds });
+  const per = cfg.usageEnabled === true ? perSessionRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { sessions: [] };
   for (const sess of per.sessions) {
     if (sess.ratePerMin >= cfg.perAgentLimitUsdPerMin) {
       return { allowed: false, reason: `agent/session ${sess.sessionId} at ${sess.ratePerMin} USD/min >= per-agent limit ${cfg.perAgentLimitUsdPerMin}`, running: Object.keys(s.running).length, ratePerMin: sess.ratePerMin, remainingConcurrency: Math.max(0, cfg.maxConcurrency - Object.keys(s.running).length) };
@@ -114,8 +114,8 @@ export function guard(stateDir, cfg) {
   const s = readState(stateDir);
   const cutoff = nowSec() - 1800;
   for (const [id, v] of Object.entries(s.running)) if (v.since < cutoff) delete s.running[id];
-  const total = costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds });
-  const per = perSessionRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds });
+  const total = cfg.usageEnabled === true ? costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { ratePerMin: 0, totalUsd: null, requestCount: 0, impl: "usage-unavailable", basis: "unknown" };
+  const per = cfg.usageEnabled === true ? perSessionRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { sessions: [] };
   let perAgentOk = true;
   let perAgentReason = "";
   for (const sess of per.sessions) {
@@ -155,11 +155,11 @@ export function guard(stateDir, cfg) {
  * @param {CostConfig} cfg
  */
 export function report(cfg) {
-  const total = costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds });
-  const per = perSessionRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds });
+  const total = cfg.usageEnabled === true ? costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { ratePerMin: 0, totalUsd: null, requestCount: 0, impl: "usage-unavailable", basis: "unknown" };
+  const per = cfg.usageEnabled === true ? perSessionRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { sessions: [] };
   const top = per.sessions.slice(0, 8);
   const caveats = [];
-  if (piSessionUsagePresent({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds })) {
+  if (cfg.usageEnabled === true && piSessionUsagePresent({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds })) {
     caveats.push("pi spend via cc-switch Pi (Session) import: cache-write accounting may be incomplete");
   }
   return {

@@ -1,3 +1,9 @@
+import { readSettings } from './settings.js';
+import { isEnabled } from './integrations.js';
+import { loadContext, selectedHost } from './context.js';
+import { resolvePiAgentRoot } from './util.js';
+let readPiAsCc, readPiResources, readPiMcps, readPiRunner, readDshSkills, readDshPresets, parseDshPlugins, readDshAsCc;
+const hostCapabilities = host => [host.hasSubagents && 'subagents', host.hasMultiAgent && 'multi-agent', host.hasDynamicWorkflow && 'dynamic-workflow', host.codexPluginInstalled && 'codex-review'].filter(Boolean);
 // @ts-check
 // Cross-host agent inventory: scan ALL installed supported hosts
 // (claude-code, codex, pi, dsh) + the current project and emit an
@@ -16,14 +22,6 @@ import path from "node:path";
 import os from "node:os";
 import { execFile } from "./platform/index.js";
 import { exists, isFile, readJson, readText, writeJson, writeText, ensureDir } from "./util.js";
-import { loadCatalog, detectPool } from "./pool.js";
-import { detectHost, hostCapabilities } from "./host.js";
-import { readCcSwitch, piManagedByCcSwitch, piSessionUsagePresent } from "./ccswitch.js";
-import { readPiAsCc, resolvePiAgentDir } from "./piprovider.js";
-import { readPiResources, readPiMcps, readPiRunner } from "./pi-resources.js";
-import { readDshSkills, readDshPresets } from "./dsh-resources.js";
-import { parseDshPlugins } from "./dsh-plugin-inventory.js";
-import { readDshAsCc } from "./dshprovider.js";
 import { candidatesForAppType, classifyModel } from "./modelcap.js";
 import { resolvePrice } from "./pricing.js";
 
@@ -322,41 +320,38 @@ function ancestorAgentsSkillsDirs(projectDir) {
  * @param {(cmd: string) => string} [opts.runCli] injectable CLI runner (tests)
  * @returns {InventoryReport}
  */
-export function scanInventory(opts = {}) {
-  const claudeDir = opts.claudeDir ?? path.join(home(), ".claude");
-  const codexDir = opts.codexDir ?? path.join(home(), ".codex");
-  const piDir = resolvePiAgentDir(opts.piDir);
-  const dshHome = opts.dshHome ?? (process.env.DSH_HOME || path.join(home(), ".dsh"));
-  const claudeJson = opts.claudeJson ?? path.join(home(), ".claude.json");
+export async function scanInventory(opts = {}) {
   const projectDir = path.resolve(opts.projectDir ?? process.cwd());
-
-  const hostInfo = detectHost({ claudeDir, codexDir, piDir, dshHome, projectDir });
-  const cc = readCcSwitch(opts.dbPath ? { dbPath: opts.dbPath } : {});
-  const basePricing = { ...(cc.modelPricing || {}) };
-
-  /** @type {any[]} */
+  const selection = opts.settings || readSettings(projectDir);
+  if (!isEnabled(selection, 'inventory')) return { generatedAt: new Date().toISOString(), projectDir, hosts: [], reason: 'inventory disabled' };
+  const claudeDir = opts.claudeDir ?? path.join(home(), '.claude');
+  const codexDir = opts.codexDir ?? path.join(home(), '.codex');
+  const piDir = resolvePiAgentRoot(opts.piDir);
+  const dshHome = opts.dshHome ?? process.env.DSH_HOME ?? path.join(home(), '.dsh');
+  const claudeJson = opts.claudeJson ?? path.join(home(), '.claude.json');
+  const context = await loadContext(projectDir, { dbPath: opts.dbPath });
+  const cc = context.cc, hostInfo = context.host;
   const hosts = [];
-  const push = (fn) => { try { hosts.push(fn()); } catch (err) { hosts.push({ app: "unknown", error: String(err?.message ?? err) }); } };
-
-  if (exists(claudeDir)) push(() => scanClaude({ claudeDir, claudeJson, projectDir, cc, hostInfo, probe: !!opts.probe, runCli: opts.runCli ?? runCliDefault }));
-  if (exists(codexDir)) push(() => scanCodex({ codexDir, projectDir, cc, hostInfo, probe: !!opts.probe, runCli: opts.runCli ?? runCliDefault }));
-  if (exists(piDir)) push(() => scanPi({ piDir, projectDir, cc, hostInfo, agentsSkillsDir: opts.agentsSkillsDir, probe: !!opts.probe, runCli: opts.runCli ?? runCliDefault }));
-  if (exists(path.join(dshHome, "settings.yaml")) || exists(path.join(dshHome, "profiles"))) {
-    push(() => scanDsh({ dshHome, projectDir, cc, hostInfo, dumpConfig: opts.dshDumpConfig ?? "", probe: !!opts.probe, runCli: opts.runCli ?? runCliDefault }));
+  const push = (app, fn) => { try { hosts.push(fn()); } catch (error) { hosts.push({ app, error: error.message }); } };
+  const common = { projectDir, cc, hostInfo, selection, probe: !!opts.probe, runCli: opts.runCli ?? runCliDefault };
+  if (isEnabled(selection, 'host.claude-code') && exists(claudeDir)) push('claude-code', () => scanClaude({ ...common, claudeDir, claudeJson }));
+  if (isEnabled(selection, 'host.codex') && exists(codexDir)) push('codex', () => scanCodex({ ...common, codexDir }));
+  if (isEnabled(selection, 'host.pi') && exists(piDir)) {
+    ({ readPiAsCc } = await import('./piprovider.js'));
+    ({ readPiResources, readPiMcps, readPiRunner } = await import('./pi-resources.js'));
+    push('pi', () => scanPi({ ...common, piDir, agentsSkillsDir: opts.agentsSkillsDir }));
   }
-
+  if (isEnabled(selection, 'host.dsh') && exists(dshHome)) {
+    ({ readDshAsCc } = await import('./dshprovider.js'));
+    ({ readDshSkills, readDshPresets } = await import('./dsh-resources.js'));
+    if (isEnabled(selection, 'dsh.plugin-inventory')) ({ parseDshPlugins } = await import('./dsh-plugin-inventory.js'));
+    push('dsh', () => scanDsh({ ...common, dshHome, dumpConfig: opts.dshDumpConfig ?? '' }));
+  }
   const report = { generatedAt: new Date().toISOString(), projectDir, hosts };
-  // plugin-pool section (task 08-31-mawf-pluginpool-stagegate): derived from
-  // the scanned hosts via the declarative catalog; read-only; disable with
-  // opts.pool === false; opts.catalogPath is the test seam.
-  if (opts.pool !== false) {
-    try {
-      const catalog = loadCatalog(opts.catalogPath);
-      report.pool = detectPool(report, catalog);
-      if (catalog.warning) report.pool.warning = catalog.warning;
-    } catch (err) {
-      report.pool = { components: [], warning: `pool detection skipped — ${err?.message ?? err}` };
-    }
+  if (opts.pool !== false && isEnabled(selection, 'pool')) {
+    const { loadCatalog, detectPool } = await import('./pool.js');
+    const catalog = loadCatalog(opts.catalogPath);
+    report.pool = detectPool(report, catalog);
   }
   return report;
 }
@@ -532,17 +527,17 @@ function scanPi(o) {
     name: p.source === "extension" ? (/^index\.(ts|js)$/.test(path.basename(p.path)) ? path.basename(path.dirname(p.path)) : path.basename(p.path)) : p.name,
     source: p.source.startsWith("npm:") ? "npm" : p.source,
     loaded: null }));
-  const mcps = readPiMcps({ piDir: o.piDir, projectDir: o.projectDir }).map(m => ({ ...m,
+  const mcps = (isEnabled(o.selection, "pi-mcp-adapter") ? readPiMcps({ piDir: o.piDir, projectDir: o.projectDir }) : []).map(m => ({ ...m,
     source: m.source === "pi-global" ? "pi-agent/mcp.json" : m.source === "pi-adapter-global" ? "pi-agent/mcp-adapter.json" : m.source === "pi-adapter-project" ? ".pi/mcp-adapter.json" : m.source }));
   const harnessNote = ["Static resource evidence only: configured/discovered does not prove a tool is loaded; project resources require Pi trust.", ...discovery.notes].join(" ");
   const global = isFile(path.join(o.piDir, "AGENTS.md")) ? path.join(o.piDir, "AGENTS.md") : null;
-  const piAsCc = readPiAsCc({ piDir: o.piDir, ccSwitch: { modelPricing: o.cc?.modelPricing }, piManaged: piManagedByCcSwitch(o.cc), piSpendMeasured: piSessionUsagePresent({ dbPath: o.cc?.dbPath }) });
+  const piAsCc = readPiAsCc({ piDir: o.piDir, ccSwitch: { modelPricing: o.cc?.modelPricing }, piManaged: !!o.cc.currentProviders?.pi, piSpendMeasured: false, readMcp: false });
   return {
     app, homeDir: o.piDir,
     detected: o.hostInfo.detected.filter((d) => /pi agent/i.test(d)),
     capabilities: hostCapabilities({ ...o.hostInfo, app: "pi" }),
     skills, plugins, marketplaces: [], mcps, resources: discovery.resources, harnessNote,
-    subagentRunner: readPiRunner({ piDir: o.piDir, projectDir: o.projectDir }),
+    subagentRunner: isEnabled(o.selection, "pi-subagents-lite") ? readPiRunner({ piDir: o.piDir, projectDir: o.projectDir }) : { ready: false, reason: "pi-subagents-lite disabled" },
     prompts: { global, project: projectPromptSurfaces(o.projectDir, ["AGENTS.md"]) },
     models: modelsForAppType(piAsCc, APP_TYPES[app]),
     workflowsHarnesses: projectWorkflows(o.projectDir),
@@ -556,15 +551,15 @@ function scanDsh(o) {
   const app = "dsh";
   const skillResources = readDshSkills({ dshHome: o.dshHome, projectDir: o.projectDir });
   const skills = skillResources.filter(s => s.status === "discovered");
-  const presets = readDshPresets({ dshHome: o.dshHome });
+  const presets = isEnabled(o.selection, "dsh.presets") ? readDshPresets({ dshHome: o.dshHome }) : [];
   // everything-as-a-plugin: probe mode parses --dump-config into the plugin
   // list (active/disabled per component). Static mode: [] + note. The dsh web
   // UI is the FULL plugin truth (may show more than the dump).
   let plugins = [];
   let harnessNote = "dsh is everything-as-a-plugin; run `mawf inventory --verify` for the dump-config plugin list (web profile); the dsh web UI plugin panel is the full truth";
   let dump = o.dumpConfig ?? "";
-  if (o.probe && !dump) dump = o.runCli("dsh --profile web --dump-config");
-  if (dump) {
+  if (o.probe && !dump && isEnabled(o.selection, "dsh.plugin-inventory")) dump = o.runCli("dsh --profile web --dump-config");
+  if (dump && isEnabled(o.selection, "dsh.plugin-inventory")) {
     plugins = parseDshPlugins(dump);
     const active = plugins.filter((p) => p.status === "active").length;
     harnessNote = `everything-as-a-plugin: dump-config lists ${plugins.length} components (${active} active / ${plugins.length - active} disabled); the dsh web UI plugin panel may show more`;
@@ -575,7 +570,7 @@ function scanDsh(o) {
   const mcps = [];
   try {
     const yaml = readText(path.join(o.dshHome, "settings.yaml"));
-    for (const name of parseTopLevelSection(yaml, "mcp-client")) {
+    for (const name of (isEnabled(o.selection, "dsh.mcp") ? parseTopLevelSection(yaml, "mcp-client") : [])) {
       mcps.push({ name, source: "dsh-mcp-client" });
     }
   } catch {}

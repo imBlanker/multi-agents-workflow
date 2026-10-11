@@ -284,7 +284,7 @@ export function readDshAsCc(opts = {}) {
 
   // pricing: cc-switch synced JSON first, SQLite cross-ref fills gaps (pi pattern)
   /** @type {Record<string, any>} */
-  const modelPricing = { ...readCcPricingJson(opts.pricingPath) };
+  const modelPricing = opts.readLocalPricing === true ? { ...readCcPricingJson(opts.pricingPath) } : {};
   if (opts.ccSwitch?.modelPricing) {
     for (const [k, v] of Object.entries(opts.ccSwitch.modelPricing)) {
       if (!modelPricing[k]) modelPricing[k] = v;
@@ -353,6 +353,6 @@ export function readDshAsCc(opts = {}) {
     currentProviders,
     allProviders,
     modelPricing,
-    credentialKeys: readCredentialKeys(cfg?.dshHome || opts.dshHome),
+    credentialKeys: [], // Credential files are not a model-discovery source.
   };
 }

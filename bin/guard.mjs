@@ -1,3 +1,5 @@
+import { readSettings } from '../src/settings.js';
+import { isEnabled } from '../src/integrations.js';
 // Node-only hook: no grep, shell pipeline, or platform-specific cwd expansion.
 import fs from "node:fs";
 import path from "node:path";
@@ -9,6 +11,7 @@ export function checkGuard(input, { runner = spawnSync, cli = fileURLToPath(new 
     const payload = input.trim() ? JSON.parse(input) : {};
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
     if (payload.cwd !== undefined && (typeof payload.cwd !== "string" || !path.isAbsolute(payload.cwd))) return false;
+    if (!isEnabled(readSettings(payload.cwd || cwd), "watchdog")) return true;
     const result = runner(process.execPath, [cli, "guard", "--project", payload.cwd || cwd], { encoding: "utf8", timeout: 30000, stdio: ["ignore", "pipe", "pipe"] });
     return !result.error && result.status === 0 && /^ALLOW(?:\s|$)/m.test(result.stdout || "");
   } catch { return false; }

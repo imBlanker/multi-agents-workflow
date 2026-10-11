@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 // Metadata is inert: listing/selecting an integration never loads its backend.
 import { stateError } from './atomic-state.js';
 import { updateSettings } from './settings.js';
@@ -54,7 +55,26 @@ export const INTEGRATIONS = Object.freeze(rows.map(([id, capability, requires, s
   preservedData: Object.freeze(['upstream configuration', 'credentials', 'user files', '.trellis and symbolic links', 'independent knowledge', 'active run snapshots']),
   source, ref: null, defaultEnabled: false,
 })));
-export function listIntegrations() { return structuredClone(INTEGRATIONS); }
+export function listIntegrations() {
+  const result = structuredClone(INTEGRATIONS);
+  // Bundled source manifests contain public metadata, never user credentials.
+  // A broken optional manifest cannot break Core selection or planning.
+  try {
+    const lock = JSON.parse(fs.readFileSync(new URL('../defaults/components.lock.json', import.meta.url), 'utf8'));
+    for (const entry of lock.components || []) {
+      const item = result.find(row => row.id === entry.name);
+      if (item) Object.assign(item, { source: entry.upstream.repo, ref: entry.upstream.commit, optional: entry.install?.optionalFor || [], componentEntry: entry.entry });
+    }
+  } catch {}
+  try {
+    const catalog = JSON.parse(fs.readFileSync(new URL('../defaults/pool-catalog.json', import.meta.url), 'utf8'));
+    for (const entry of catalog.components || []) {
+      const item = result.find(row => row.id === entry.id);
+      if (item) Object.assign(item, { source: entry.source || entry.sources || item.source, footprint: entry.install?.footprint || [], residueChecklist: entry.removal?.residueChecklist || [] });
+    }
+  } catch {}
+  return result;
+}
 export function getIntegration(id) {
   const integration = INTEGRATIONS.find(item => item.id === id);
   if (!integration) throw stateError('UNKNOWN_INTEGRATION', `Unknown integration ${id}; use integrations list`);
