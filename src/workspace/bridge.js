@@ -172,16 +172,20 @@ export class BridgeServer {
     }
     this.handshaked = true;
     this.clientId = msg.clientId;
-    this.negotiated = negotiate(this.capabilities, Array.isArray(msg.capabilities) ? msg.capabilities : []);
     const ws = Array.isArray(msg.workspaces) ? msg.workspaces[0] : null;
     if (ws && typeof ws.root === "string" && typeof this.onWorkspace === "function") {
       try {
-        this.providers = this.onWorkspace(ws.root) ?? this.providers;
+        const resolved = this.onWorkspace(ws.root);
+        if (resolved?.providers && Array.isArray(resolved.capabilities)) {
+          this.providers = resolved.providers;
+          this.capabilities = [...new Set(resolved.capabilities)].sort();
+        } else this.providers = resolved ?? this.providers;
       } catch (e) {
         this.refused = true;
         return [encodeFrame(helloServer({ serverId: this.serverId, machineId: this.machineId ?? this.serverId, accepted: false, reason: `workspace rejected: ${e?.message ?? e}` }))];
       }
     }
+    this.negotiated = negotiate(this.capabilities, Array.isArray(msg.capabilities) ? msg.capabilities : []);
     return [encodeFrame(helloServer({ serverId: this.serverId, machineId: this.machineId ?? this.serverId, accepted: true, capabilities: this.capabilities }))];
   }
 

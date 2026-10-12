@@ -19,7 +19,6 @@ import { checkPriceGate } from "../pricegate.js";
 import { applyEvent, saveIncident } from "./incidents.js";
 import { ensureSnapshot, isGitProject, reconcileSnapshot } from "./snapshot.js";
 import { signature, findCase, appendCase, precedentText } from "./knowledge.js";
-import { spendSince } from "../ccswitch.js";
 
 // Default per-phase window. Claude Code >= 2.1.292 makes headless `claude -p`
 // wait for background commands to finish before exiting, so phases that spawn
@@ -321,7 +320,7 @@ export function dispatchIncident(args) {
   // spend attribution (R6 layer 2): window-attribution over the rescue window
   // on that host's app_type — conservative (may include concurrent user
   // requests, never misses rescue spend that went through cc-switch)
-  phaseRec.spendUsd = spendSince({ dbPath: args.dbPath ?? args.cc?.dbPath, sinceSec: phaseRec.startedAt, untilSec: phaseRec.endedAt, appTypes: [APP_TYPE[host]] });
+  phaseRec.spendUsd = args.usageProvider ? args.usageProvider.spendSince({ dbPath: args.dbPath ?? args.cc?.dbPath, sinceSec: phaseRec.startedAt, untilSec: phaseRec.endedAt, appTypes: [APP_TYPE[host]] }) : null;
   inc.budgetUsd = Math.round((Number(inc.budgetUsd || 0) + Number(phaseRec.spendUsd || 0)) * 1e6) / 1e6;
 
   const verdict = res.timedOut ? { outcome: "failed" } : parseVerdict(res.stdout);
@@ -369,7 +368,7 @@ function tryNativeCodex(inc, workspace, run, args, now, log) {
     const cmd = hostCommand({ host: "codex", prompt: buildPhaseBPrompt({ incident: inc, trellis: exists(path.join(inc.projectDir, ".trellis", "scripts", "task.py")) }), workspace, native: mode, sessionId: String(inc.sessionId) });
     const res = run(cmd.bin, cmd.args, cmd.cwd, PHASE_WINDOW_SEC);
     phaseRec.endedAt = nowSec();
-    phaseRec.spendUsd = spendSince({ dbPath: args.dbPath ?? args.cc?.dbPath, sinceSec: phaseRec.startedAt, untilSec: phaseRec.endedAt, appTypes: ["codex"] });
+    phaseRec.spendUsd = args.usageProvider ? args.usageProvider.spendSince({ dbPath: args.dbPath ?? args.cc?.dbPath, sinceSec: phaseRec.startedAt, untilSec: phaseRec.endedAt, appTypes: ["codex"] }) : null;
     inc.budgetUsd = Math.round((Number(inc.budgetUsd || 0) + Number(phaseRec.spendUsd || 0)) * 1e6) / 1e6;
     const verdict = res.timedOut ? { outcome: "failed" } : parseVerdict(res.stdout);
     const sig0 = inc.signature || signature({ host: inc.host, finding: inc.finding });

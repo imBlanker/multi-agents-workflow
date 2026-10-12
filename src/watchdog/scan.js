@@ -13,13 +13,11 @@ import path from "node:path";
 import os from "node:os";
 import { projectProcessAlive } from "../platform/index.js";
 import { readJson, writeJson, ensureDir, nowSec, readText, parseYamlSubset } from "../util.js";
-import { perSessionRate } from "../ccswitch.js";
 import { discoverSessionFiles, parseTail, evaluateSignals, DEFAULT_THRESHOLDS } from "./signals.js";
 import { readRegistry, resolveWatchList } from "./registry.js";
 import { listIncidents, openIncident, applyEvent, reconcilePhaseTimeout, watchdogDir, loadIncident, saveIncident, appendAlert } from "./incidents.js";
 import { dispatchIncident } from "./dispatch.js";
 import { reconcileSnapshot } from "./snapshot.js";
-import { readCcSwitch, spendSince } from "../ccswitch.js";
 
 const TAIL_BYTES = 131072; // last 128 KiB of a transcript is plenty for a/b
 
@@ -103,25 +101,21 @@ export async function scanOnce(opts = {}) {
   // the CLI turns it on when the user invokes `mawf watchdog`. Keeps library
   // consumers (and tests) hermetic unless they pass a runner.
   const dispatchOn = opts.dispatch === true;
-  let ccInfo = null;
-  if (dispatchOn && opts.settings && isEnabled(opts.settings, "cc-switch.models")) ccInfo = readCcSwitch({ dbPath: opts.dbPath, pricing: isEnabled(opts.settings, "cc-switch.pricing") });
-  const availableHosts = [
-    ["claude", ".claude"], ["pi", path.join(".pi", "agent")], ["dsh", ".dsh"], ["codex", ".codex"],
-  ].filter(([, d]) => { try { return fsh.existsSync(path.join(home, d)); } catch { return false; } }).map(([h]) => h);
-
-  // signal-d source: per-session error counts from cc-switch (proxied hosts +
-  // pi when cc-switch imports Pi (Session) rows)
-  let errBySession = new Map();
-  try {
-    const per = opts.settings && isEnabled(opts.settings, "cc-switch.usage") ? perSessionRate({ dbPath: opts.dbPath, windowSeconds: 3600 }) : { sessions: [] };
-    for (const s of per.sessions) errBySession.set(String(s.sessionId), s.errorCount || 0);
-  } catch { /* no telemetry — signal d simply absent */ }
-
   /** @type {any[]} */
   const projectReports = [];
   for (const { dir } of watchList) {
     const selection = readSettings(dir);
     if (!isEnabled(selection, "watchdog")) continue;
+    // Each project's choices govern its own scan, including global registry runs.
+    const needsModels = dispatchOn && isEnabled(selection, 'cc-switch.models');
+    const needsUsage = isEnabled(selection, 'cc-switch.usage');
+    const ccAdapter = needsModels || needsUsage ? await import('../ccswitch.js') : null;
+    const ccInfo = needsModels ? ccAdapter.readCcSwitch({ dbPath: opts.dbPath, pricing: isEnabled(selection, 'cc-switch.pricing') }) : null;
+    const usageProvider = needsUsage ? ccAdapter : null;
+    const availableHosts = [['claude', '.claude'], ['pi', path.join('.pi', 'agent')], ['dsh', '.dsh'], ['codex', '.codex']]
+      .filter(([host, relative]) => isEnabled(selection, `host.${host === 'claude' ? 'claude-code' : host}`) && fsh.existsSync(path.join(home, relative))).map(([host]) => host);
+    const errBySession = new Map();
+    if (needsUsage) for (const session of ccAdapter.perSessionRate({ dbPath: opts.dbPath, windowSeconds: 3600 }).sessions) errBySession.set(String(session.sessionId), session.errorCount || 0);
     const cfg = readWatchdogConfig(dir);
     if (cfg.exclude) continue;
     const stateFile = path.join(watchdogDir(dir), "state.json");
@@ -170,7 +164,7 @@ export async function scanOnce(opts = {}) {
         // a cron cycle must see the same budget growth an in-process one would)
         const ph = inc.phases[inc.phases.length - 1];
         if (ph && !ph.spendUsd) {
-          ph.spendUsd = isEnabled(selection, "cc-switch.usage") ? spendSince({ dbPath: opts.dbPath, sinceSec: ph.startedAt, untilSec: ph.endedAt, appTypes: [ph.host === "claude" ? "claude" : ph.host] }) : null;
+          ph.spendUsd = isEnabled(selection, "cc-switch.usage") ? usageProvider.spendSince({ dbPath: opts.dbPath, sinceSec: ph.startedAt, untilSec: ph.endedAt, appTypes: [ph.host === "claude" ? "claude" : ph.host] }) : null;
           inc.budgetUsd = Math.round((Number(inc.budgetUsd || 0) + Number(ph.spendUsd || 0)) * 1e6) / 1e6;
           if (Number(inc.budgetUsd) >= Number(inc.budgetCapUsd) && ["open", "rescuing-a", "rescuing-b"].includes(inc.state)) {
             applyEvent(inc, { type: "budget-stop", nowSec: now, reason: `budget $${inc.budgetUsd} >= cap $${inc.budgetCapUsd} on re-entry` });
@@ -213,7 +207,7 @@ export async function scanOnce(opts = {}) {
       for (const inc of listIncidents(dir).filter((i) => i.state === "open")) {
         try {
           const r = dispatchIncident({
-            incident: inc, cc: ccInfo, cfg, available: availableHosts.filter(host => isEnabled(selection, `host.${host === "claude" ? "claude-code" : host}`)),
+            incident: inc, cc: ccInfo, cfg, usageProvider, selection, available: availableHosts.filter(host => isEnabled(selection, `host.${host === "claude" ? "claude-code" : host}`)),
             run: opts.run, dryRun: opts.dryRun, workspace: opts.workspace,
             ensureSnap: opts.ensureSnap, log: opts.log, dbPath: opts.dbPath,
           });

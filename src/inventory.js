@@ -329,7 +329,7 @@ export async function scanInventory(opts = {}) {
   const piDir = resolvePiAgentRoot(opts.piDir);
   const dshHome = opts.dshHome ?? process.env.DSH_HOME ?? path.join(home(), '.dsh');
   const claudeJson = opts.claudeJson ?? path.join(home(), '.claude.json');
-  const context = await loadContext(projectDir, { dbPath: opts.dbPath });
+  const context = await loadContext(projectDir, { dbPath: opts.dbPath, settings: selection, piDir, dshHome, dshDumpConfig: opts.dshDumpConfig ?? "" });
   const cc = context.cc, hostInfo = context.host;
   const hosts = [];
   const push = (app, fn) => { try { hosts.push(fn()); } catch (error) { hosts.push({ app, error: error.message }); } };
@@ -531,7 +531,7 @@ function scanPi(o) {
     source: m.source === "pi-global" ? "pi-agent/mcp.json" : m.source === "pi-adapter-global" ? "pi-agent/mcp-adapter.json" : m.source === "pi-adapter-project" ? ".pi/mcp-adapter.json" : m.source }));
   const harnessNote = ["Static resource evidence only: configured/discovered does not prove a tool is loaded; project resources require Pi trust.", ...discovery.notes].join(" ");
   const global = isFile(path.join(o.piDir, "AGENTS.md")) ? path.join(o.piDir, "AGENTS.md") : null;
-  const piAsCc = readPiAsCc({ piDir: o.piDir, ccSwitch: { modelPricing: o.cc?.modelPricing }, piManaged: !!o.cc.currentProviders?.pi, piSpendMeasured: false, readMcp: false });
+  const piAsCc = o.cc; // Reuse the selection-first context; preserve managed DB identity.
   return {
     app, homeDir: o.piDir,
     detected: o.hostInfo.detected.filter((d) => /pi agent/i.test(d)),

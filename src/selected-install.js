@@ -7,12 +7,16 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { readSettings } from './settings.js';
 import { isEnabled } from './integrations.js';
-import { readStrict, writeAtomic, assertSafePath } from './atomic-state.js';
+import { readStrict, writeAtomic, assertSafePath, withLock } from './atomic-state.js';
 import { materializePluginAssets } from './pluginassets.js';
 
 const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OPTIONAL_SKILLS = { 'mawf-archify': 'archify', 'mawf-knowledge': 'knowledge', 'mawf-compound': 'compound', 'mawf-decision': 'decision', 'mawf-grill': 'grill', vendor: 'grill' };
 export function installSelected(opts = {}) {
+  if (opts.dryRun) return installTransaction(opts);
+  return withLock(path.join(os.homedir(), ".mawf"), "installer", () => installTransaction(opts), { timeoutMs: 30000 });
+}
+function installTransaction(opts) {
   const settings = opts.settings || readSettings(opts.project || process.cwd());
   const root = path.join(os.homedir(), '.mawf');
   const manifestPath = path.join(root, 'installed.json');
@@ -77,4 +81,27 @@ export function installSelected(opts = {}) {
       selectionProject: path.resolve(opts.project || process.cwd()), configRevision: settings.configRevision });
   }
   return { ok: true, dryRun: !!opts.dryRun, copied, written, skipped, preserved: [...oldFiles].filter(file => !written.includes(file)), removedStale: opts.dryRun ? stale : removedStale, reason: 'Only explicitly selected surfaces are registered; previously owned assets remain until explicit uninstall' };
+}
+
+/** Exact recorded-ownership removal. Project data and native markers stay put. */
+export function uninstallSelected(opts = {}) {
+  const root = path.join(os.homedir(), '.mawf');
+  const execute = () => {
+    const file = path.join(root, 'installed.json');
+    const manifest = readStrict(file, null);
+    if (!manifest) return { ok: true, removed: [], kept: [opts.project || process.cwd()], reason: 'No recorded installation' };
+    if (!Array.isArray(manifest.files)) return { ok: false, reasonCode: 'LEGACY_MANIFEST', reason: 'Legacy installation has no exact ownership list; migrate its manifest before removal', removed: [] };
+    const roots = [root, ...Object.values(manifest.dirs || {}).filter(value => typeof value === 'string' && value)];
+    const owned = manifest.files.filter(target => typeof target === 'string' && roots.some(base => path.resolve(target).startsWith(path.resolve(base) + path.sep)));
+    const removed = [];
+    if (!opts.dryRun) {
+      for (const target of owned) {
+        assertSafePath(target);
+        try { fs.unlinkSync(target); removed.push(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      }
+      fs.unlinkSync(file);
+    }
+    return { ok: true, dryRun: !!opts.dryRun, removed: opts.dryRun ? owned : removed, kept: [path.join(opts.project || process.cwd(), '.mawf'), 'native and Trellis workspace data', 'unrecorded user files'], reason: 'Only exact manifest assets removed; project data remains preserved' };
+  };
+  return opts.dryRun || !fs.existsSync(root) ? execute() : withLock(root, 'installer', execute, { timeoutMs: 30000 });
 }

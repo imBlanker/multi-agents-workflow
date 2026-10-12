@@ -74,3 +74,48 @@ Until runtime integration lands, mode status explicitly reports
 `runtimeStatus: not_integrated`, `enforcementLevel: configuration_only` and an
 empty `activeRuns`; it is not execution evidence. No Claude/Pi/Codex job has
 been started by these configuration commands.
+
+## Selection-first lifecycle (W02)
+
+The lightweight `index.js` entry dispatches Core without importing optional
+host readers, Trellis, cc-switch, inventory or enhancement adapters. Compatibility
+plan/graph/cost/agent commands retain their implementations in `legacy-cli.js`,
+whose dependency closure now contains only Core modules. Selected usage functions
+are passed explicitly into cost and watchdog code rather than discovered there.
+
+`loadContext(project, {settings, piDir, dshHome, dshDumpConfig, dbPath})` accepts an
+explicit settings snapshot. That snapshot and path overrides flow through the
+inventory model readers, so an inventory operation or future run snapshot cannot
+silently read a newer project's integration selection. Managed Pi rows preserve
+DB provider identity; local model files only enrich model lists. Model discovery
+never reads Pi MCP adapter configuration unless that capability is selected.
+
+`scanInventory()` and the exported lifecycle seams (`runUpdateLifecycle`,
+`runUpgradeLifecycle`, `repairMawOverlays`) now return promises; callers must
+await them. The CLI already awaits these paths. Historical synchronous test
+assertions are retained as historical assets and need independent classification;
+they were not edited to disguise the API change.
+
+New init writes explicit settings and a native workspace marker unless Trellis
+was selected. Existing native marker bytes remain unchanged. A selected Trellis
+adapter probes only a local executable and the pinned 0.6.17 compatibility
+contract; it never invokes npx or fetches upstream. Actual initialization also
+requires an explicitly selected target host. A native marker retains its
+lifecycle opt-out even when a conflicting Trellis selection is present.
+
+Installer updates serialize the complete manifest read/copy/stale-file/write
+transaction under the shared atomic-state lock. They reuse recorded host roots,
+preserve unselected surfaces, and remove only old manifest entries absent from
+the selected surfaces refreshed by this update. Uninstall removes exact manifest
+entries and retains project data; legacy manifests without an ownership list are
+reported for migration rather than guessed with a prefix scan.
+
+Pool judgments retain graph/plan stages, the derived task profile, configured
+thresholds and per-stage cadence. Watchdog registry scans apply each project's
+selection independently. Workspace transport does not authorize SSH or tmux:
+these have separate gates. A bridge workspace chosen at handshake rechecks its
+own selection and advertises only its allowed knowledge/terminal capabilities.
+
+This slice does not claim authenticated plugin execution, dispatch leases,
+strict cost accounting, mode snapshots, migration completion or release readiness.
+Those remain the subsequent work packages.

@@ -1,3 +1,5 @@
+import { deriveTaskProfile } from './task-profile.js';
+import { parseYamlSubset } from './util.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readSettings } from './settings.js';
@@ -46,12 +48,19 @@ export async function runOptional(command, args, flags) {
     const inventory = await (await import('./inventory.js')).scanInventory({ projectDir: project, settings, probe: !!flags.verify });
     if (flags.pool) {
       const adapter = await import('./pool.js');
-      const catalog = adapter.loadCatalog();
-      const result = adapter.judgePool({ catalog, pool: adapter.detectPool(inventory, catalog), profile: { text: flags.task || '', domain: flags.domain || '' }, stageCtx: null, poolState: adapter.readPoolState(project), cfg: {} });
+      const catalog = adapter.loadCatalog(flags.catalog);
+      const poolState = adapter.readPoolState(project);
+      const stageInfo = adapter.deriveStages(project);
+      const stageCtx = stageInfo ? stageInfo.stages.find(stage => (poolState.stages[stage.id]?.judgments || []).length < 2) || stageInfo.stages.at(-1) : null;
+      const profile = flags.task ? { text: flags.task, domain: flags.domain || '' } : deriveTaskProfile(project);
+      let cfg = {};
+      try { cfg = parseYamlSubset(fs.readFileSync(path.join(project, '.mawf', 'config.yaml'), 'utf8')).pool || {}; } catch {}
+      const result = adapter.judgePool({ catalog, pool: inventory.pool || adapter.detectPool(inventory, catalog), profile, stageCtx, poolState, cfg });
       const verdicts = Object.fromEntries(result.verdicts.map(item => [item.component, { verdict: item.verdict, low: item.low === true }]));
-      adapter.recordJudgment(project, null, verdicts, new Date().toISOString());
-      if (flags.json) return emit(result);
-      process.stdout.write(adapter.renderPool(result) + '\n'); return 0;
+      const state = adapter.recordJudgment(project, stageCtx, verdicts, new Date().toISOString());
+      const count = stageCtx ? (state.stages[stageCtx.id]?.judgments || []).length : 0;
+      if (flags.json) return emit({ ...result, state });
+      process.stdout.write(adapter.renderPool(result, stageCtx ? { judgments: count, needed: 2 } : undefined) + '\n'); return 0;
     }
     const adapter = await import('./advise.js');
     const result = adapter.adviseTask({ projectDir: project, inventory, currentHost: selectedHost(settings).app, task: flags.task, domain: flags.domain, difficulty: Number(flags.difficulty) || undefined });

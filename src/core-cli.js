@@ -55,6 +55,7 @@ async function optionalInit(project, settings, flags, context) {
     const adapter = await import('./trellis.js');
     const detection = adapter.detectTrellis();
     if (!detection.bin) stages.push({ integration: 'trellis', ok: false, reasonCode: 'UNAVAILABLE', reason: detection.reason, install: detection.install });
+    else if (context.host.app === 'unknown') stages.push({ integration: 'trellis', ok: false, reasonCode: 'HOST_REQUIRED', reason: 'Select the target host before Trellis init; automatic upstream host detection is disabled' });
     else stages.push({ integration: 'trellis', ...adapter.runTrellisInit({ project, user: flags.u || flags.user || 'mawf-user', hostApp: context.host.app, selectedHosts: ["claude-code", "codex", "pi", "dsh"].filter(host => isEnabled(settings, `host.${host}`)), detection, nonInteractive: true }) });
   }
   stages.push({ integration: 'selected-overlays', ...await repairSelectedOverlays(project) });
@@ -139,6 +140,7 @@ export async function runCore(command, args, flags = {}, deps = {}) {
     if (['list', 'status', 'doctor', undefined].includes(args[0])) return emit({ ok: true, components: listIntegrations().filter(item => ['archify', 'notes-board', 'trellis-card', 'compound-references'].includes(item.id)).map(item => ({ ...item, ...capabilityStatus(settings, item.id) })) }, flags);
     return await (await import('./components/cli.js')).runComponents(args, flags);
   }
+  if (command === 'uninstall') return emit((await import('./selected-install.js')).uninstallSelected({ project, dryRun: flags['dry-run'] }), flags);
   if (command === 'install') return emit((await import('./selected-install.js')).installSelected({ project, settings, force: flags.force, dryRun: flags['dry-run'] }), flags);
   if (command === 'update') return emit(await updateLifecycle({ project, settings, force: flags.force, dryRun: flags['dry-run'], mawfOnly: flags['mawf-only'] }, deps), flags);
   if (command === 'upgrade') return emit(await upgradeLifecycle({ project, dryRun: flags['dry-run'], applyTemplates: !flags['no-apply-templates'], mawfOnly: flags['mawf-only'], tag: flags.tag }, deps), flags);

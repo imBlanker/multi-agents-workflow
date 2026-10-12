@@ -54,7 +54,7 @@ import { isoNow, round, slug } from "./util.js";
 import { selectModelForRole, baseRole, classifyModel, capabilityScore, ROLE_REQUIREMENTS } from "./modelcap.js";
 import { resolvePrice } from "./pricing.js";
 import { checkPriceGate, PRICE_GATE_THRESHOLDS } from "./pricegate.js";
-import { reviewerPlanOverride } from "./codexplan.js";
+import { reviewerPlanOverride } from "./subscription-policy.js";
 
 const DEFAULT_PER_AGENT = 5.0;   // USD/min (real inference spend from cc-switch logs)
 const DEFAULT_TOTAL = 10.0;      // USD/min
