@@ -86,7 +86,10 @@ export function resolvePrice(modelId, ctx = {}) {
   }
   if (chosen.multiplierApplied !== 1 && chosen.multiplierApplied !== multiplier) throw stateError('MULTIPLIER_CONFLICT', 'A differently multiplied price cannot be multiplied again');
   if (chosen.multiplierApplied === 1) {
-    for (const key of keys) if (chosen[key] !== null) chosen[key] *= multiplier;
+    for (const key of keys) if (chosen[key] !== null) {
+      chosen[key] *= multiplier;
+      if (!Number.isFinite(chosen[key])) throw stateError("PRICE_OVERFLOW", "Resolved price exceeds the finite numeric range");
+    }
     chosen.multiplierApplied = multiplier;
   }
   chosen.priceVersion = crypto.createHash('sha256').update(JSON.stringify([chosen.sourceId, chosen.sourceVersion, providerId, model, serviceMode, chosen.multiplierApplied, ...keys.map(key => chosen[key])])).digest('hex');

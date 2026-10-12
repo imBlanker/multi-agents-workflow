@@ -79,11 +79,17 @@ export async function refreshPrices(project, requestedSource, settings, opts = {
       const maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
       const timeoutMs = options.timeoutMs ?? 10000;
       if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 32 * 1024 * 1024 || !Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw stateError('INVALID_REFRESH_BOUNDS', 'Invalid refresh size/time bounds');
-      const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: 'application/json' } });
+      const controller = new AbortController();
+      const deadline = setTimeout(() => controller.abort(new Error('Pricing refresh timeout')), timeoutMs);
+      let response, raw;
+      try {
+      response = await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
       if (!response.ok) throw stateError('PRICING_HTTP_ERROR', `Pricing source returned HTTP ${response.status}`);
       const chunks = []; let size = 0;
       for await (const chunk of response.body) { size += chunk.length; if (size > maxBytes) throw stateError('PRICING_RESPONSE_TOO_LARGE', 'Pricing response exceeds configured size bound'); chunks.push(chunk); }
-      const raw = Buffer.concat(chunks); const digest = hash(raw);
+      raw = Buffer.concat(chunks);
+      } finally { clearTimeout(deadline); }
+      const digest = hash(raw);
       const metadata = { sourceVersion: `sha256:${digest}`, sourceHash: digest, retrievedAt: started };
       data = { schemaVersion: 1, sourceId: source, ...metadata, sourceUrl: response.url || url, records: normalizeModelsDev(JSON.parse(raw.toString('utf8')), metadata) };
     }
