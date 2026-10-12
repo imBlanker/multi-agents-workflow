@@ -67,10 +67,10 @@ export function readCcPricingJson(pricingPath) {
     out[m.modelId] = {
       model_id: m.modelId,
       display_name: m.displayName ?? m.modelId,
-      input_per_m: Number(m.inputCostPerMillion ?? 0) || 0,
-      output_per_m: Number(m.outputCostPerMillion ?? 0) || 0,
-      cache_read_per_m: Number(m.cacheReadCostPerMillion ?? 0) || 0,
-      cache_creation_per_m: Number(m.cacheCreationCostPerMillion ?? 0) || 0,
+      input_per_m: typeof m.inputCostPerMillion === "number" && Number.isFinite(m.inputCostPerMillion) && m.inputCostPerMillion >= 0 ? m.inputCostPerMillion : null,
+      output_per_m: typeof m.outputCostPerMillion === "number" && Number.isFinite(m.outputCostPerMillion) && m.outputCostPerMillion >= 0 ? m.outputCostPerMillion : null,
+      cache_read_per_m: typeof m.cacheReadCostPerMillion === "number" && Number.isFinite(m.cacheReadCostPerMillion) && m.cacheReadCostPerMillion >= 0 ? m.cacheReadCostPerMillion : null,
+      cache_creation_per_m: typeof m.cacheCreationCostPerMillion === "number" && Number.isFinite(m.cacheCreationCostPerMillion) && m.cacheCreationCostPerMillion >= 0 ? m.cacheCreationCostPerMillion : null,
       source: "cc-switch-pricing-json",
     };
   }

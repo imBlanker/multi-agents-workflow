@@ -1,3 +1,4 @@
+import { checkPriceGate } from './pricegate.js';
 // @ts-check
 // Generate per-agent / per-role, independently-editable config files from a
 // plan + cc-switch data. Output layout under `.mawf/`:
@@ -68,31 +69,30 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
   // per-agent files
   for (const a of plan.agents) {
     const base = path.join(agentsDir, slug(a.role));
+    const providerId = a.modelChoice?.providerId ?? ccSwitch.currentProviders?.[a.appType]?.id ?? null;
+    const billingMode = a.modelChoice?.billingMode ?? "unknown";
     const price = resolvePrice(a.model, {
+      ...ccSwitch.pricingContext, providerId,
       modelPricing: ccSwitch.modelPricing,
-      costMultiplier: Number(ccSwitch.currentProviders?.[a.appType]?.cost_multiplier ?? 1),
+      costMultiplier: a.modelChoice?.costMultiplier ?? Number(ccSwitch.currentProviders?.[a.appType]?.cost_multiplier ?? 1),
     });
     if (!price) warnings.push(`No price found for ${a.role} model ${a.model}; tagged as unknown. Verify on Artificial Analysis/OpenRouter.`);
 
     // machine config
-    const gate = a.modelChoice?.priceGate ?? null;
-    // sticky human approval: keep `approved:true` across `mawf plan` re-runs
-    let stickyApproved = false;
-    try {
-      const prev = JSON.parse(fs.readFileSync(`${base}.json`, "utf8"));
-      stickyApproved = !!prev?.price_gate?.approved;
-    } catch {}
+    const gate = checkPriceGate(a.model, price, { role: a.role, providerId, billingMode, settings: ccSwitch.pricingContext?.settings });
+    const stickyApproved = gate.approved === true;
     const priceGateBlock = gate && (gate.blocked || gate.covered || stickyApproved)
       ? { blocked: !!gate.blocked, approved: stickyApproved, covered: !!gate.covered, plan: gate.plan ?? null, thresholds: { input_per_m: gate.thresholdIn, output_per_m: gate.thresholdOut }, price: { input_per_m: gate.inputPerM, output_per_m: gate.outputPerM }, estimated: !!gate.estimated, model: a.model, reason: gate.reason }
       : null;
     if (gate?.blocked) {
-      warnings.push(`PRICE GATE: role ${a.role} model ${a.model} is expensive (${gate.reason}) — PAUSED until a human approves (mawf approve-model --role ${a.role} --yes) or a cheaper model is configured.`);
+      warnings.push(`PRICE GATE: role ${a.role} model ${a.model} is blocked by price policy (${gate.reason}) — PAUSED until the policy prerequisites are satisfied; known expensive selections may be approved (mawf approve-model --role ${a.role} --yes) or a cheaper model is configured.`);
     }
     files.push(writeJson(`${base}.json`, {
       role: a.role,
       agent: a.agent,
       app_type: a.appType,
       model: a.model,
+      providerId, billingMode,
       ...(a.modelReasoningEffort ? { model_reasoning_effort: a.modelReasoningEffort } : {}),
       model_selection: a.modelChoice ?? null,
       price_gate: priceGateBlock,
@@ -211,7 +211,7 @@ or use the slash command \`/codex:review\` (review-only). For adversarial review
 - Project resources require Pi project trust; do not bypass the user's trust settings.
 - This runner does not allow child agents to spawn more agents; delegation stays with the orchestrator.
 - Pass the task verbatim (see the Task section above) and require it to return a compressed summary + file diffs.
-- Pi spend is measured when cc-switch Pi (Session) import rows are available; cache-write accounting may be incomplete. Without that telemetry, cost-rate enforcement is **concurrency-only**. Wrap spawns with \`mawf acquire --role ${a.role}\` / \`mawf release --role ${a.role}\` to enforce concurrency.` : (plan.hostApp === "dsh" || a.agent === "dsh") ? `This agent runs via **dsh's prompt-driven subagent tool**. Spawn it from the orchestrator session (\`dsh web\`, or \`dsh --profile headless "<task>"\` for one-shot runs) — dsh has no named agent-definition files, so the portable spec IS the payload:
+- Pi cost is estimated from token-price logs when cc-switch Pi (Session) import rows are available; cache-write accounting may be incomplete. Without that telemetry, cost-rate enforcement is **concurrency-only**. Wrap spawns with \`mawf acquire --role ${a.role}\` / \`mawf release --role ${a.role}\` to enforce concurrency.` : (plan.hostApp === "dsh" || a.agent === "dsh") ? `This agent runs via **dsh's prompt-driven subagent tool**. Spawn it from the orchestrator session (\`dsh web\`, or \`dsh --profile headless "<task>"\` for one-shot runs) — dsh has no named agent-definition files, so the portable spec IS the payload:
 
 - Point the spawn at \`.mawf/agents/${slug(a.role)}.md\`: pass the Task section verbatim plus the tool list, and require it to return a compressed summary + file diffs.
 - Cost control for dsh is **concurrency-only** (rate): dsh is not routed via the cc-switch proxy, so real-spend rate is not measured. Wrap spawns with \`mawf acquire --role ${a.role}\` / \`mawf release --role ${a.role}\`. Model prices come from cc-switch's synced \`~/.cc-switch/model-pricing.json\` where model ids match; unmatched ids price as unknown.` : `Spawn this agent from the orchestrator as a subagent with the tool list above. Pass the task verbatim and require it to return a compressed summary + file diffs.`}

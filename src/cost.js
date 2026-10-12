@@ -1,7 +1,6 @@
 // @ts-check
-// Cost-rate limiting for the workflow. The authoritative rate is the *actual*
-// inference spend measured from cc-switch proxy_request_logs (USD/min), not a
-// token estimate. We also track live concurrency via a small state file so the
+// Cost-rate limiting for controlled workflow registrations. cc-switch amounts
+// are token-price-derived estimates, not verified payment telemetry. We also track live concurrency via a small state file so the
 // runner can enforce both per-agent and total limits + max concurrency.
 import path from "node:path";
 import { readJson, writeJson, ensureDir, nowSec, round } from "./util.js";
@@ -54,15 +53,16 @@ export function writeState(stateDir, s) {
  */
 export function acquire(stateDir, cfg, who) {
   const s = readState(stateDir);
+  if (cfg.enforcement === "strict_measured" && cfg.selectionDecision?.allowed !== true) return { allowed: false, reason: "Verified target payment coverage unavailable; cc-switch telemetry is estimated", reasonCode: "MEASURED_COVERAGE_REQUIRED", ratePerMin: null, running: Object.keys(s.running).length, remainingConcurrency: 0 };
   // purge stale entries older than 30 min
   const cutoff = nowSec() - 1800;
   for (const [id, v] of Object.entries(s.running)) {
     if (v.since < cutoff) delete s.running[id];
   }
 
-  // 1. cost-rate check (authoritative: real spend from cc-switch logs)
-  const total = cfg.usageEnabled === true && cfg.usageProvider ? cfg.usageProvider.costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { ratePerMin: 0, totalUsd: null, requestCount: 0, impl: "usage-unavailable", basis: "unknown" };
-  if (total.ratePerMin >= cfg.totalLimitUsdPerMin) {
+  // 1. Best-effort rate check over selected estimated telemetry.
+  const total = cfg.usageEnabled === true && cfg.usageProvider ? cfg.usageProvider.costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { ratePerMin: null, totalUsd: null, requestCount: 0, impl: "usage-unavailable", basis: "unknown" };
+  if (total.ratePerMin !== null && total.ratePerMin >= cfg.totalLimitUsdPerMin) {
     return { allowed: false, reason: `total cost-rate ${total.ratePerMin} USD/min >= limit ${cfg.totalLimitUsdPerMin}`, running: Object.keys(s.running).length, ratePerMin: total.ratePerMin, remainingConcurrency: Math.max(0, cfg.maxConcurrency - Object.keys(s.running).length) };
   }
   // per-session rate as a proxy for per-agent rate
@@ -111,9 +111,10 @@ export function release(stateDir, who) {
  */
 export function guard(stateDir, cfg) {
   const s = readState(stateDir);
+  if (cfg.enforcement === "strict_measured" && cfg.selectionDecision?.allowed !== true) return { allowed: false, reason: "Verified target payment coverage unavailable; cc-switch telemetry is estimated", reasonCode: "MEASURED_COVERAGE_REQUIRED", totalRatePerMin: null, running: Object.keys(s.running).length, remainingConcurrency: 0 };
   const cutoff = nowSec() - 1800;
   for (const [id, v] of Object.entries(s.running)) if (v.since < cutoff) delete s.running[id];
-  const total = cfg.usageEnabled === true && cfg.usageProvider ? cfg.usageProvider.costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { ratePerMin: 0, totalUsd: null, requestCount: 0, impl: "usage-unavailable", basis: "unknown" };
+  const total = cfg.usageEnabled === true && cfg.usageProvider ? cfg.usageProvider.costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { ratePerMin: null, totalUsd: null, requestCount: 0, impl: "usage-unavailable", basis: "unknown" };
   const per = cfg.usageEnabled === true && cfg.usageProvider ? cfg.usageProvider.perSessionRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { sessions: [] };
   let perAgentOk = true;
   let perAgentReason = "";
@@ -126,7 +127,7 @@ export function guard(stateDir, cfg) {
   }
   const running = Object.keys(s.running).length;
   const remainingConcurrency = Math.max(0, cfg.maxConcurrency - running);
-  const totalOk = total.ratePerMin < cfg.totalLimitUsdPerMin;
+  const totalOk = total.ratePerMin === null || total.ratePerMin < cfg.totalLimitUsdPerMin;
   const allowed = totalOk && perAgentOk && remainingConcurrency > 0;
   const reason = !totalOk ? "total cost-rate limit reached"
     : !perAgentOk ? perAgentReason
@@ -134,7 +135,7 @@ export function guard(stateDir, cfg) {
     : "ok";
   return {
     allowed,
-    totalRatePerMin: round(total.ratePerMin, 4),
+    totalRatePerMin: total.ratePerMin === null ? null : round(total.ratePerMin, 4),
     totalLimitUsdPerMin: cfg.totalLimitUsdPerMin,
     perAgentLimitUsdPerMin: cfg.perAgentLimitUsdPerMin,
     running,
@@ -154,7 +155,7 @@ export function guard(stateDir, cfg) {
  * @param {CostConfig} cfg
  */
 export function report(cfg) {
-  const total = cfg.usageEnabled === true && cfg.usageProvider ? cfg.usageProvider.costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { ratePerMin: 0, totalUsd: null, requestCount: 0, impl: "usage-unavailable", basis: "unknown" };
+  const total = cfg.usageEnabled === true && cfg.usageProvider ? cfg.usageProvider.costRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { ratePerMin: null, totalUsd: null, requestCount: 0, impl: "usage-unavailable", basis: "unknown" };
   const per = cfg.usageEnabled === true && cfg.usageProvider ? cfg.usageProvider.perSessionRate({ dbPath: cfg.dbPath, windowSeconds: cfg.windowSeconds }) : { sessions: [] };
   const top = per.sessions.slice(0, 8);
   const caveats = [];
@@ -164,7 +165,10 @@ export function report(cfg) {
   return {
     windowSeconds: cfg.windowSeconds,
     impl: total.impl,
-    caveats,
+    caveats: [...caveats, "Imported cc-switch amounts are token-price-derived estimates; out-of-band/unlogged work is not covered"],
+    basis: total.ratePerMin === null ? "unknown" : "estimated",
+    coverage: { complete: false, source: cfg.usageEnabled ? "cc-switch.usage" : "none", limitations: ["Only selected logged sessions; no strict cumulative payment guarantee"] },
+    enforcementLevel: cfg.enforcement ?? "best_effort",
     total: { ratePerMin: total.ratePerMin, limitUsdPerMin: cfg.totalLimitUsdPerMin, usedPct: pct(total.ratePerMin, cfg.totalLimitUsdPerMin), totalUsd: total.totalUsd, requestCount: total.requestCount },
     perAgentLimitUsdPerMin: cfg.perAgentLimitUsdPerMin,
     maxConcurrency: cfg.maxConcurrency,
@@ -173,4 +177,4 @@ export function report(cfg) {
 }
 
 /** @param {number} a @param {number} b */
-function pct(a, b) { return b <= 0 ? 0 : round((a / b) * 100, 1); }
+function pct(a, b) { return a === null ? null : b <= 0 ? 0 : round((a / b) * 100, 1); }

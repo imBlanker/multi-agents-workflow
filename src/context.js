@@ -1,3 +1,5 @@
+import { readSelectedNativeModels, normalizedModels } from './model-provider.js';
+import { loadPriceRecords } from './pricing-sources.js';
 import { resolvePiAgentRoot } from './util.js';
 // Selection-first context. Native storage and planning do not require a host.
 import fs from 'node:fs';
@@ -45,13 +47,16 @@ export async function loadContext(project, opts = {}) {
     if (dsh) { cc.allProviders.push(...dsh.allProviders); Object.assign(cc.currentProviders, dsh.currentProviders); Object.assign(cc.modelPricing, dsh.modelPricing); }
   }
   // Explicit declarations contain model metadata only. Never emit API secrets.
-  for (const model of settings.models ?? []) {
+  for (const model of [...readSelectedNativeModels(settings), ...(settings.models ?? [])]) {
     const appType = model.adapter === 'claude-code' ? 'claude' : model.adapter ?? 'claude';
-    const row = { id: model.providerId, name: model.providerId, app_type: appType, is_current: true, models: [model.modelId], settingsConfig: { models: [{ id: model.modelId }] }, settings_config: { model: model.modelId }, cost_multiplier: 1 };
+    const row = { id: model.providerId, name: model.providerId, app_type: appType, is_current: true, models: [model.modelId], settingsConfig: { model: model.modelId, models: [{ id: model.modelId }], _piModels: [model.modelId], _dshModels: [model.modelId] }, settings_config: { model: model.modelId }, cost_multiplier: 1 };
     cc.allProviders.push(row); cc.currentProviders[appType] = row;
   }
   cc.appTypes = [...new Set(cc.allProviders.map(row => row.app_type))];
   // Subscription coverage is not inferred by reading authentication payloads.
   const usageProvider = selected("cc-switch.usage") ? await import("./ccswitch.js") : null;
-  return { settings, host, cc, usageProvider, codexPlan: null };
+  cc.pricingContext = { settings, priceRecords: loadPriceRecords(project, settings) };
+  const context = { settings, host, cc, usageProvider, codexPlan: null };
+  context.models = normalizedModels(context);
+  return context;
 }

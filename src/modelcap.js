@@ -1,3 +1,4 @@
+import { resolvePrice } from './pricing.js';
 // @ts-check
 // Capability-aware model selection for agents / subagents.
 //
@@ -286,12 +287,12 @@ export function selectModelForRole(opts) {
     const cap = capabilityScore(cls.caps, req);
     if (cap === 0) continue; // capability-unfit for this role (e.g. image-gen model for an implementer)
     const q = quotaProviders[cand.providerId] ?? {};
-    const price = cc?.modelPricing?.[cand.model] ?? null;
-    const priceCost = price ? (Number(price.input_per_m) + Number(price.output_per_m)) * cand.costMultiplier : null;
+    const price = resolvePrice(cand.model, { ...cc.pricingContext, modelPricing: cc.modelPricing, providerId: cand.providerId, costMultiplier: cand.costMultiplier });
+    const priceCost = price && price.inputPerMillion !== null && price.outputPerMillion !== null ? price.inputPerMillion + price.outputPerMillion : null;
     const remaining = q.remainingTodayUsd ?? null;
     const quotaBonus = remaining == null ? 10 : Math.min(Math.max(remaining, 0), 20);
     const cheapW = opts.preferCheap ? 3 : 1;
-    const pricePenalty = priceCost == null ? 5 : Math.min(priceCost, 20) * cheapW;
+    const pricePenalty = priceCost == null ? 25 * cheapW : Math.min(priceCost, 20) * cheapW;
     const rank = cap * 100 + (cand.isCurrent ? 30 : 0) + quotaBonus - pricePenalty;
     scored.push({ ...cand, classification: cls, capabilityScore: cap, quota: {
       remainingTodayUsd: q.remainingTodayUsd ?? null, remainingMonthUsd: q.remainingMonthUsd ?? null,
@@ -311,7 +312,7 @@ export function selectModelForRole(opts) {
   ].filter(Boolean);
   return {
     role, appType,
-    providerId: top.providerId, providerName: top.providerName, model: top.model,
+    providerId: top.providerId, providerName: top.providerName, model: top.model, costMultiplier: top.costMultiplier,
     capabilityScore: top.capabilityScore, classification: top.classification,
     quota: top.quota, price: top.price, reasons, estimated: true,
     alternates: scored.slice(1, 4).map((s) => ({ providerId: s.providerId, providerName: s.providerName, model: s.model, capabilityScore: s.capabilityScore, quota: s.quota, price: s.price })),

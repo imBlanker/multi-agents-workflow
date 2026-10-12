@@ -1,3 +1,4 @@
+import { readStrict } from './atomic-state.js';
 // Compatibility commands share Core selection; no optional module is imported.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,6 +53,7 @@ function cmdCost(f, flags) {
   const ctx = loadCtx({ dbPath: flags.db });
   const cfg = costCfgFrom(flags, ctx);
   const r = costReport(cfg);
+  if (flags.json) { out(JSON.stringify({ schemaVersion: 1, ok: true, reasonCode: "OK", ...r })); return 0; }
   out(`Cost rate over last ${Math.round(r.windowSeconds/60)} min (impl: ${r.impl})`);
   out(`  total: ${r.total.ratePerMin} USD/min  (limit ${r.total.limitUsdPerMin}, ${r.total.usedPct}% used; spend $${r.total.totalUsd} across ${r.total.requestCount} requests)`);
   out(`  per-agent limit: $${r.perAgentLimitUsdPerMin}/min; max concurrency: ${r.maxConcurrency}`);
@@ -71,12 +73,14 @@ function cmdGuard(f, flags) {
   // Price gate first (most restrictive): paused roles deny until a human acts.
   const blocks = blockedRolesFromAgents(project);
   if (blocks.length) {
+    if (flags.json) { out(JSON.stringify({ schemaVersion: 1, ok: true, allowed: false, reasonCode: blocks[0].gate.reasonCode, reason: blocks[0].gate.reason, blocks })); return 0; }
     out(`DENY spawn: price gate blocks ${blocks.length} role(s) (${blocks.map((b) => b.role).join(", ")}) — paused for human review`, false);
     out(priceGateReport(blocks.map((b) => ({ role: b.role, model: b.model, provider: null, check: { ...b.gate, model: b.model } }))), false);
     process.exitCode = 3;
     return;
   }
   const g = costGuard(stateDir, cfg);
+  if (flags.json) { out(JSON.stringify({ schemaVersion: 1, ok: true, reasonCode: g.allowed ? "ALLOWED" : "RESOURCE_DENIED", ...g })); return 0; }
   // guard is a status query: exit 0 in both cases so callers parse output.
   out(g.allowed ? `ALLOW spawn: ${g.remainingConcurrency} slots free, rate ${g.totalRatePerMin}/${g.totalLimitUsdPerMin} USD/min` : `DENY spawn: ${g.reason} (rate ${g.totalRatePerMin}/${g.totalLimitUsdPerMin}, ${g.remainingConcurrency}/${g.maxConcurrency} free)`);
 }
@@ -93,13 +97,14 @@ function cmdAcquire(f, flags) {
   const blocks = blockedRolesFromAgents(project).filter((b) => !flags.role || b.role === role);
   if (blocks.length) {
     const b = blocks[0];
-    const r = { allowed: false, priceGate: true, reason: `PRICE GATE: role "${b.role}" is paused for human review (expensive model ${b.model}) — approve with \`mawf approve-model --role ${b.role} --yes\` or configure a cheaper model`, running: 0, ratePerMin: 0, remainingConcurrency: 0 };
-    out(JSON.stringify(r));
+    const r = { allowed: false, priceGate: true, reason: `PRICE POLICY: role "${b.role}" paused (${b.gate.reasonCode}): ${b.gate.reason}`, running: 0, ratePerMin: null, remainingConcurrency: 0 };
+    out(JSON.stringify({ schemaVersion: 1, ok: false, reasonCode: b.gate.reasonCode ?? "PRICE_DENIED", ...r }));
     process.exitCode = 3;
     return;
   }
   const r = acquire(stateDir, cfg, { agentId, role, appType: flags.app });
-  out(JSON.stringify(r));
+  out(JSON.stringify({ schemaVersion: 1, ok: r.allowed, reasonCode: r.allowed ? "ALLOWED" : "RESOURCE_DENIED", ...r }));
+  if (!r.allowed) process.exitCode = 1;
 }
 function cmdRelease(f, flags) {
   const project = flags.project ? path.resolve(flags.project) : process.cwd();
@@ -126,18 +131,22 @@ function cmdApproveModel(f, flags) {
  * - `approveRoleModel`: record a human approval (sticky across re-plans).
  */
 function blockedRolesFromAgents(project) {
-  const out = [];
-  const dir = path.join(project, ".mawf", "agents");
-  let entries = [];
-  try { entries = fs.readdirSync(dir); } catch { return out; }
-  for (const f of entries) {
-    if (!f.endsWith(".json")) continue;
-    const j = readJson(path.join(dir, f), null);
-    if (!j) continue;
-    const g = j.price_gate;
-    if (g && g.blocked && !g.approved) out.push({ role: j.role ?? f.slice(0, -5), model: j.model ?? null, gate: g });
+  const context = loadCtx();
+  const dir = path.join(project, '.mawf', 'agents');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter(file => file.endsWith('.json')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const agents = files.map(file => readStrict(path.join(dir, file))).filter(Boolean);
+  if (!agents.length) agents.push({ role: 'worker', model: null, billingMode: 'unknown' });
+  const blocked = [];
+  for (const agent of agents) {
+    const providerId = agent.providerId ?? agent.model_selection?.providerId ?? null;
+    const model = context.models.find(item => item.providerId === providerId && item.modelId === agent.model);
+    const billingMode = model?.billingMode ?? agent.billingMode ?? 'unknown';
+    const price = resolvePrice(agent.model, { ...context.cc.pricingContext, modelPricing: context.cc.modelPricing, providerId, costMultiplier: model?.costMultiplier ?? 1 });
+    const gate = checkPriceGate(agent.model, price, { role: agent.role, providerId, billingMode, settings: context.settings });
+    if (gate.blocked) blocked.push({ role: agent.role, model: agent.model, gate });
   }
-  return out;
+  return blocked;
 }
 
 function approveRoleModel(project, role, opts = {}) {
@@ -191,7 +200,7 @@ function cmdAddAgent(f, flags) {
   if (gate.blocked) {
     // --allow-pricey (or the refused path above) implies human approval:
     // record it so guard/acquire release this role.
-    approveRoleModel(project, role, { yes: true });
+    out("Assignment generated with execution still gated; approve the exact selection explicitly before dispatch.");
   }
   out(`added agent ${role}; regenerated ${gen.files.length} files`);
 }
@@ -261,10 +270,11 @@ function costCfgFrom(flags, ctx) {
   return {
     perAgentLimitUsdPerMin: Number(flags["per-agent"]) || planCost.perAgent || 5.0,
     totalLimitUsdPerMin: Number(flags.total) || planCost.total || 10.0,
-    maxConcurrency: Number(flags.concurrency) || planCost.maxConcurrency || 16,
+    maxConcurrency: Math.min(Number(flags.concurrency) || planCost.maxConcurrency || ctx.settings.scheduler.maxConcurrency, ctx.settings.scheduler.maxConcurrency, ctx.settings.pricing.unknownPricePolicy === "bounded" ? ctx.settings.pricing.bounds.maxConcurrency : Infinity),
     windowSeconds: Number(flags.window) || 3600,
     usageEnabled: isEnabled(ctx.settings, "cc-switch.usage"),
     usageProvider: ctx.usageProvider,
+    enforcement: ctx.settings.cost.enforcement,
     dbPath: flags.db || ctx.cc.dbPath || undefined,
   };
 }

@@ -129,7 +129,7 @@ export async function runCore(command, args, flags = {}, deps = {}) {
   if (command === 'doctor') return emit(await (await import('./selected-doctor.js')).diagnoseSelected(project, settings), flags);
   if (command === 'models') {
     const context = await loadContext(project, { dbPath: flags.db });
-    return emit({ ok: true, models: settings.models ?? [], providerCount: context.cc.allProviders.length, host: context.host.app, authenticated: 'unknown' }, flags);
+    return emit({ ok: true, models: context.models, providerCount: context.cc.allProviders.length, host: context.host.app, authenticated: 'unknown' }, flags);
   }
   if (command === 'inventory') {
     const inventory = await selectedInventory(project, settings, flags);

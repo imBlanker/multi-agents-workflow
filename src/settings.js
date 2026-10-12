@@ -1,3 +1,4 @@
+import { normalizePriceRecord, priceNumber } from './pricing.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { withLock, readStrict, writeAtomic, stateError } from './atomic-state.js';
@@ -47,6 +48,14 @@ export function validateSettings(value) {
   if (value.scheduler.targetConcurrency > value.scheduler.maxConcurrency) throw stateError('INVALID_SETTINGS', 'targetConcurrency cannot exceed maxConcurrency');
   object(value.pricing, 'pricing'); object(value.pricing.overrides, 'pricing.overrides');
   if (!['pause', 'bounded'].includes(value.pricing.unknownPricePolicy)) throw stateError('INVALID_SETTINGS', 'unknownPricePolicy must be pause or bounded');
+  if (value.pricing.thresholds !== undefined && (priceNumber(value.pricing.thresholds.inputPerM) === null || priceNumber(value.pricing.thresholds.outputPerM) === null)) throw stateError('INVALID_SETTINGS', 'Price thresholds must be finite nonnegative numbers');
+  for (const [key, override] of Object.entries(value.pricing.overrides)) {
+    object(override, `pricing.overrides.${key}`);
+    const direct = ['inputPerMillion', 'outputPerMillion', 'input_per_m', 'output_per_m', 'modelId'].some(field => Object.hasOwn(override, field));
+    if (direct) normalizePriceRecord(override, { modelId: key.includes('/') ? key.slice(key.indexOf('/') + 1) : key });
+    else for (const [modelId, record] of Object.entries(override)) normalizePriceRecord(record, { modelId, providerId: key });
+  }
+
   object(value.cost, 'cost');
   if (!['best_effort', 'strict_measured'].includes(value.cost.enforcement)) throw stateError('INVALID_SETTINGS', 'Unknown cost enforcement');
   object(value.verification, 'verification'); integer(value.verification.minIndependentHackers, 'minIndependentHackers', mode.id === 'fixed-1' ? 1 : 0);
@@ -56,6 +65,16 @@ export function validateSettings(value) {
     if (mode.id === 'fixed-1' && value.implementation.writesTests !== false) throw stateError('INVALID_SETTINGS', 'Fixed implementation policy writesTests must be false');
   }
   object(value.roleOverrides, 'roleOverrides');
+  if (value.models !== undefined) {
+    if (!Array.isArray(value.models)) throw stateError('INVALID_SETTINGS', 'models must be an array');
+    for (const model of value.models) if (!model || typeof model.modelId !== 'string' || typeof model.providerId !== 'string' || typeof model.adapter !== 'string' || model.billingMode !== undefined && !['api', 'subscription', 'local-free', 'unknown'].includes(model.billingMode)) throw stateError('INVALID_SETTINGS', 'Declared models require modelId/providerId/adapter');
+  }
+  if (value.approvals !== undefined && !Array.isArray(value.approvals)) throw stateError('INVALID_SETTINGS', 'approvals must be an array');
+  if (value.pricing.unknownPricePolicy === 'bounded') {
+    const bounds = value.pricing.bounds;
+    if (!bounds || !Number.isSafeInteger(bounds.maxConcurrency) || bounds.maxConcurrency < 1 || bounds.maxConcurrency > value.scheduler.maxConcurrency ||
+      !((Number.isSafeInteger(bounds.maxDurationMs) && bounds.maxDurationMs > 0) || (Number.isSafeInteger(bounds.maxIterations) && bounds.maxIterations > 0))) throw stateError('INVALID_SETTINGS', 'bounded pricing requires maxConcurrency and a positive maxDurationMs or maxIterations');
+  }
   return value;
 }
 export function readSettings(project) { return validateSettings(readStrict(settingsPath(project), defaultSettings)); }

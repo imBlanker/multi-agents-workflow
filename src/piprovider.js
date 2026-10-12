@@ -93,8 +93,8 @@ export function readPiConfig(piDir, opts = {}) {
  */
 export function piCostRateNote(spendMeasured) {
   return spendMeasured
-    ? "pi spend measured via cc-switch Pi (Session) import — cache-write accounting may be incomplete"
-    : "pi not routed via cc-switch proxy; spend not measured — concurrency-only enforcement";
+    ? "pi cost estimated from cc-switch token-price logs — cache-write accounting may be incomplete"
+    : "Pi payment telemetry unavailable; configured limits cover only registered concurrency";
 }
 
 /**
@@ -158,8 +158,11 @@ export function readPiAsCc(opts = {}) {
       if (!m?.id || !m?.cost) continue;
       if (opts.piManaged && modelPricing[m.id]) continue;
       modelPricing[m.id] = {
-        input_per_m: Number(m.cost.input ?? 0),
-        output_per_m: Number(m.cost.output ?? 0),
+        input_per_m: typeof m.cost.input === "number" && Number.isFinite(m.cost.input) && m.cost.input >= 0 ? m.cost.input : null,
+        output_per_m: typeof m.cost.output === "number" && Number.isFinite(m.cost.output) && m.cost.output >= 0 ? m.cost.output : null,
+        cache_read_per_m: typeof m.cost.cacheRead === "number" ? m.cost.cacheRead : null,
+        cache_creation_per_m: typeof m.cost.cacheWrite === "number" ? m.cost.cacheWrite : null,
+        providerId: name,
         source: "pi-models.json",
         estimated: false,
       };
