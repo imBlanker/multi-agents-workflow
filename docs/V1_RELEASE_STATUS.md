@@ -38,8 +38,11 @@ The installed Codex custom provider lacks an applicable current pricing/billing
 record, so its real companion path remains blocked. Claude OAuth login does not
 prove subscription quota or payment coverage. Its default policy pauses. An
 explicit optional bounded unknown-coverage route is implemented for a managed
-native controller and bound children, but a real model run requires the user's
-separate risk choice. Ordinary already-open Slash sessions lack the observed
+native controller and bound children, and the user authorized exactly one temporary 180-second run. That run verified
+actual package/Slash loading, parent identity and deadline cleanup, but failed
+before Agent dispatch because an empty queue selection masked parent inheritance.
+The queue/outcome repair is checked without another model invocation; its full
+real workflow remains unverified and the one-run authorization is exhausted. Ordinary already-open Slash sessions lack the observed
 parent-model binding and cannot silently acquire it from caller labels.
 
 Windows v1 execution/process-tree behavior and strict current measured payment

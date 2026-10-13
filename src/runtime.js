@@ -219,12 +219,17 @@ export function addTask(opts) {
       if (!Array.isArray(opts.command) || !opts.command.length || !opts.command.every(value => typeof value === 'string') || JSON.stringify(opts.command).length > 65536) throw stateError('INVALID_COMMAND', 'Local process requires an explicit argv array');
       if (/(--api[-_]key|authorization[=:]|bearer\s+)/i.test(JSON.stringify(opts.command))) throw stateError('CREDENTIAL_IN_COMMAND', 'Use the existing environment credential mechanism, not recorded credential arguments');
     }
+    if (opts.controllerTaskId) {
+      const controller = run.tasks[opts.controllerTaskId];
+      const parentLease = controller && ledger.leases[controller.currentLeaseId];
+      if (!controller?.coordinationOnly || controller.adapter !== 'claude-native' || !parentLease || !ACTIVE.has(parentLease.status) || parentLease.cancelRequestedAt || !parentLease.ownerProcess || processAlive(parentLease.ownerProcess) !== true || Date.parse(parentLease.startedAt) + controller.maxDurationMs <= Date.now() || opts.controllerLeaseId && opts.controllerLeaseId !== parentLease.leaseId) throw stateError('NATIVE_CONTROLLER_UNAVAILABLE', 'Cannot queue work under a stopped, expired or different native controller attempt');
+    }
     const duration = opts.maxDurationMs ?? 3600000;
     if (!Number.isSafeInteger(duration) || duration < 1) throw stateError('INVALID_DURATION', 'maxDurationMs must be a positive integer');
     const task = { taskId, runId: run.runId, role: opts.role || 'worker', adapter, status: 'queued', attempt: 1, generation: 0, currentLeaseId: null,
       modeId: run.snapshot.modeId, modeVersion: run.snapshot.modeVersion, configRevision: run.snapshot.configRevision, createdAt: now(),
       effectiveRolePolicy: copy(run.snapshot.rolePolicy), roleOverrides: copy(run.snapshot.settings.roleOverrides[opts.role || 'worker'] || {}),
-      controllerTaskId: opts.controllerTaskId || null, verificationTarget: opts.verificationOf || null, coordinationOnly: adapter === 'claude-native' && opts.coordinationOnly === true, dispatchSpec: copy(opts.dispatchSpec || null), specHash: hash(opts.dispatchSpec || null), dependsOn: copy(opts.dependsOn || []), actorId: opts.actorId || null, workspace: canonical(opts.workspace || run.snapshot.workspace || run.snapshot.project), maxDurationMs: duration,
+      controllerTaskId: opts.controllerTaskId || null, controllerLeaseId: opts.controllerLeaseId || null, selectionSource: opts.selectionSource || 'caller_declaration', verificationTarget: opts.verificationOf || null, coordinationOnly: adapter === 'claude-native' && opts.coordinationOnly === true, dispatchSpec: copy(opts.dispatchSpec || null), specHash: hash(opts.dispatchSpec || null), dependsOn: copy(opts.dependsOn || []), actorId: opts.actorId || null, workspace: canonical(opts.workspace || run.snapshot.workspace || run.snapshot.project), maxDurationMs: duration,
       command: adapter === 'local-process' ? [...opts.command] : null,
       selection: adapter !== 'local-process' ? { role: opts.role || 'worker', providerId: opts.providerId ?? null, modelId: opts.modelId ?? null, billingMode: opts.billingMode ?? 'unknown', costMultiplier: opts.costMultiplier ?? 1 } : null,
       costKind: adapter === 'local-process' ? 'non_model_process' : 'model', enforcementLevel: adapter === 'local-process' ? 'registered_local_processes' : 'host_managed', limitations: ['Unregistered processes and external billing are outside this ledger'] };
@@ -251,7 +256,7 @@ function controlledHost(run, task, ledger) {
   const controller = run.tasks[task.controllerTaskId];
   const lease = controller && ledger.leases[controller.currentLeaseId];
   const remaining = lease ? Date.parse(lease.startedAt) + controller.maxDurationMs - Date.now() : 0;
-  if (!controller?.coordinationOnly || controller.adapter !== 'claude-native' || !lease || !ACTIVE.has(lease.status) || lease.cancelRequestedAt || !lease.ownerProcess || processAlive(lease.ownerProcess) !== true || lease.processGroup !== lease.ownerProcess.pid || remaining <= 0 || task.maxDurationMs + 1000 < remaining || controller.adapterState?.selectionGate?.allowed !== true || !controller.adapterState?.actualModel || task.selection.modelId !== controller.adapterState.actualModel || task.selection.providerId !== controller.adapterState.actualProvider || task.selection.billingMode !== controller.billingObservation?.billingMode) return null;
+  if (!controller?.coordinationOnly || controller.adapter !== 'claude-native' || !lease || task.controllerLeaseId && task.controllerLeaseId !== lease.leaseId || !ACTIVE.has(lease.status) || lease.cancelRequestedAt || !lease.ownerProcess || processAlive(lease.ownerProcess) !== true || lease.processGroup !== lease.ownerProcess.pid || remaining <= 0 || task.maxDurationMs + 1000 < remaining || controller.adapterState?.selectionGate?.allowed !== true || !controller.adapterState?.actualModel || task.selection.modelId !== controller.adapterState.actualModel || task.selection.providerId !== controller.adapterState.actualProvider || task.selection.billingMode !== controller.billingObservation?.billingMode) return null;
   return lease;
 }
 function admission(task, run, root, ledger) {
@@ -413,6 +418,17 @@ export function backendStopped(lease) {
   } else return { stopped: false, reason: 'Dedicated process-group termination is unverified' };
   return { stopped: true, reason: 'Recorded backend process and tracked group are stopped' };
 }
+function refreshRunStatus(ledger, run) {
+  const tasks = Object.values(run.tasks);
+  const active = Object.values(ledger.leases).filter(lease => lease.runId === run.runId && ACTIVE.has(lease.status));
+  if (active.length) { run.status = active.some(lease => lease.cancelRequestedAt) ? 'cancel_pending' : 'running'; return; }
+  if (tasks.some(task => task.status === 'queued')) { run.status = 'queued'; return; }
+  if (tasks.some(task => task.status === 'failed')) run.status = 'failed';
+  else if (tasks.some(task => task.status === 'blocked')) run.status = 'blocked';
+  else if (tasks.some(task => task.status === 'cancelled')) run.status = 'cancelled';
+  else if (tasks.some(task => ['produced', 'awaiting_acceptance', 'accepted'].includes(task.status))) run.status = run.candidate ? 'awaiting_acceptance' : 'produced';
+  else run.status = 'blocked';
+}
 function releaseInLedger(ledger, task, lease) {
   lease.status = 'released'; lease.releasedAt = now();
   const currentResult = task.result?.attempt === lease.attempt && task.result?.leaseId === lease.leaseId ? task.result : null;
@@ -420,10 +436,7 @@ function releaseInLedger(ledger, task, lease) {
   if (!currentResult && !lease.cancelRequestedAt) task.recoveryReason = 'backend_stopped_without_current_attempt_result';
   event(ledger, 'lease_released', { leaseId: lease.leaseId, taskStatus: task.status });
   const run = ledger.runs[lease.runId];
-  const tasks = Object.values(run.tasks);
-  if (tasks.length && tasks.every(item => TERMINAL_TASK.has(item.status))) {
-    run.status = tasks.some(item => item.status === 'failed') ? 'failed' : tasks.some(item => item.status === 'blocked') ? 'blocked' : tasks.every(item => item.status === 'cancelled') ? 'cancelled' : tasks.some(item => ['produced', 'awaiting_acceptance', 'accepted'].includes(item.status)) ? 'produced' : 'blocked';
-  }
+  refreshRunStatus(ledger, run);
 }
 export function releaseLease(opts) {
   return transaction(opts, ledger => {
@@ -662,8 +675,12 @@ export function settleControlledHostChildren(opts) {
     const controller = ledger.leases[identifier(opts.controllerLeaseId, 'controllerLeaseId')];
     if (!controller || !backendStopped(controller).stopped) return { ok: false, reasonCode: 'CONTROLLER_STOP_UNCONFIRMED' };
     const stopped = [];
+    const run = ledger.runs[controller.runId];
+    const queuedCancelled = [];
+    for (const task of Object.values(run.tasks)) if (task.controllerTaskId === controller.taskId && task.status === 'queued' && (task.controllerLeaseId === controller.leaseId || !task.controllerLeaseId && run.tasks[controller.taskId].currentLeaseId === controller.leaseId)) { task.status = 'cancelled'; task.cancelledAt = now(); task.cancellationReason = 'native_controller_stopped_before_launch'; queuedCancelled.push(task.taskId); event(ledger, 'queued_child_cancelled', { runId: run.runId, taskId: task.taskId, controllerLeaseId: controller.leaseId }); }
     for (const lease of Object.values(ledger.leases)) if (lease.controllerLeaseId === controller.leaseId && ACTIVE.has(lease.status) && backendStopped(lease).stopped) { lease.cancelRequestedAt ||= now(); releaseInLedger(ledger, ledger.runs[lease.runId].tasks[lease.taskId], lease); stopped.push(lease.taskId); }
-    return { stopped, controllerLeaseId: controller.leaseId };
+    refreshRunStatus(ledger, run);
+    return { stopped, queuedCancelled, controllerLeaseId: controller.leaseId };
   });
 }
 

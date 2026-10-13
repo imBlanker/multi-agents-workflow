@@ -1,3 +1,4 @@
+import { observedParentSelection, inheritNativeSelection } from './native-selection.js';
 // Real execution entrypoints and a ready-work queue. Guide output is explicit.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,11 +27,14 @@ async function prepare(opts) {
   const made = await createRun({ project, stateRoot: opts.stateRoot, runId: opts.runId, actorId: opts.actorId || `coordinator-${id()}`, requiredCapabilities: opts.requiredCapabilities });
   const run = made.run, capability = nativeHostCapability(run.snapshot.settings, project);
   if (!capability.selected || !capability.installed || capability.authenticated !== true) return { ok: false, reasonCode: capability.reasonCode, run, capability, alternative: 'mawf mode dynamic or configure the explicitly selected Claude host; no mode switch was performed' };
+  const nativeParent = opts.nativeControllerTaskId && run.tasks[opts.nativeControllerTaskId];
+  const nativeSelection = observedParentSelection(nativeParent);
+  const nativeExecution = { controllerTaskId: opts.nativeControllerTaskId || null, selectionMode: 'inherit', observedSelection: nativeSelection, queueExample: { tasks: [{ taskId: 'implement-1', role: 'implementer', prompt: 'Concrete owned scope and expected result', expectedMinutes: 1, scope: ['artifact.txt'], dependsOn: [], selection: 'inherit' }] }, reasonCode: nativeSelection ? 'PARENT_SELECTION_OBSERVED' : 'NATIVE_PARENT_SELECTION_REQUIRED' };
   const plan = planFor(run, frozenRunPricing({ project, runId: run.runId }));
   const file = executionFile(made.stateRoot, run.runId);
   if (opts.nativeControllerTaskId) { const previous = readStrict(file, null); if (previous) writeAtomic(file, { ...previous, nativeControllerTaskId: opts.nativeControllerTaskId, mainSessionBillingCoverage: 'registered_native_controller' }); }
   if (!readStrict(file, null)) writeAtomic(file, { schemaVersion: 1, runId: run.runId, description: opts.description || '', createdAt: new Date().toISOString(), tasks: {}, hostManaged: true, mainSessionBillingCoverage: opts.nativeControllerTaskId ? 'registered_native_controller' : 'existing_host_session_out_of_band', capability, plan });
-  return { ok: true, runId: run.runId, stateRoot: made.stateRoot, modeId: run.snapshot.modeId, configRevision: run.snapshot.configRevision, acceptancePolicy: run.snapshot.acceptancePolicy, scheduler: run.snapshot.settings.scheduler, capability, plan, action: 'host_dispatch_required', enforcementLevel: 'host_managed', message: 'Use run queue and run next, then actually invoke native Agent/Task; producing this response did not launch a child' };
+  return { ok: true, runId: run.runId, stateRoot: made.stateRoot, modeId: run.snapshot.modeId, configRevision: run.snapshot.configRevision, acceptancePolicy: run.snapshot.acceptancePolicy, nativeExecution, scheduler: run.snapshot.settings.scheduler, capability, plan, action: 'host_dispatch_required', enforcementLevel: 'host_managed', message: 'Use run queue and run next, then actually invoke native Agent/Task; producing this response did not launch a child' };
 }
 async function queue(opts, spec) {
   if (!Array.isArray(spec.tasks) || !spec.tasks.length) throw stateError('INVALID_RUN_SPEC', 'Spec requires a nonempty tasks array');
@@ -49,17 +53,27 @@ async function queue(opts, spec) {
   for (const name of names) visit(name);
   return withLock(state.stateRoot, 'execution-queue', () => {
     const execution = readStrict(file, { schemaVersion: 1, runId: run.runId, tasks: {}, plan });
+    const controllerTask = execution.nativeControllerTaskId && runtimeStatus(opts).run.tasks[execution.nativeControllerTaskId];
+    const parentSelection = observedParentSelection(controllerTask);
+    // Validate all selections before adding any task. Null/empty plan placeholders
+    // mean inherit; a concrete conflicting field is never silently discarded.
+    const prepared = spec.tasks.map(item => {
+      const role = plan.agents.find(agent => agent.role === item.role);
+      const scoped = run.snapshot.settings.modeOverrides?.[run.snapshot.modeId] || {};
+      const override = { ...(run.snapshot.settings.customAgents?.[item.role] || {}), ...(scoped.customAgents?.[item.role] || {}), ...(run.snapshot.settings.roleOverrides?.[item.role] || {}), ...(scoped.roleOverrides?.[item.role] || {}) };
+      if ((item.adapter || 'host-managed') === 'host-managed') inheritNativeSelection({ modelId: override.model, providerId: override.providerId, billingMode: override.billingMode }, parentSelection);
+      const selection = (item.adapter || 'host-managed') === 'host-managed'
+        ? inheritNativeSelection(item.selection, parentSelection)
+        : item.selection || { modelId: role?.model, providerId: role?.modelChoice?.providerId, billingMode: role?.modelChoice?.billingMode };
+      return { item, selection };
+    });
     const created = [];
-    for (const item of spec.tasks) {
+    for (const { item, selection } of prepared) {
       const existing = runtimeStatus(opts).run.tasks[item.taskId];
       if (existing) { if (JSON.stringify(existing.dispatchSpec) !== JSON.stringify(item)) throw stateError('TASK_SPEC_CONFLICT', 'Existing task differs; use a revised stopped task spec or a new task identity'); created.push(existing); continue; }
-      const role = plan.agents.find(agent => agent.role === item.role);
-      const controllerTask = execution.nativeControllerTaskId && runtimeStatus(opts).run.tasks[execution.nativeControllerTaskId];
-      const parentSelection = controllerTask?.adapterState?.actualModel ? { modelId: controllerTask.adapterState.actualModel, providerId: controllerTask.adapterState.actualProvider, billingMode: controllerTask.billingObservation?.billingMode } : null;
-      const selection = item.selection || parentSelection || { modelId: role?.model, providerId: role?.modelChoice?.providerId, billingMode: role?.modelChoice?.billingMode };
       const controllerLease = controllerTask && runtimeStatus(opts).leases.find(lease => lease.leaseId === controllerTask.currentLeaseId);
       const inheritedDuration = controllerLease ? Math.max(1, Date.parse(controllerLease.startedAt) + controllerTask.maxDurationMs - Date.now()) : null;
-      const task = addTask({ ...opts, controllerTaskId: controllerTask?.taskId, taskId: item.taskId, role: item.role || 'implementer', actorId: item.actorId || `agent-${id()}`, adapter: item.adapter || 'host-managed', modelId: selection.modelId, providerId: selection.providerId, billingMode: selection.billingMode, workspace: item.workspace || run.snapshot.workspace, maxDurationMs: item.maxDurationMs || inheritedDuration || Math.ceil(item.expectedMinutes * 120000), verificationOf: item.verificationOf, dispatchSpec: item, dependsOn: item.dependsOn }).task;
+      const task = addTask({ ...opts, controllerTaskId: controllerTask?.taskId, controllerLeaseId: controllerLease?.leaseId, selectionSource: (item.adapter || 'host-managed') === 'host-managed' ? 'observed_native_parent_inheritance' : 'declared_adapter_selection', taskId: item.taskId, role: item.role || 'implementer', actorId: item.actorId || `agent-${id()}`, adapter: item.adapter || 'host-managed', modelId: selection.modelId, providerId: selection.providerId, billingMode: selection.billingMode, workspace: item.workspace || run.snapshot.workspace, maxDurationMs: item.maxDurationMs || inheritedDuration || Math.ceil(item.expectedMinutes * 120000), verificationOf: item.verificationOf, dispatchSpec: item, dependsOn: item.dependsOn }).task;
       execution.tasks[item.taskId] = { prompt: item.prompt, scope: item.scope, dependsOn: item.dependsOn, expectedMinutes: item.expectedMinutes, writesProduct: item.writesProduct !== false, specHash: task.specHash };
       created.push(task);
     }
@@ -111,6 +125,7 @@ export async function runExecution(args, flags) {
     if (!prepared.ok) result = prepared;
     else {
       const state = runtimeStatus({ project: opts.project, runId: prepared.runId });
+      if (Object.values(state.run.tasks).some(task => task.coordinationOnly)) throw stateError('NATIVE_CONTROLLER_EXISTS', 'This run already has a native controller; inspect/cancel/reconcile it, or explicitly create a new top-level run rather than launching another controller implicitly');
       if (state.run.snapshot.maxConcurrency < 2) throw stateError('NATIVE_CONTROLLER_CAP_REQUIRED', 'A registered Claude controller plus at least one child requires a run concurrency cap of two');
       const role = prepared.plan.agents.find(agent => agent.role === 'orchestrator');
       const selection = { modelId: flags.model || role?.model, providerId: flags.provider || role?.modelChoice?.providerId, billingMode: flags.billing || role?.modelChoice?.billingMode || 'unknown' };

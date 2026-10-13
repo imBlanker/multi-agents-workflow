@@ -22,7 +22,11 @@ existing Claude session. It returns frozen policy/roles, but does not claim a
 child was dispatched. The existing session is outside worker billing coverage.
 `run queue --run-id R --input FILE` consumes `{tasks:[...]}`. Each entry requires
 plain taskId, role, concrete prompt, expectedMinutes, owned scope array, dependsOn
-array, and preferably explicit workspace/selection{providerId,modelId,billingMode}.
+array, and an explicit workspace. Native Agent tasks use selection:"inherit"; the
+prepare response exposes nativeExecution.observedSelection plus a complete queue
+example. Null/empty/unknown plan placeholders inherit that observation. Concrete
+conflicting fields or frozen role overrides are rejected before any task is
+added. External adapter tasks use explicit selection{providerId,modelId,billingMode}.
 Optional fields include actorId, adapter (default host-managed), maxDurationMs,
 writesProduct, verificationOf. Writable work needs a concrete nonempty scope.
 
@@ -108,3 +112,24 @@ controlled context. Before consuming a lease, the hook checks the real
 subagent_type, absence of a per-call model override, and actual parent session
 against the queued role and observed native parent. An unregistered external
 host session retains the separately documented out-of-band limitation.
+
+
+## Observed delivery validation and subsequent repair
+
+The single user-authorized 180-second Sonnet 4.6 invocation on candidate d25dddd
+loaded the real package/Slash and observed the expected parent identity. It
+failed before any Agent call because queue accepted empty generic-plan selection
+placeholders instead of inheriting the available parent selection. The deadline
+stopped the real controller and process group with zero active leases, but the
+then-current CLI incorrectly treated RELEASED as success and left its unstarted
+child queued. That failed trace is preserved unchanged.
+
+The subsequent local repair makes inheritance an explicit Core-owned input,
+rejects meaningful conflicts atomically, and binds queued work to the exact
+controller lease. Stopped controllers cancel their associated unstarted children
+with recorded reasons; task/run outcome is distinct from release success.
+Failure, cancellation or missing required acceptance returns nonzero. Repeating
+execution with an existing controller run does not start another parent implicitly.
+This repair is being checked without model calls. The one-run authorization is
+used; there has been no second real Claude invocation, and the repaired complete
+native workflow is not claimed live-verified.

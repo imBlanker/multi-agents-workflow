@@ -67,14 +67,20 @@ export async function executeNative(opts) {
     interval = setInterval(() => { try { const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); if (lease.cancelRequestedAt) void cancel(); else heartbeat(identity); } catch { void cancel(); } }, 1000); deadline = setTimeout(() => { void cancel(); }, Math.max(1, deadlineAt - Date.now())); });
   const exit = await new Promise(resolve => { child.once('error', error => resolve({ code: null, error: error.message })); child.once('close', (code, signal) => resolve({ code, signal })); });
   clearInterval(interval); clearTimeout(deadline); process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
-  if (exit.error && !child.pid) return markLaunchFailed({ ...identity, error: { code: 'NATIVE_SPAWN_FAILED', message: exit.error } });
+  if (exit.error && !child.pid) return { ...markLaunchFailed({ ...identity, error: { code: 'NATIVE_SPAWN_FAILED', message: exit.error } }), ok: false, produced: false, reasonCode: 'NATIVE_SPAWN_FAILED' };
   if (runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId)?.status === 'released') return { ok: false, reasonCode: 'NATIVE_CANCELLED_OR_DEADLINE', outputPath, resourcesReleased: true };
   const produced = exit.code === 0 && resultEvent && resultEvent.is_error !== true;
-  reportResult({ ...identity, status: produced ? 'produced' : 'failed', result: { ...exit, outputPath, sessionId: mainSessionId, costCoverage: { basis: 'client_estimate', amountUsd: resultEvent?.total_cost_usd ?? null, paymentVerified: false }, hostResult: resultEvent, enforcementLevel: 'registered_host_process_and_host_managed_children' } });
+  reportResult({ ...identity, status: produced ? 'produced' : 'failed', result: { ...exit, outputPath, sessionId: mainSessionId, costCoverage: { basis: 'unknown', amountUsd: null, clientEstimateUsd: resultEvent?.total_cost_usd ?? null, paymentVerified: false }, hostResult: resultEvent, enforcementLevel: 'registered_host_process_and_host_managed_children' } });
   for (let wait = 0; wait < 20 && !backendStopped(runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId)).stopped; wait++) await delay(100);
   settleControlledHostChildren({ ...identity, controllerLeaseId: identity.leaseId });
   const released = releaseLease(identity);
   const run = runtimeStatus({ project: opts.project, runId: opts.runId }).run;
   const acceptance = released.ok && run.candidate ? acceptCandidate({ project: opts.project, stateRoot: identity.stateRoot, runId: opts.runId }) : null;
-  return { ...released, hostSessionId: mainSessionId, outputPath, acceptance, produced, capability };
+  return { ...released, ...nativeExecutionOutcome({ produced, released, run: runtimeStatus({ project: opts.project, stateRoot: identity.stateRoot, runId: opts.runId }).run, acceptance }), hostSessionId: mainSessionId, outputPath, acceptance, produced: !!produced, capability };
+}
+export function nativeExecutionOutcome({ produced, released, run, acceptance }) {
+  const policy = run.snapshot.acceptancePolicy || run.snapshot.settings.verification;
+  const acceptanceRequired = policy.minIndependentHackers > 0 || policy.requireRealUserPath || policy.requireCounterexamples || policy.requiredCapabilities?.length > 0;
+  const successful = !!produced && released.ok !== false && !['cancelled', 'failed', 'blocked', 'queued', 'running', 'cancel_pending'].includes(run.status) && (!acceptanceRequired || acceptance?.status === 'accepted');
+  return { ok: successful, status: run.status, lifecycleReasonCode: released.reasonCode, reasonCode: run.status === 'cancelled' ? 'NATIVE_CANCELLED' : !produced || run.status === 'failed' ? 'NATIVE_FAILED' : released.ok === false ? released.reasonCode : acceptanceRequired && acceptance?.status !== 'accepted' ? 'ACCEPTANCE_REQUIRED' : acceptance?.status === 'accepted' ? 'ACCEPTED' : 'PRODUCED' };
 }

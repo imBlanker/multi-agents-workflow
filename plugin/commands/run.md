@@ -23,8 +23,11 @@ environment. Do not use an unrelated global mawf executable.
 2. Read the frozen role policy and plan. Create a concrete task JSON under the
    returned run's runtime directory and call `run queue --run-id R --input FILE
    --project P --json`. Every task has taskId, role, prompt, expectedMinutes,
-   scope (owned files), dependsOn (IDs), workspace, and explicit selection
-   {providerId,modelId,billingMode}. Use isolated worktrees for writable scopes;
+   scope (owned files), dependsOn (IDs), workspace, and `selection:"inherit"`
+   for native Agent tasks. Use the exact outer JSON object `{"tasks":[...]}`.
+   Core resolves inherit from nativeExecution.observedSelection in the prepare
+   response; never copy blank/unknown model placeholders from the generic plan.
+   Concrete conflicting role selections are rejected before any task is queued. Use isolated worktrees for writable scopes;
    assign a separate integration worker. Give verified command recipes, known
    failures, resource/time bounds and the handoff recipient. Dynamic uses its own
    snapshot; fixed mode 1 implementers do not create or maintain tests.
