@@ -59,9 +59,9 @@ export function evaluateSelection(selection, settings = {}) {
       allowed = false; reasonCode = 'MEASURED_COVERAGE_REQUIRED'; reason = 'Strict measured policy requires verified, complete payment telemetry for this target; token-price estimates do not qualify';
     }
   }
-  return { schemaVersion: 1, ok: allowed, allowed, reasonCode, reason, identity, identityHash: approvalIdentity(selection), priceKnown: known, covered, requiresBounds, quota: boundedSubscription ? 'unknown' : null,
+  return { schemaVersion: 1, ok: allowed, allowed, reasonCode, reason, identity, identityHash: approvalIdentity(selection), priceKnown: known, covered, requiresBounds, quota: billing === 'subscription' && !covered ? 'unknown' : null,
     approved: !!matching, expensive, inputPerM: input, outputPerM: output, thresholdIn: thresholds.inputPerM, thresholdOut: thresholds.outputPerM,
-    basis: boundedSubscription ? 'unknown' : covered ? 'subscription' : known ? 'estimated' : 'unknown', amountUsd: null, enforcementLevel: settings.cost?.enforcement ?? 'best_effort',
+    basis: billing === 'subscription' && !covered ? 'unknown' : covered ? 'subscription' : known ? 'estimated' : 'unknown', amountUsd: null, enforcementLevel: settings.cost?.enforcement ?? 'best_effort',
     coverage: selection.usage?.coverage ?? { complete: false, limitations: ['No target payment telemetry; out-of-band work is not covered'] }, bounds: requiresBounds && allowed ? settings.pricing.bounds : null };
 }
 export function approveSelection(project, selection, options = {}) {

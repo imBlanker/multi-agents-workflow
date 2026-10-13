@@ -1,8 +1,31 @@
-# Upstream compatibility through 2026-10-10
+# Upstream compatibility — v1 candidate, 2026-10-14
 
-## Upstream registry (authoritative)
 
-This registry is the single source of truth for every upstream whose updates can affect mawf. The PR template's upstream tracking checklist and CONTRIBUTING's PR flow reference this section — do not copy the list elsewhere. Tracking policy: an upstream change that does not touch mawf's theory or architecture is tracked directly into the current release; only theory/architecture-level changes are recorded and deferred to the next minor (0.9). Evidence classes P/A/L are defined in the ledger sections below.
+## v1 implementation and observed capability scope
+
+Selection, discovery, installation, authentication, protocol compatibility and
+actual readiness are separate. All sources below are optional and remain off
+unless explicitly selected. Previous release ledgers below retain their dates;
+they are historical evidence, not current execution guarantees.
+
+| v1 capability | Locked/observed source | Observed result and limits |
+| --- | --- | --- |
+| Pi companion | Kagandi/pi-plugin-cc a8c4db32fbd5b3b3a028b1dcb95cbba60c4cc07e; plugin 1.2.0 | Actual canonical deepseek-flash job/status/result/stop path verified. Old alias ambiguity rejected by no-prompt preflight. Per-turn actual identity remains unexposed. Read-only enforcement unsupported. |
+| Codex companion | imBlanker/codex-plugin-cc d6a979b35741f3654c6f0f64cea0642104e9105b; plugin 0.2.0 | Metadata/protocol inspected. Actual custom provider lacks applicable price/billing evidence; live model path blocked. Marketplace openai-codex alone does not establish fork provenance. |
+| Pi runtime | Local @earendil-works/pi-coding-agent 1.2.0 | Actual get_commands/get_state and persistent RPC; exact provider/model needs observation, not string prefix inference. |
+| Pi Autoresearch | davebcn87/pi-autoresearch 1.9.0; entry SHA256 f9232c2ff5301e79050c3c4a898a887825787e005a87f5543af04e4e71eb5814 | Real baseline/experiment/keep, independent metric/correctness, stop and integrity checks observed in an isolated worktree. Exact interrupted loop resume remains unsupported. Requires Node >=22. |
+| Claude native | Local Claude Code 2.1.296 | Full-package plugin metadata/ten agents/nine commands validated. Agent model input uses aliases only; definitions model:inherit with omitted tool model argument. OAuth identity does not prove quota; real bounded execution awaits explicit user risk choice. |
+| cc-switch price export | schema blob 939d4594e64ce23bf250f42b6cec9f22c4caa913 | 152743 bytes; SHA256443c986a99b8973e6a46adf707b10e47fce6d6fcb0885372cb691ee1972bd273; 222 normalized seed records with provenance, not measured payments. |
+| models.dev | https://models.dev/api.json | Explicit selected refresh of a real public response; bounded parsing/last-good cache. No credentials or model invocation required. |
+
+The companion and experiment code is not bundled upstream source. Discovery
+preserves explicit installation paths, source/ref/version/hash and actual
+limitations. Sources are never silently replaced with similarly named forks or
+latest releases. See V1_ADAPTERS.md and V1_RELEASE_STATUS.md.
+
+## Historical upstream registry (through 2026-10-10)
+
+This dated registry records the previous release baseline; the v1 table above supersedes changed sources and execution claims. The PR template's upstream tracking checklist and CONTRIBUTING's PR flow reference this section — do not copy the list elsewhere. Tracking policy: an upstream change that does not touch mawf's theory or architecture is tracked directly into the current release; only theory/architecture-level changes are recorded and deferred to the next minor (0.9). Evidence classes P/A/L are defined in the ledger sections below.
 
 | Tier | Upstream | Track line (repo / registry) | mawf consumer | Baseline | Last checked |
 | --- | --- | --- | --- | --- | --- |

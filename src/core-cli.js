@@ -68,6 +68,7 @@ async function optionalInit(project, settings, flags, context) {
 
 export async function updateLifecycle(opts = {}, deps = {}) {
   const project = path.resolve(opts.project || process.cwd());
+  workspaceLayout(project);
   const settings = readSettings(project); const stages = [];
   const maw = deps.updateMaw ? await deps.updateMaw({ ...opts, project, settings }) : (await import('./selected-install.js')).installSelected({ ...opts, project, settings });
   stages.push({ stage: 'mawf update', ok: maw.ok !== false, result: maw });
@@ -83,6 +84,7 @@ export async function updateLifecycle(opts = {}, deps = {}) {
 }
 export async function upgradeLifecycle(opts = {}, deps = {}) {
   const project = path.resolve(opts.project || process.cwd());
+  workspaceLayout(project);
   const settings = readSettings(project);
   const maw = await (deps.upgradeMaw || (await import('./upgrade.js')).upgrade)({ ...opts, project, settings });
   const stages = [{ stage: 'mawf upgrade', ok: maw.ok, result: maw }];
@@ -99,6 +101,8 @@ export async function upgradeLifecycle(opts = {}, deps = {}) {
 export async function runCore(command, args, flags = {}, deps = {}) {
   const project = path.resolve(typeof flags.project === 'string' ? flags.project : process.cwd());
   const configProject = authorityProject(project);
+  const installOptions = { installStateDir: flags['install-state-dir'], claudeDir: flags['claude-dir'], codexDir: flags['codex-dir'], piDir: flags['pi-dir'], dshHome: flags['dsh-home'] };
+  if (['init', 'plan', 'migrate'].includes(command)) workspaceLayout(project);
   if (flags.out && command !== 'plan') throw stateError('OUT_REQUIRES_PLAN', '--out is only supported by plan and writes exclusively to its target');
   if (['plan', 'init', 'add-agent', 'remove-agent'].includes(command) && !flags.out) migrateLegacyProject(configProject, { auto: true });
   let settings = readSettings(configProject);
@@ -169,9 +173,9 @@ export async function runCore(command, args, flags = {}, deps = {}) {
     if (['list', 'status', 'doctor', undefined].includes(args[0])) return emit({ ok: true, components: listIntegrations().filter(item => ['archify', 'notes-board', 'trellis-card', 'compound-references'].includes(item.id)).map(item => ({ ...item, ...capabilityStatus(settings, item.id) })) }, flags);
     return await (await import('./components/cli.js')).runComponents(args, flags);
   }
-  if (command === 'uninstall') return emit((await import('./selected-install.js')).uninstallSelected({ project, dryRun: flags['dry-run'] }), flags);
-  if (command === 'install') return emit((await import('./selected-install.js')).installSelected({ project, settings, force: flags.force, dryRun: flags['dry-run'] }), flags);
-  if (command === 'update') return emit(await updateLifecycle({ project, settings, force: flags.force, dryRun: flags['dry-run'], mawfOnly: flags['mawf-only'] }, deps), flags);
-  if (command === 'upgrade') return emit(await upgradeLifecycle({ project, dryRun: flags['dry-run'], applyTemplates: !flags['no-apply-templates'], mawfOnly: flags['mawf-only'], tag: flags.tag }, deps), flags);
+  if (command === 'uninstall') return emit((await import('./selected-install.js')).uninstallSelected({ ...installOptions, project, dryRun: flags['dry-run'] }), flags);
+  if (command === 'install') return emit((await import('./selected-install.js')).installSelected({ ...installOptions, project, settings, force: flags.force, dryRun: flags['dry-run'] }), flags);
+  if (command === 'update') return emit(await updateLifecycle({ ...installOptions, project, settings, force: flags.force, dryRun: flags['dry-run'], mawfOnly: flags['mawf-only'] }, deps), flags);
+  if (command === 'upgrade') return emit(await upgradeLifecycle({ ...installOptions, project, dryRun: flags['dry-run'], applyTemplates: !flags['no-apply-templates'], mawfOnly: flags['mawf-only'], tag: flags.tag }, deps), flags);
   throw stateError('UNKNOWN_COMMAND', `Unknown Core command ${command}`);
 }

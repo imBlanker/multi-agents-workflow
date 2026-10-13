@@ -4,7 +4,15 @@
 格式：[Keep a Changelog](https://keepachangelog.com/)；版本遵循
 [SemVer](https://semver.org/)。
 
-## [Unreleased]
+## [1.0.0] — 2026-10-14（本機候選，未發佈）
+
+- 所有可選整合預設關閉，增加明確設定、模式登錄與可回復舊設定遷移。
+- 分離 dynamic/fixed-1 計畫，保護使用者覆寫與產生檔案所有權，凍結主任務政策快照。
+- 價格核准綁定實際身分；未知涵蓋不偽裝成零費用或實付；原生受管任務支援使用者明確選擇的有界訂閱風險。
+- 統一原子租約與 fencing、Linux 真實程序身分/取消、不按年齡清除占位；原生就緒佇列與 Agent 完成回執。
+- 固定來源 Pi/Codex companion、無 prompt 身分核對、持久有界 Pi 實驗、獨立候選證據驗收。
+- 修正 `/mawf:mode`、`/mawf:run` 與原生模型繼承，套件內包含執行/證據契約，安裝狀態目錄可完全隔離。
+- 已驗證範圍及未解決檢查見 docs/V1_RELEASE_STATUS.md；保留既有測試與 prepublishOnly，未執行發佈。
 
 ### 新增
 

@@ -50,6 +50,16 @@ export function readDshConfig(dshHome) {
  * @param {string} [pricingPath]
  * @returns {Record<string, any>}
  */
+function importedDecimal(value) {
+  // cc-switch serializes ModelPricingInfo money fields as decimal strings.
+  // Normalize this input boundary without coercing empty/null/boolean values.
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!/^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(text)) return null;
+    value = Number(text);
+  }
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
 export function readCcPricingJson(pricingPath) {
   const file = pricingPath || path.join(home(), ".cc-switch", "model-pricing.json");
   let doc = null;
@@ -67,10 +77,10 @@ export function readCcPricingJson(pricingPath) {
     out[m.modelId] = {
       model_id: m.modelId,
       display_name: m.displayName ?? m.modelId,
-      input_per_m: typeof m.inputCostPerMillion === "number" && Number.isFinite(m.inputCostPerMillion) && m.inputCostPerMillion >= 0 ? m.inputCostPerMillion : null,
-      output_per_m: typeof m.outputCostPerMillion === "number" && Number.isFinite(m.outputCostPerMillion) && m.outputCostPerMillion >= 0 ? m.outputCostPerMillion : null,
-      cache_read_per_m: typeof m.cacheReadCostPerMillion === "number" && Number.isFinite(m.cacheReadCostPerMillion) && m.cacheReadCostPerMillion >= 0 ? m.cacheReadCostPerMillion : null,
-      cache_creation_per_m: typeof m.cacheCreationCostPerMillion === "number" && Number.isFinite(m.cacheCreationCostPerMillion) && m.cacheCreationCostPerMillion >= 0 ? m.cacheCreationCostPerMillion : null,
+      input_per_m: importedDecimal(m.inputCostPerMillion),
+      output_per_m: importedDecimal(m.outputCostPerMillion),
+      cache_read_per_m: importedDecimal(m.cacheReadCostPerMillion),
+      cache_creation_per_m: importedDecimal(m.cacheCreationCostPerMillion),
       source: "cc-switch-pricing-json",
     };
   }

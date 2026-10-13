@@ -6,6 +6,24 @@ coding agents operating this repo). Human narrative: [`../CHANGELOG.md`](../CHAN
 
 Package: `multi-agents-workflow` · CLI: `mawf` · Node ≥ 20.17 · zero runtime deps.
 
+## 1.0.0 (2026-10-14; local candidate, unpublished)
+
+```yaml
+version: 1.0.0
+semver_impact: major
+status: local_candidate_not_published
+selection: all_optional_integrations_disabled_by_default
+modes: [dynamic, fixed-1]
+configuration: .mawf/settings.json
+migration: explicit_or_first_plan_reversible_legacy_import
+runtime: canonical_fenced_ledger_no_age_based_eviction
+acceptance: independent_evidence_bound_to_candidate_and_frozen_policy
+cost: unknown_is_not_zero_or_measured; explicit_bounded_native_subscription_risk_optional
+limits: [windows_execution_unverified, current_measured_payment_unsupported, claude_real_flow_pending_user_choice]
+checks: retained_npm_test_and_packed_install_results_reported_in_V1_RELEASE_STATUS
+publication: not_authorized
+```
+
 ## 0.8.4 (2026-10-10)
 
 ```yaml

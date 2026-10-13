@@ -1,3 +1,4 @@
+import { INTEGRATIONS } from './integrations.js';
 // One-time, reversible import of legacy user configuration. Runtime/evidence
 // are never restored, overwritten or treated as generated configuration.
 import fs from 'node:fs';
@@ -16,17 +17,18 @@ function capture(source, backup, records, rel = '') {
   else if (info.isFile()) { const bytes = fs.readFileSync(source); fs.mkdirSync(path.dirname(backup), { recursive: true }); fs.writeFileSync(backup, bytes, { mode: info.mode & 0o777 }); records.push({ rel, type: 'file', sha256: hash(bytes), mode: info.mode & 0o777 }); }
 }
 function legacyOverrides(directory) {
-  const roles = {}, approvals = [], warnings = [];
+  const roles = Object.create(null), approvals = [], warnings = [];
+  const plainRole = role => { if (typeof role !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(role) || ['constructor','prototype','__proto__'].includes(role)) throw stateError('INVALID_LEGACY_ROLE', 'Legacy role must be a plain non-reserved identifier'); return role; };
   const configFile = path.join(directory, 'config.yaml');
-  const config = fs.existsSync(configFile) ? parseYamlSubset(fs.readFileSync(configFile, 'utf8')) : {};
+  const config = fs.existsSync(configFile) && fs.lstatSync(configFile).isFile() ? parseYamlSubset(fs.readFileSync(configFile, 'utf8')) : {};
   const agents = path.join(directory, 'agents');
-  const files = fs.existsSync(agents) ? fs.readdirSync(agents) : [];
+  const files = fs.existsSync(agents) && fs.lstatSync(agents).isDirectory() ? fs.readdirSync(agents) : [];
   for (const file of files.filter(name => name.endsWith('.json'))) {
     const target = path.join(agents, file);
     if (fs.lstatSync(target).isSymbolicLink()) { warnings.push(`${file}: symbolic link retained; external content is not imported`); continue; }
     let data;
     try { data = JSON.parse(fs.readFileSync(target, 'utf8')); } catch { throw stateError('INVALID_LEGACY_CONFIG', `Invalid legacy agent JSON: ${file}`); }
-    const role = data.role || file.slice(0, -5);
+    const role = plainRole(data.role || file.slice(0, -5));
     const override = roles[role] ||= {};
     for (const key of ['model', 'providerId', 'billingMode', 'tools', 'task', 'agent', 'concurrency']) if (data[key] !== undefined) override[key] = data[key];
     if (data.app_type !== undefined) override.appType = data.app_type;
@@ -37,17 +39,20 @@ function legacyOverrides(directory) {
     const target = path.join(agents, file);
     if (fs.lstatSync(target).isSymbolicLink()) { warnings.push(`${file}: symbolic link retained; external content is not imported`); continue; }
     const body = fs.readFileSync(target, 'utf8');
-    const role = body.match(/^# Agent:\s*(.+)$/m)?.[1]?.trim() || file.slice(0, -3);
+    const role = plainRole(body.match(/^# Agent:\s*(.+)$/m)?.[1]?.trim() || file.slice(0, -3));
     const task = body.match(/^## Task\s*\r?\n([\s\S]*?)(?=^##\s|$(?![\s\S]))/m)?.[1]?.trim();
     if (task) (roles[role] ||= {}).task = task;
     else if (!roles[role]) roles[role] = { task: body, legacyMarkdown: true };
   }
-  for (const [role, model] of Object.entries(config.models || {})) {
+  for (const [key, model] of Object.entries(config.models || {})) {
+    const role = plainRole(key);
     const override = roles[role] ||= {};
     if (typeof model === 'string') override.model ??= model;
     else { override.model ??= model.model; if (model.app_type) override.appType ??= model.app_type; }
   }
-  return { roles, approvals, warnings, scheduler: config.cost?.max_concurrency ?? config.scheduler?.max_concurrency ?? config.scheduler?.maxConcurrency };
+  const integrations = {};
+  for (const [id, value] of Object.entries(config.integrations || {})) if (INTEGRATIONS.some(item => item.id === id)) { const enabled = typeof value === 'boolean' ? value : value?.enabled; if (typeof enabled === 'boolean') integrations[id] = enabled; }
+  return { roles, approvals, warnings, integrations, scheduler: config.cost?.max_concurrency ?? config.scheduler?.max_concurrency ?? config.scheduler?.maxConcurrency };
 }
 export function migrateLegacyProject(project, opts = {}) {
   const directory = path.dirname(settingsPath(project));
@@ -77,6 +82,7 @@ export function migrateLegacyProject(project, opts = {}) {
     const changed = updateSettings(project, draft => {
       for (const [role, override] of Object.entries(imported.roles)) draft.roleOverrides[role] = { ...override, ...(draft.roleOverrides[role] || {}) };
       if (!existingSettings?.scheduler && Number.isSafeInteger(imported.scheduler) && imported.scheduler > 0) { draft.scheduler.maxConcurrency = imported.scheduler; draft.scheduler.targetConcurrency = Math.min(draft.scheduler.targetConcurrency, imported.scheduler); }
+      for (const [id, enabled] of Object.entries(imported.integrations)) if (!existingSettings?.integrations?.[id]) draft.integrations[id] = { enabled, options: {} };
       draft.customAgents ||= {};
       for (const [role, override] of Object.entries(imported.roles)) if (!/^(orchestrator|implementer|researcher|reviewer|advisor|autoresearch|hacker)(-\d+)?$/.test(role)) draft.customAgents[role] = { ...override, ...(draft.customAgents[role] || {}) };
       draft.legacyApprovalHistory = [...(draft.legacyApprovalHistory || []), ...imported.approvals];
@@ -95,6 +101,7 @@ export function rollbackLegacyProject(project, opts = {}) {
     if (!opts.force && configHash(readSettings(project)) !== migration.settingsHashAfter) throw stateError('ROLLBACK_CONFLICT', 'Settings changed after migration; preserve/merge them or explicitly use --force');
     const manifest = readStrict(path.join(migration.backupDir, 'manifest.json'));
     if (!manifest || manifest.id !== migration.id || !Array.isArray(manifest.records)) throw stateError('INVALID_MIGRATION_BACKUP', 'Backup manifest is invalid');
+    for (const entry of manifest.records) if (entry.type === 'file') { const source = path.join(migration.backupDir, 'files', entry.rel); assertSafePath(source); if (hash(fs.readFileSync(source)) !== entry.sha256) throw stateError('INVALID_MIGRATION_BACKUP', 'Backup file hash mismatch before restoration'); }
     for (const entry of manifest.records) {
       const target = path.resolve(directory, entry.rel);
       if (!target.startsWith(directory + path.sep) || entry.rel.split(path.sep).includes('..')) throw stateError('INVALID_MIGRATION_BACKUP', 'Backup path is outside configuration');

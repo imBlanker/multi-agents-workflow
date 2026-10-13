@@ -588,12 +588,12 @@ export function acceptCandidate(opts) {
     const run = ledger.runs[identifier(opts.runId, 'runId')];
     if (!run?.candidate) throw stateError('CANDIDATE_REQUIRED', 'Freeze a candidate before acceptance');
     const decision = acceptanceDecision(run, run.candidate, ledger);
-    if (run.candidate.taskId && Object.values(run.tasks).filter(task => !task.verificationTarget).length > 1) return { ok: false, reasonCode: 'FULL_RUN_CANDIDATE_REQUIRED', reason: 'Freeze the integrated run candidate without --task-id before accepting multiple author tasks' };
+    if (run.candidate.taskId && Object.values(run.tasks).filter(task => !task.verificationTarget && !task.coordinationOnly).length > 1) return { ok: false, reasonCode: 'FULL_RUN_CANDIDATE_REQUIRED', reason: 'Freeze the integrated run candidate without --task-id before accepting multiple author tasks' };
     if (!decision.allowed) { run.status = 'blocked'; return { ok: false, status: run.status, ...decision }; }
     if (Object.values(ledger.leases).some(lease => lease.runId === run.runId && ACTIVE.has(lease.status))) return { ok: false, reasonCode: 'RUN_STILL_ACTIVE', status: run.status };
-    const pending = Object.values(run.tasks).filter(task => !task.verificationTarget && !['produced', 'awaiting_acceptance', 'accepted'].includes(task.status));
+    const pending = Object.values(run.tasks).filter(task => !task.verificationTarget && !task.coordinationOnly && !['produced', 'awaiting_acceptance', 'accepted'].includes(task.status));
     if (pending.length) return { ok: false, reasonCode: 'AUTHOR_TASKS_INCOMPLETE', taskIds: pending.map(task => task.taskId) };
-    for (const task of Object.values(run.tasks)) if (!task.verificationTarget) task.status = 'accepted';
+    for (const task of Object.values(run.tasks)) if (!task.verificationTarget && !task.coordinationOnly) task.status = 'accepted';
     run.status = 'accepted'; run.acceptance = { ...decision, candidateId: run.candidate.candidateId, acceptedAt: now() };
     event(ledger, 'candidate_accepted', { runId: run.runId, candidateId: run.candidate.candidateId, evidenceIds: decision.evidenceIds });
     return { status: 'accepted', acceptance: run.acceptance };
@@ -636,6 +636,9 @@ export function claimHostLaunch(opts) {
   return transaction(opts, ledger => {
     const { task, lease } = fenced(ledger, opts);
     const run = ledger.runs[task.runId];
+    if (opts.hasModelField || opts.agentType !== nativeAgentType(task, run.snapshot.modeId)) throw stateError('HOST_AGENT_SELECTION_MISMATCH', 'Native Agent must use its queued role definition and omit the tool model override');
+    const nativeParent = task.controllerTaskId && run.tasks[task.controllerTaskId];
+    if (!nativeParent?.adapterState?.sessionId || opts.hostSessionId !== nativeParent.adapterState.sessionId) throw stateError('HOST_PARENT_SESSION_MISMATCH', 'Agent launch did not originate in the observed registered parent session');
     if (!controlledHost(run, task, ledger)) throw stateError('HOST_MODEL_UNVERIFIED', 'Native Agent launch requires a live registered parent with matching observed model, provider and billing');
     if (task.adapter !== 'host-managed' || lease.launchState !== 'permission_issued' || lease.cancelRequestedAt) throw stateError('HOST_LAUNCH_REPLAY', 'The host launch must consume a fresh reserved lease exactly once');
     lease.launchState = 'host_launch_claimed'; lease.status = task.status = 'launching';
@@ -662,4 +665,9 @@ export function settleControlledHostChildren(opts) {
     for (const lease of Object.values(ledger.leases)) if (lease.controllerLeaseId === controller.leaseId && ACTIVE.has(lease.status) && backendStopped(lease).stopped) { lease.cancelRequestedAt ||= now(); releaseInLedger(ledger, ledger.runs[lease.runId].tasks[lease.taskId], lease); stopped.push(lease.taskId); }
     return { stopped, controllerLeaseId: controller.leaseId };
   });
+}
+
+export function nativeAgentType(task, modeId) {
+  const role = task.role.replace(/-\d+$/, '');
+  return modeId === 'fixed-1' ? `mawf:mawf-fixed-${['orchestrator','implementer','researcher','advisor','autoresearch','hacker'].includes(role) ? role : 'implementer'}` : `mawf:${['orchestrator','implementer','researcher','reviewer'].includes(role) ? role : task.verificationTarget ? 'reviewer' : 'implementer'}`;
 }

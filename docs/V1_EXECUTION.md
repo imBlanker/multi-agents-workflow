@@ -101,3 +101,10 @@ observed parent-model binding: it may manage snapshots and queues, but dispatch
 returns HOST_MODEL_UNVERIFIED. The currently implemented real route is the Core
 managed native process invoking `/mawf:run`; metadata registration is not proof
 of a successful model/Agent/acceptance chain.
+
+The registered native process passes a non-secret MAWF_NATIVE_RUN_CONTEXT to
+its Core hook. Agent/Task launches without a lease marker are refused in that
+controlled context. Before consuming a lease, the hook checks the real
+subagent_type, absence of a per-call model override, and actual parent session
+against the queued role and observed native parent. An unregistered external
+host session retains the separately documented out-of-band limitation.

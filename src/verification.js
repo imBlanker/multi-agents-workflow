@@ -46,7 +46,7 @@ export function candidateAuthors(run) {
   for (const task of Object.values(run.tasks)) {
     // Verification status is registered against an already frozen candidate,
     // rather than inferred from an easily relabelled role/model string.
-    if (task.verificationTarget) continue;
+    if (task.verificationTarget || task.coordinationOnly) continue;
     for (const actor of [task.actorId, ...(task.actorIds || []), ...(task.attemptHistory || []).map(item => item.actorId)]) if (actor && actor !== 'unreported') authors.add(actor);
   }
   return [...authors].sort();

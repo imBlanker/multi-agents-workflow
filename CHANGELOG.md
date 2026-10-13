@@ -4,7 +4,15 @@ All notable changes to **multi-agents-workflow (MAW)** are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/). Agent-oriented summary: [`docs/AGENT_CHANGELOG.md`](docs/AGENT_CHANGELOG.md).
 
-## [Unreleased]
+## [1.0.0] — 2026-10-14 (local candidate; unpublished)
+
+- Default all optional integrations off; explicit settings, mode registry and reversible legacy import.
+- Separate dynamic/fixed-1 planning, owned generated projections, frozen run policies and role overrides.
+- Identity-bound price approvals, unknown coverage rather than invented zero/measured costs, explicit bounded subscription risk under native control.
+- One atomic fenced ledger, real Linux process identity/cancellation, no age-based lease eviction, native ready queues and Agent receipts.
+- Pinned Pi/Codex companions, no-prompt model/provider resolution, persistent bounded Pi experiments and independent acceptance evidence.
+- Correct `/mawf:mode`, `/mawf:run`, inherited native Agent model definitions, packaged execution/evidence contracts and isolated installer state directory.
+- Scope evidence and unresolved release checks are reported in docs/V1_RELEASE_STATUS.md. Existing tests and prepublishOnly remain; no publication was performed.
 
 ### Added
 

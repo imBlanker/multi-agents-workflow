@@ -87,3 +87,14 @@ A successful host login is not a same-job billing observation.
 Best-effort coverage is limited to registered work and selected telemetry. It
 does not enforce all machine sessions, strict cumulative dollars, or backend
 cancellation. Runtime leases and adapter observations are separate work packages.
+
+
+Explicit `pricing.unknownCoveragePolicy: "bounded"` is separate from the default
+`pause`. It can admit a native subscription with a real adapter account/provider
+observation but unknown quota/payment, only within recorded concurrency and
+duration limits. It reports basis unknown, amount null and quota unknown. It
+does not relabel OAuth as API or treat unit-price tables as subscription charges.
+strict_measured still refuses absent current payment coverage. Native children
+must inherit an observed, registered parent model/provider/billing and its
+process deadline. See V1_EXECUTION.md for the exact optional choice; no validation
+project is automatically opted in.

@@ -11,14 +11,15 @@ import { readStrict, writeAtomic, assertSafePath, withLock } from './atomic-stat
 import { materializePluginAssets } from './pluginassets.js';
 
 const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const installRoot = opts => path.resolve(opts.installStateDir || process.env.MAWF_INSTALL_STATE_DIR || path.join(os.homedir(), '.mawf'));
 const OPTIONAL_SKILLS = { 'mawf-archify': 'archify', 'mawf-knowledge': 'knowledge', 'mawf-compound': 'compound', 'mawf-decision': 'decision', 'mawf-grill': 'grill', vendor: 'grill' };
 export function installSelected(opts = {}) {
   if (opts.dryRun) return installTransaction(opts);
-  return withLock(path.join(os.homedir(), ".mawf"), "installer", () => installTransaction(opts), { timeoutMs: 30000 });
+  return withLock(installRoot(opts), "installer", () => installTransaction(opts), { timeoutMs: 30000 });
 }
 function installTransaction(opts) {
   const settings = opts.settings || readSettings(opts.project || process.cwd());
-  const root = path.join(os.homedir(), '.mawf');
+  const root = installRoot(opts);
   const manifestPath = path.join(root, 'installed.json');
   const old = readStrict(manifestPath, { files: [], dirs: {} });
   const written = [], copied = [], skipped = [], refreshed = [];
@@ -80,12 +81,12 @@ function installTransaction(opts) {
       installedAt: new Date().toISOString(), host: { app: copied.includes(process.env.MAW_HOST) ? process.env.MAW_HOST : copied.includes(old.host?.app) ? old.host.app : copied[0] || old.host?.app || 'unknown' }, dirs, files,
       selectionProject: path.resolve(opts.project || process.cwd()), configRevision: settings.configRevision });
   }
-  return { ok: true, dryRun: !!opts.dryRun, copied, written, skipped, preserved: [...oldFiles].filter(file => !written.includes(file)), removedStale: opts.dryRun ? stale : removedStale, reason: 'Only explicitly selected surfaces are registered; previously owned assets remain until explicit uninstall' };
+  return { ok: true, installStateDir: root, manifestPath, dryRun: !!opts.dryRun, copied, written, skipped, preserved: [...oldFiles].filter(file => !written.includes(file)), removedStale: opts.dryRun ? stale : removedStale, reason: 'Only explicitly selected surfaces are registered; previously owned assets remain until explicit uninstall' };
 }
 
 /** Exact recorded-ownership removal. Project data and native markers stay put. */
 export function uninstallSelected(opts = {}) {
-  const root = path.join(os.homedir(), '.mawf');
+  const root = installRoot(opts);
   const execute = () => {
     const file = path.join(root, 'installed.json');
     const manifest = readStrict(file, null);
