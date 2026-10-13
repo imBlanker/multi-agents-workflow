@@ -1,4 +1,4 @@
-import { authorityProject } from './runtime.js';
+import { authorityProject, frozenRunPricing } from './runtime.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readSettings } from './settings.js';
@@ -25,7 +25,8 @@ export async function runPricing(command, args, flags) {
   const action = command === 'approve-model' ? 'approve' : args[0] ?? 'status';
   if (action === 'refresh') return emit(await refreshPrices(project, args[1], settings));
   if (action === 'status') return emit({ sources: pricingStatus(project, settings), unknownPricePolicy: settings.pricing.unknownPricePolicy });
-  const context = await loadContext(project);
+  const frozen = action === 'approve' && flags.scope === 'run' && flags['run-id'] ? frozenRunPricing({ project, stateRoot: flags['state-root'], runId: flags['run-id'] }) : null;
+  const context = frozen ? { models: frozen.settings.models || [], cc: { modelPricing: frozen.modelPricing, pricingContext: { settings: frozen.settings, priceRecords: frozen.priceRecords } } } : await loadContext(project);
   const role = flags.role || 'worker';
   let configuredRole;
   if (action === 'approve' && !flags.model) {
