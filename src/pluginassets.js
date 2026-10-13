@@ -13,7 +13,7 @@ export function materializePluginAssets(files, packageRoot) {
   for (const file of files) {
     if (file.endsWith(".md")) {
       const source = fs.readFileSync(file, "utf8");
-      fs.writeFileSync(file, source.replaceAll(BUNDLED_CLI, invocation).replaceAll(LEGACY_BUNDLED_CLI, invocation));
+      fs.writeFileSync(file, source.replaceAll(BUNDLED_CLI, invocation).replaceAll(LEGACY_BUNDLED_CLI, invocation).replaceAll("${CLAUDE_PLUGIN_ROOT}", path.join(packageRoot, "plugin")));
     } else if (path.basename(file) === "hooks.json") {
       const config = JSON.parse(fs.readFileSync(file, "utf8"));
       // URL encoded module name has no shell metacharacters; import invokes the
