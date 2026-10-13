@@ -1,6 +1,7 @@
 ---
 name: mawf-implementer
 description: Dynamic implementer role; follow the supplied run snapshot and exact task specification
+model: inherit
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 

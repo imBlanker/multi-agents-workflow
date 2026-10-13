@@ -14,7 +14,7 @@ export function settingsPath(project) {
 export function defaultSettings() {
   return { schemaVersion: 1, configRevision: 0, mode: { id: 'dynamic', version: 1 },
     integrations: Object.fromEntries(INTEGRATIONS.map(item => [item.id, { enabled: false, options: {} }])),
-    scheduler: { targetConcurrency: 3, maxConcurrency: 6 }, pricing: { unknownPricePolicy: 'pause', overrides: {} },
+    scheduler: { targetConcurrency: 3, maxConcurrency: 6 }, pricing: { unknownPricePolicy: 'pause', unknownCoveragePolicy: 'pause', overrides: {} },
     cost: { enforcement: 'best_effort' }, verification: { minIndependentHackers: 1, requireRealUserPath: true }, roleOverrides: {} };
 }
 function object(value, label) {
@@ -48,6 +48,7 @@ export function validateSettings(value) {
   if (value.scheduler.targetConcurrency > value.scheduler.maxConcurrency) throw stateError('INVALID_SETTINGS', 'targetConcurrency cannot exceed maxConcurrency');
   object(value.pricing, 'pricing'); object(value.pricing.overrides, 'pricing.overrides');
   if (!['pause', 'bounded'].includes(value.pricing.unknownPricePolicy)) throw stateError('INVALID_SETTINGS', 'unknownPricePolicy must be pause or bounded');
+  if (value.pricing.unknownCoveragePolicy !== undefined && !['pause', 'bounded'].includes(value.pricing.unknownCoveragePolicy)) throw stateError('INVALID_SETTINGS', 'unknownCoveragePolicy must be pause or bounded');
   if (value.pricing.thresholds !== undefined && (priceNumber(value.pricing.thresholds.inputPerM) === null || priceNumber(value.pricing.thresholds.outputPerM) === null)) throw stateError('INVALID_SETTINGS', 'Price thresholds must be finite nonnegative numbers');
   for (const [key, override] of Object.entries(value.pricing.overrides)) {
     object(override, `pricing.overrides.${key}`);
@@ -70,7 +71,7 @@ export function validateSettings(value) {
     for (const model of value.models) if (!model || typeof model.modelId !== 'string' || typeof model.providerId !== 'string' || typeof model.adapter !== 'string' || model.billingMode !== undefined && !['api', 'subscription', 'local-free', 'unknown'].includes(model.billingMode)) throw stateError('INVALID_SETTINGS', 'Declared models require modelId/providerId/adapter');
   }
   if (value.approvals !== undefined && !Array.isArray(value.approvals)) throw stateError('INVALID_SETTINGS', 'approvals must be an array');
-  if (value.pricing.unknownPricePolicy === 'bounded') {
+  if (value.pricing.unknownPricePolicy === 'bounded' || value.pricing.unknownCoveragePolicy === 'bounded') {
     const bounds = value.pricing.bounds;
     if (!bounds || !Number.isSafeInteger(bounds.maxConcurrency) || bounds.maxConcurrency < 1 || bounds.maxConcurrency > value.scheduler.maxConcurrency ||
       !((Number.isSafeInteger(bounds.maxDurationMs) && bounds.maxDurationMs > 0) || (Number.isSafeInteger(bounds.maxIterations) && bounds.maxIterations > 0))) throw stateError('INVALID_SETTINGS', 'bounded pricing requires maxConcurrency and a positive maxDurationMs or maxIterations');

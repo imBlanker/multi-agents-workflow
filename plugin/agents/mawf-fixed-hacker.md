@@ -1,6 +1,7 @@
 ---
 name: mawf-fixed-hacker
 description: Fixed mode 1 hacker role; follow the supplied run snapshot and exact task specification
+model: inherit
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 

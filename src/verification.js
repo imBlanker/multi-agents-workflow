@@ -68,6 +68,7 @@ export function validateEvidence(run, candidate, record, ledger) {
   const lease = task && ledger.leases[task.currentLeaseId];
   if (!task || task.verificationTarget !== candidate.candidateId || task.actorId !== record.hackerActorId || task.attempt !== record.attempt || !lease || lease.status !== 'released' || task.status !== 'produced') throw stateError('UNVERIFIED_HACKER_JOB', 'Evidence requires a completed, released verification job for this exact candidate and actor/attempt');
   if (candidate.implementerActorIds.includes(record.hackerActorId)) throw stateError('AUTHOR_CANNOT_VERIFY', 'An author cannot verify their own candidate, even under another role or model');
+  if (lease.hostCompletion && digest(fs.readFileSync(lease.hostCompletion.receiptPath)) !== lease.hostCompletion.sha256) throw stateError('HOST_RECEIPT_DRIFT', 'The bound native tool-return receipt changed');
   const sessionId = lease.sessionId || lease.jobId;
   if (!sessionId || sessionId !== record.sessionId) throw stateError('HACKER_SESSION_MISMATCH', 'Evidence must name the actual bound session/job instance');
   const authorSessions = Object.values(ledger.leases).filter(item => item.runId === run.runId && candidate.implementerActorIds.includes(item.actorId)).flatMap(item => [item.sessionId, item.jobId]).filter(Boolean);
@@ -91,7 +92,9 @@ export function validateEvidence(run, candidate, record, ledger) {
   });
   const startedAt = Date.parse(record.timestamps?.startedAt), finishedAt = Date.parse(record.timestamps?.finishedAt);
   if (!Number.isFinite(startedAt) || !Number.isFinite(finishedAt) || finishedAt < startedAt || startedAt < Date.parse(candidate.createdAt) || finishedAt > Date.now() + 300000) throw stateError('EVIDENCE_TIME_MISMATCH', 'Evidence must be produced after freezing and have valid timestamps');
-  return { ...structuredClone(record), rawOutputs: outputs, evidenceId: digest(record), recordedAt: new Date().toISOString(), validationLevel: 'identity_and_reference_consistency_not_semantic_truth' };
+  const modelBasis = task.adapter === 'local-process' ? 'not_applicable' : task.adapterState?.actualModel ? 'observed' : 'requested';
+  if (record.modelBasis && record.modelBasis !== modelBasis) throw stateError('MODEL_PROVENANCE_MISMATCH', 'Evidence model basis conflicts with backend observation');
+  return { ...structuredClone(record), modelBasis, requestedModel: task.selection?.modelId || null, observedModel: task.adapterState?.actualModel || null, observedModelReason: task.adapterState?.actualModel ? null : task.adapter === 'local-process' ? 'non_model_process' : 'backend_did_not_expose_actual_model', rawOutputs: outputs, evidenceId: digest(record), recordedAt: new Date().toISOString(), validationLevel: 'identity_and_reference_consistency_not_semantic_truth' };
 }
 export function acceptanceDecision(run, candidate, ledger) {
   try { checkCandidateCurrent(run, candidate); } catch (error) { return { allowed: false, reasonCode: error.code, reason: error.message }; }

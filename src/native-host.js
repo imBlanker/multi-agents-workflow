@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { findExecutable } from './platform/index.js';
 import { isEnabled } from './integrations.js';
 import { processIdentity, stateError, assertSafePath, writeAtomic } from './atomic-state.js';
-import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection } from './runtime.js';
+import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed } from './runtime.js';
 import { signalKnownBackend } from './local-runtime.js';
 export function nativeHostCapability(settings, project) {
   const selected = isEnabled(settings, 'host.claude-code');
@@ -29,14 +29,17 @@ export function enforceNativeBilling(capability, selection) {
   if (!capability.actualProvider || selection.providerId !== capability.actualProvider) throw stateError('PROVIDER_IDENTITY_UNVERIFIED', 'Requested provider is not proven by the current native host account');
 }
 export async function executeNative(opts) {
+  if (process.platform !== 'linux') return { ok: false, reasonCode: 'NATIVE_PROCESS_CONTROL_UNSUPPORTED', reason: 'This native process-tree controller is verified only for Linux' };
   const state = runtimeStatus(opts), task = state.task;
   const capability = nativeHostCapability(state.run.snapshot.settings, task.workspace);
   enforceNativeBilling(capability, task.selection);
+  recordNativeBilling(opts, capability);
   const reserved = acquireTask({ ...opts, controllerProcess: processIdentity() });
   if (!reserved.allowed || reserved.action !== 'start') return { ...reserved, capability };
   const identity = { ...opts, stateRoot: reserved.stateRoot, leaseId: reserved.leaseId, token: reserved.fencingToken };
   const claim = claimLocalLaunch(identity); if (claim.action !== 'start') return claim;
   const directory = path.join(reserved.stateRoot, 'runs', task.runId, 'native'); assertSafePath(directory); fs.mkdirSync(directory, { recursive: true });
+  const deadlineAt = Date.parse(reserved.lease.startedAt) + task.maxDurationMs;
   const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const request = Buffer.from(JSON.stringify({ runId: task.runId, project: state.run.snapshot.authorityProject, task: opts.description || '', nativeControllerTaskId: task.taskId })).toString('base64');
   const argv = ['-p', `/mawf:run --request-base64 ${request}`, '--plugin-dir', path.join(packageRoot, 'plugin'), '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--forward-subagent-text', '--include-hook-events', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--tools', state.run.snapshot.modeId === 'fixed-1' ? 'Agent,Bash,Read,TaskOutput,TaskStop' : 'default', ...(state.run.snapshot.modeId === 'fixed-1' ? ['--agent', 'mawf:mawf-fixed-orchestrator'] : []), '--model', task.selection.modelId];
@@ -56,12 +59,20 @@ export async function executeNative(opts) {
     }
   });
   child.stderr.on('data', chunk => { if (total < 32 * 1024 * 1024) fs.appendFileSync(path.join(directory, 'stderr.log'), chunk.toString().replace(/(?:Bearer\s+|api[_-]?key\s*[:=]\s*)[^\s"']+/gi, '[REDACTED]').slice(0, 8192), { mode: 0o600 }); });
-  child.once('spawn', () => { bindJob({ ...identity, process: processIdentity(child.pid), processGroup: child.pid, jobId: `claude-process:${child.pid}` }); interval = setInterval(() => { try { const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); if (lease.cancelRequestedAt) void cancel(); else heartbeat(identity); } catch { void cancel(); } }, 1000); deadline = setTimeout(() => { void cancel(); }, task.maxDurationMs); });
+  process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
+  child.once('spawn', () => { bindJob({ ...identity, process: processIdentity(child.pid), processGroup: child.pid, jobId: `claude-process:${child.pid}` });
+    const keeperFile = path.join(directory, 'deadline.json'); writeAtomic(keeperFile, { identity, deadlineAt });
+    const keeper = spawn(process.execPath, [fileURLToPath(new URL('./native-deadline.js', import.meta.url)), keeperFile], { detached: true, stdio: 'ignore' }); keeper.unref();
+    recordAdapterState(identity, { deadlineAt: new Date(deadlineAt).toISOString(), deadlineKeeperPid: keeper.pid, deadlineKeeper: 'independent_of_cli_controller' });
+    interval = setInterval(() => { try { const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); if (lease.cancelRequestedAt) void cancel(); else heartbeat(identity); } catch { void cancel(); } }, 1000); deadline = setTimeout(() => { void cancel(); }, Math.max(1, deadlineAt - Date.now())); });
   const exit = await new Promise(resolve => { child.once('error', error => resolve({ code: null, error: error.message })); child.once('close', (code, signal) => resolve({ code, signal })); });
-  clearInterval(interval); clearTimeout(deadline);
+  clearInterval(interval); clearTimeout(deadline); process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
+  if (exit.error && !child.pid) return markLaunchFailed({ ...identity, error: { code: 'NATIVE_SPAWN_FAILED', message: exit.error } });
+  if (runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId)?.status === 'released') return { ok: false, reasonCode: 'NATIVE_CANCELLED_OR_DEADLINE', outputPath, resourcesReleased: true };
   const produced = exit.code === 0 && resultEvent && resultEvent.is_error !== true;
   reportResult({ ...identity, status: produced ? 'produced' : 'failed', result: { ...exit, outputPath, sessionId: mainSessionId, costCoverage: { basis: 'client_estimate', amountUsd: resultEvent?.total_cost_usd ?? null, paymentVerified: false }, hostResult: resultEvent, enforcementLevel: 'registered_host_process_and_host_managed_children' } });
   for (let wait = 0; wait < 20 && !backendStopped(runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId)).stopped; wait++) await delay(100);
+  settleControlledHostChildren({ ...identity, controllerLeaseId: identity.leaseId });
   const released = releaseLease(identity);
   const run = runtimeStatus({ project: opts.project, runId: opts.runId }).run;
   const acceptance = released.ok && run.candidate ? acceptCandidate({ project: opts.project, stateRoot: identity.stateRoot, runId: opts.runId }) : null;

@@ -31,9 +31,14 @@ environment. Do not use an unrelated global mawf executable.
 3. Call `run next --run-id R --project P --json`. For every
    `invoke_native_agent_now` dispatch, its lease was already acquired: actually
    call the native **Agent** tool with the returned prompt and
-   `run_in_background:true`. Record the actual returned agentId/jobId and its new
-   session identity; bind with `task bind --run-id R --task-id T --lease-id L
-   --token TOKEN --job-id ACTUAL_ID --session-id ACTUAL_SESSION --project P`.
+   `run_in_background:true`, `subagent_type` equal to the dispatch's agentType,
+   and **omit the Agent model argument**. The selected definition has
+   `model: inherit`; AgentInput does not accept an inherit model value. Do not
+   substitute a generic agent, resume an existing agent, or request a different
+   model only in prompt text. Record the actual returned agentId as the fresh job/instance identity; sessionId is
+   not exposed by this host and stays null. Pass resolvedModel only when the
+   actual AgentOutput exposes it; otherwise keep actualModel unknown. Bind with `task bind --run-id R --task-id T --lease-id L
+   --token TOKEN --job-id ACTUAL_AGENT_ID [--resolved-model ACTUAL_RESOLVED_MODEL] --project P`.
    Do not invent job/session IDs or substitute a proposed fallback for an actor.
    For adapter_start_required, call its actual selected adapter start entry;
    that adapter performs its own single-use acquisition.
@@ -41,7 +46,7 @@ environment. Do not use an unrelated global mawf executable.
    heartbeats while work or external requests are pending. On each completion,
    save the actual tool return outside product scope, call `task result` with
    produced/failed and factual artifacts/failureCause, then `task host-complete`
-   with the exact lease/token/job/session and `--receipt-file ACTUAL_RETURN`.
+   with the exact lease/token/job and `--receipt-file ACTUAL_RETURN`.
    This receipt covers that returned native Agent invocation, not detached or
    unregistered background descendants. Unknown completion stays reserved.
    Immediately call run next again: fill newly free slots without waiting for
@@ -53,7 +58,7 @@ environment. Do not use an unrelated global mawf executable.
    INTEGRATED_WORKSPACE --project P`. Scope includes relevant dirty/untracked
    product and build artifacts. Create at least the snapshot's minimum independent
    Hacker tasks through run queue, with verificationOf equal to candidateId,
-   new actor IDs and genuinely fresh Agent sessions. They must be different from
+   new actor IDs and new Agent calls without resume; each must return a unique actual agentId. They must be different from
    every recorded author/attempt. Their prompts require counterexamples, an
    independent oracle, actual entrypoint-to-result path, and raw output hashes.
    A Hacker never repairs its own findings. Failures go to a new implementation

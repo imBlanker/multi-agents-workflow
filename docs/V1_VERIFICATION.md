@@ -29,8 +29,9 @@ Register a distinct verification job using ordinary `task add` plus
 before execution, not inferred from a role name. A prior author cannot become
 independent by changing their role/model. Run it through the normal backend;
 only a produced, released job can supply evidence. For local processes, its
-recorded process job identity is the session; hosted jobs use the actual bound
-session. Reusing an author or another task's session is rejected.
+recorded process job identity is the session; hosted jobs use the actual bound session when exposed, otherwise the real native
+agentId/job instance. A parent session is correlation metadata, not a fabricated
+independent child session. Reusing an author or another task's session is rejected.
 
 `task evidence --run-id R --input FILE` validates this JSON contract:
 
@@ -39,7 +40,9 @@ session. Reusing an author or another task's session is rejected.
 - candidateId, commitSha (nullable for a non-Git project), diffHash,
   effectiveConfigHash, scope, implementerActorIds copied from the frozen candidate;
 - hackerActorId, sessionId, model (actual if observed; otherwise the recorded
-  request, or `not_applicable` for a local non-model job), adapter;
+  request, or `not_applicable` for a local non-model job), adapter. Stored records
+  explicitly label modelBasis observed/requested/not_applicable and retain
+  requestedModel separately from observedModel (null plus a reason when unknown);
 - kind: `counterexamples` or `real_user_path`; verdict: `passed`, `failed`,
   `blocked`, or `unverified`; capabilities: nonempty array of covered names;
 - oracleSource: {kind, reference}, where kind is user_requirement,

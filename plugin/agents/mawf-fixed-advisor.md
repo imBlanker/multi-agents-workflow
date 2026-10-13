@@ -1,6 +1,7 @@
 ---
 name: mawf-fixed-advisor
 description: Fixed mode 1 advisor role; follow the supplied run snapshot and exact task specification
+model: inherit
 tools: Read, Grep, Glob, Bash
 disallowedTools: Edit, Write
 ---

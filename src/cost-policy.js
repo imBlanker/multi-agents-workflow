@@ -33,6 +33,10 @@ export function evaluateSelection(selection, settings = {}) {
   const output = priceNumber(price && Object.hasOwn(price, 'outputPerMillion') ? price.outputPerMillion : price?.output_per_m);
   const known = input !== null && output !== null;
   const covered = subscriptionCovered(selection);
+  const billingObservation = selection.billingEvidence;
+  const knownSubscriptionIdentity = billingObservation?.source === 'claude-auth-status' && billingObservation.authenticated === true && billingObservation.providerId === identity.providerId && ['claude.ai', 'oauth'].includes(billingObservation.authMethod);
+  const boundedSubscription = billing === 'subscription' && !covered && knownSubscriptionIdentity && settings.pricing?.unknownCoveragePolicy === 'bounded' && boundedPolicy(settings);
+  const requiresBounds = boundedSubscription || !covered && settings.pricing?.unknownPricePolicy === 'bounded' && (!known || !identity.providerId || billing === 'unknown');
   const thresholds = settings.pricing?.thresholds ?? PRICE_GATE_THRESHOLDS;
   const expensive = known && (input > thresholds.inputPerM || output > thresholds.outputPerM);
   const matching = (settings.approvals ?? []).find(item => item.identityHash === approvalIdentity(selection) && item.decision === 'approved' &&
@@ -44,9 +48,10 @@ export function evaluateSelection(selection, settings = {}) {
     reason = bounded ? 'Unknown price explicitly accepted under recorded concurrency and duration/iteration bounds' : 'Price unknown; pause until a valid price or explicitly bounded policy is configured';
   }
   if (allowed && !identity.providerId && !(settings.pricing?.unknownPricePolicy === 'bounded' && boundedPolicy(settings))) { allowed = false; reasonCode = 'UNKNOWN_PROVIDER'; reason = 'Actual provider identity is unknown; an estimate is not provider authorization'; }
-  if (allowed && ['subscription', 'local-free'].includes(billing) && !covered) { allowed = false; reasonCode = billing === 'subscription' ? 'SUBSCRIPTION_UNVERIFIED' : 'LOCAL_ADAPTER_UNVERIFIED'; reason = 'No supported current adapter proof establishes this billing mode; a CLI label cannot exempt payment policy'; }
+  if (allowed && ['subscription', 'local-free'].includes(billing) && !covered && !boundedSubscription) { allowed = false; reasonCode = billing === 'subscription' ? 'SUBSCRIPTION_UNVERIFIED' : 'LOCAL_ADAPTER_UNVERIFIED'; reason = 'No supported current adapter proof establishes this billing mode; a CLI label cannot exempt payment policy'; }
+  if (allowed && boundedSubscription) { reasonCode = 'BOUNDED_UNVERIFIED_SUBSCRIPTION'; reason = 'Explicit unknown-coverage risk policy permits this observed subscription identity only within recorded concurrency and duration bounds; quota and payment remain unknown'; }
   if (allowed && selection.billingMode === 'unknown' && !(settings.pricing?.unknownPricePolicy === 'bounded' && boundedPolicy(settings))) { allowed = false; reasonCode = 'UNKNOWN_BILLING'; reason = 'Billing mode is unverified; declare API/local billing or provide verified subscription coverage'; }
-  if (allowed && expensive && !covered && !matching) { allowed = false; reasonCode = 'EXPENSIVE_MODEL'; reason = 'Price exceeds the input/output threshold; approval must match role, provider, model, billing mode and price version'; }
+  if (allowed && expensive && !covered && !matching && !boundedSubscription) { allowed = false; reasonCode = 'EXPENSIVE_MODEL'; reason = 'Price exceeds the input/output threshold; approval must match role, provider, model, billing mode and price version'; }
   if (allowed && settings.cost?.enforcement === 'strict_measured' && !covered && selection.billingMode !== 'local-free') {
     const usage = selection.usage;
     const targetCovered = !!selection.taskId && usage?.coverage?.taskIds?.includes(selection.taskId) || !!selection.runId && usage?.coverage?.runId === selection.runId;
@@ -54,10 +59,10 @@ export function evaluateSelection(selection, settings = {}) {
       allowed = false; reasonCode = 'MEASURED_COVERAGE_REQUIRED'; reason = 'Strict measured policy requires verified, complete payment telemetry for this target; token-price estimates do not qualify';
     }
   }
-  return { schemaVersion: 1, ok: allowed, allowed, reasonCode, reason, identity, identityHash: approvalIdentity(selection), priceKnown: known, covered,
+  return { schemaVersion: 1, ok: allowed, allowed, reasonCode, reason, identity, identityHash: approvalIdentity(selection), priceKnown: known, covered, requiresBounds, quota: boundedSubscription ? 'unknown' : null,
     approved: !!matching, expensive, inputPerM: input, outputPerM: output, thresholdIn: thresholds.inputPerM, thresholdOut: thresholds.outputPerM,
-    basis: covered ? 'subscription' : known ? 'estimated' : 'unknown', amountUsd: null, enforcementLevel: settings.cost?.enforcement ?? 'best_effort',
-    coverage: selection.usage?.coverage ?? { complete: false, limitations: ['No target payment telemetry; out-of-band work is not covered'] }, bounds: !known && allowed ? settings.pricing.bounds : null };
+    basis: boundedSubscription ? 'unknown' : covered ? 'subscription' : known ? 'estimated' : 'unknown', amountUsd: null, enforcementLevel: settings.cost?.enforcement ?? 'best_effort',
+    coverage: selection.usage?.coverage ?? { complete: false, limitations: ['No target payment telemetry; out-of-band work is not covered'] }, bounds: requiresBounds && allowed ? settings.pricing.bounds : null };
 }
 export function approveSelection(project, selection, options = {}) {
   if (!selection.providerId || !['api', 'subscription', 'local-free'].includes(selection.billingMode)) throw stateError('UNRESOLVED_APPROVAL_IDENTITY', 'A durable approval requires a known provider and explicit valid billing mode');

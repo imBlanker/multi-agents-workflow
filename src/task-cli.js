@@ -27,7 +27,7 @@ export async function runTask(args, flags) {
   } else if (command === 'bind') {
     const pid = numeric(flags, 'pid');
     result = bindJob({ ...opts, process: pid === undefined ? undefined : { ...processIdentity(pid), startIdentity: flags['start-identity'] ?? null },
-      processGroup: numeric(flags, 'process-group'), jobId: flags['job-id'], sessionId: flags['session-id'] });
+      processGroup: numeric(flags, 'process-group'), jobId: flags['job-id'], sessionId: flags['session-id'], observedModel: flags['resolved-model'] });
   } else if (command === 'heartbeat') result = heartbeat({ ...opts, progress: flags.progress, waitingExternal: flags['waiting-external'] === true });
   else if (command === 'result') result = reportResult({ ...opts, status: flags.status, result: flags['result-json'] ? JSON.parse(flags['result-json']) : null });
   else if (command === 'cancel') result = await cancelLocal({ ...opts, graceMs: numeric(flags, 'grace-ms') });

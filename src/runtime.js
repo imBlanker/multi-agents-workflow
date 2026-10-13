@@ -224,7 +224,7 @@ export function addTask(opts) {
     const task = { taskId, runId: run.runId, role: opts.role || 'worker', adapter, status: 'queued', attempt: 1, generation: 0, currentLeaseId: null,
       modeId: run.snapshot.modeId, modeVersion: run.snapshot.modeVersion, configRevision: run.snapshot.configRevision, createdAt: now(),
       effectiveRolePolicy: copy(run.snapshot.rolePolicy), roleOverrides: copy(run.snapshot.settings.roleOverrides[opts.role || 'worker'] || {}),
-      verificationTarget: opts.verificationOf || null, coordinationOnly: adapter === 'claude-native' && opts.coordinationOnly === true, dispatchSpec: copy(opts.dispatchSpec || null), specHash: hash(opts.dispatchSpec || null), dependsOn: copy(opts.dependsOn || []), actorId: opts.actorId || null, workspace: canonical(opts.workspace || run.snapshot.workspace || run.snapshot.project), maxDurationMs: duration,
+      controllerTaskId: opts.controllerTaskId || null, verificationTarget: opts.verificationOf || null, coordinationOnly: adapter === 'claude-native' && opts.coordinationOnly === true, dispatchSpec: copy(opts.dispatchSpec || null), specHash: hash(opts.dispatchSpec || null), dependsOn: copy(opts.dependsOn || []), actorId: opts.actorId || null, workspace: canonical(opts.workspace || run.snapshot.workspace || run.snapshot.project), maxDurationMs: duration,
       command: adapter === 'local-process' ? [...opts.command] : null,
       selection: adapter !== 'local-process' ? { role: opts.role || 'worker', providerId: opts.providerId ?? null, modelId: opts.modelId ?? null, billingMode: opts.billingMode ?? 'unknown', costMultiplier: opts.costMultiplier ?? 1 } : null,
       costKind: adapter === 'local-process' ? 'non_model_process' : 'model', enforcementLevel: adapter === 'local-process' ? 'registered_local_processes' : 'host_managed', limitations: ['Unregistered processes and external billing are outside this ledger'] };
@@ -244,16 +244,24 @@ export function frozenRunPricing(opts) {
   const ledger = readLedger(root, true);
   const run = ledger?.runs[opts.runId];
   if (!run) return null;
-  return { settings: { ...copy(run.snapshot.settings), approvals: [...copy(run.snapshot.settings.approvals || []), ...copy(run.authorizations || [])] }, ...copy(pricingFor(root, run)), snapshotHash: run.snapshot.snapshotHash };
+  return { settings: { ...copy(run.snapshot.settings), approvals: [...copy(run.snapshot.settings.approvals || []), ...copy(run.authorizations || [])] }, ...copy(pricingFor(root, run)), snapshotHash: run.snapshot.snapshotHash, billingObservations: Object.values(run.tasks).filter(task => task.billingObservation).map(task => ({ ...task.selection, billingEvidence: copy(task.billingObservation) })) };
 }
-function admission(task, run, root) {
+function controlledHost(run, task, ledger) {
+  if (task.adapter !== 'host-managed' || !task.controllerTaskId || !ledger) return null;
+  const controller = run.tasks[task.controllerTaskId];
+  const lease = controller && ledger.leases[controller.currentLeaseId];
+  const remaining = lease ? Date.parse(lease.startedAt) + controller.maxDurationMs - Date.now() : 0;
+  if (!controller?.coordinationOnly || controller.adapter !== 'claude-native' || !lease || !ACTIVE.has(lease.status) || lease.cancelRequestedAt || !lease.ownerProcess || processAlive(lease.ownerProcess) !== true || lease.processGroup !== lease.ownerProcess.pid || remaining <= 0 || task.maxDurationMs + 1000 < remaining || controller.adapterState?.selectionGate?.allowed !== true || !controller.adapterState?.actualModel || task.selection.modelId !== controller.adapterState.actualModel || task.selection.providerId !== controller.adapterState.actualProvider || task.selection.billingMode !== controller.billingObservation?.billingMode) return null;
+  return lease;
+}
+function admission(task, run, root, ledger) {
   if (task.adapter === 'local-process') return { schemaVersion: 1, ok: true, allowed: true, reasonCode: 'NON_MODEL_PROCESS', basis: 'not_applicable', enforcementLevel: 'registered_local_processes', limitations: ['No model call is made by this adapter; subprocess-initiated external costs remain out of band'] };
   const prices = pricingFor(root, run);
   const price = resolvePrice(task.selection.modelId, { settings: run.snapshot.settings, modelPricing: prices.modelPricing, priceRecords: prices.priceRecords,
     providerId: task.selection.providerId, costMultiplier: task.selection.costMultiplier });
-  const decision = evaluateSelection({ ...task.selection, price, runId: run.runId, taskId: task.taskId }, { ...run.snapshot.settings, approvals: [...(run.snapshot.settings.approvals || []), ...(run.authorizations || [])] });
-  const reliesOnBounds = run.snapshot.settings.pricing.unknownPricePolicy === 'bounded' && (!decision.priceKnown || !task.selection.providerId || task.selection.billingMode === 'unknown');
-  if (decision.allowed && reliesOnBounds && task.adapter === 'host-managed') return { ...decision, ok: false, allowed: false, reasonCode: 'BOUNDED_ADAPTER_UNSUPPORTED', reason: 'This host-managed adapter cannot yet confirm timed cancellation; bounded unknown-price execution is unavailable' };
+  const decision = evaluateSelection({ ...task.selection, billingEvidence: task.billingObservation, price, runId: run.runId, taskId: task.taskId }, { ...run.snapshot.settings, approvals: [...(run.snapshot.settings.approvals || []), ...(run.authorizations || [])] });
+  const reliesOnBounds = decision.requiresBounds === true;
+  if (decision.allowed && reliesOnBounds && task.adapter === 'host-managed' && !controlledHost(run, task, ledger)) return { ...decision, ok: false, allowed: false, reasonCode: 'BOUNDED_ADAPTER_UNSUPPORTED', reason: 'This host-managed adapter cannot yet confirm timed cancellation; bounded unknown-price execution is unavailable' };
   return decision;
 }
 export function acquireTask(opts) {
@@ -284,10 +292,10 @@ export function acquireTask(opts) {
       const lastFailure = task.attemptHistory?.at(-1);
       const cause = value => value?.result?.failureCause || value?.error?.code || null;
       if (attempt > task.attempt && lastFailure?.status === 'failed' && task.status === 'failed' && cause(task.result) && cause(task.result) === cause(lastFailure.result) && lastFailure.specHash === task.specHash) return { ok: false, allowed: false, reasonCode: 'REPLAN_REQUIRED', reason: 'Two failures share a root cause; provide a revised specification or advisor route before another attempt', failureCause: cause(task.result) };
-      const decision = admission(task, run, directory);
+      const decision = admission(task, run, directory, ledger);
       if (!decision.allowed) return { ok: false, allowed: false, action: 'deny', ...decision };
       const active = Object.values(ledger.leases).filter(lease => ACTIVE.has(lease.status));
-      const riskBounded = task.adapter !== 'local-process' && run.snapshot.settings.pricing.unknownPricePolicy === 'bounded' && (!decision.priceKnown || !task.selection.providerId || task.selection.billingMode === 'unknown');
+      const riskBounded = task.adapter !== 'local-process' && decision.requiresBounds === true;
       const bounds = riskBounded ? run.snapshot.settings.pricing.bounds : null;
       if (bounds && (!bounds.maxDurationMs || task.maxDurationMs > bounds.maxDurationMs)) return { ok: false, allowed: false, action: 'deny', reasonCode: 'BOUNDED_DURATION_REQUIRED', reason: 'This adapter cannot enforce an iteration-only bound; supply a task duration within the configured bound' };
       if (active.length >= Math.min(ledger.policy.maxConcurrency, bounds?.maxConcurrency ?? Infinity) || active.filter(lease => lease.runId === run.runId).length >= run.snapshot.maxConcurrency) return { ok: false, allowed: false, action: 'deny', reasonCode: 'CONCURRENCY_LIMIT', reason: 'Project or run concurrency cap reached', running: active.length, projectCap: ledger.policy.maxConcurrency, runCap: run.snapshot.maxConcurrency };
@@ -307,6 +315,8 @@ export function acquireTask(opts) {
         runId: run.runId, taskId: task.taskId, attempt, launchKey, actorId: opts.actorId || task.actorId || 'unreported', role: task.role, adapter: task.adapter,
         stateRoot: directory, controllerProcess: opts.controllerProcess ?? null, ownerProcess: null, jobId: null, sessionId: null, processGroup: null,
         status: 'reserved', startedAt: now(), heartbeatAt: now(), progressAt: null, launchState: 'permission_issued', decision, resourcePolicy: copy(ledger.policy) };
+      const hostController = controlledHost(run, task, ledger);
+      if (hostController) { lease.controllerLeaseId = hostController.leaseId; lease.ownerProcess = copy(hostController.ownerProcess); lease.processGroup = hostController.processGroup; lease.deadlineAt = new Date(Date.parse(hostController.startedAt) + run.tasks[hostController.taskId].maxDurationMs).toISOString(); }
       task.currentLeaseId = lease.leaseId; task.status = 'reserved'; run.status = 'running';
       ledger.leases[lease.leaseId] = lease; ledger.launches[launchHash] = { runId: run.runId, taskId: task.taskId, attempt, leaseId: lease.leaseId };
       event(ledger, 'lease_reserved', { runId: run.runId, taskId: task.taskId, leaseId: lease.leaseId, generation: lease.generation });
@@ -328,15 +338,18 @@ export function bindJob(opts) {
       if (lease.jobId !== opts.jobId || lease.sessionId !== (opts.sessionId ?? null)) throw stateError('JOB_ALREADY_BOUND', 'Lease is already bound to another host job/session');
       return { lease, bound: false, reasonCode: 'BIND_REPLAY' };
     }
-    if (lease.ownerProcess) {
+    if (lease.ownerProcess && task.adapter !== 'host-managed') {
       if (lease.ownerProcess.pid !== opts.process?.pid || lease.ownerProcess.startIdentity !== opts.process?.startIdentity) throw stateError('JOB_ALREADY_BOUND', 'Lease is already bound to another process');
       return { lease, bound: false, reasonCode: 'BIND_REPLAY' };
     }
     if (task.adapter === 'host-managed') {
       if (!opts.jobId) throw stateError('JOB_ID_REQUIRED', 'Host-managed bindings need an actual job/session identity');
+      if (Object.values(ledger.leases).some(other => other.leaseId !== lease.leaseId && other.jobId === opts.jobId)) throw stateError('HOST_AGENT_REUSED', 'Native Agent identity was already used; invoke a fresh Agent without resume');
+      task.adapterState = { ...(task.adapterState || {}), actualModel: opts.observedModel || null, actualModelReason: opts.observedModel ? null : 'native_agent_output_did_not_expose_resolved_model', identityBasis: 'native_agent_id', parentSessionId: lease.hostLaunch?.hostSessionId || null, parentToolUseId: lease.hostLaunch?.toolUseId || null };
       lease.jobId = opts.jobId; lease.sessionId = opts.sessionId ?? null; lease.status = task.status = lease.cancelRequestedAt ? 'cancel_pending' : 'running'; lease.launchState = 'host_bound';
       event(ledger, 'host_job_bound', { leaseId: lease.leaseId, jobId: lease.jobId });
-      return { lease, bound: true, enforcementLevel: 'host_managed', stopVerification: 'adapter_required' };
+      if (opts.observedModel && opts.observedModel !== task.selection.modelId) return { ok: false, lease, bound: true, requiresCancel: true, reasonCode: 'ACTUAL_MODEL_MISMATCH', requestedModel: task.selection.modelId, actualModel: opts.observedModel };
+      return { lease, bound: true, enforcementLevel: 'host_managed', identityBasis: 'native_agent_id', stopVerification: 'adapter_required' };
     }
     const identity = opts.process;
     if (!identity || !Number.isInteger(identity.pid) || identity.pid <= 0) throw stateError('PROCESS_IDENTITY_REQUIRED', 'Local bind needs PID and start identity');
@@ -515,7 +528,7 @@ export function evaluateObservedSelection(opts, selection) {
   const root = resolveStateRoot(opts.project, opts.stateRoot);
   const ledger = readLedger(root);
   const { run, task } = taskFor(ledger, opts.runId, opts.taskId);
-  return admission({ ...task, selection: { ...task.selection, ...selection } }, run, root);
+  return admission({ ...task, selection: { ...task.selection, ...selection } }, run, root, ledger);
 }
 export function queryAdmission(opts = {}) {
   const root = resolveStateRoot(opts.project, opts.stateRoot);
@@ -527,8 +540,8 @@ export function queryAdmission(opts = {}) {
   if (!opts.runId || !opts.taskId) return { schemaVersion: 1, ok: true, allowed: false, admission: false, stateRoot: root, reasonCode: 'TASK_CONTEXT_REQUIRED', reason: 'An unbound guard query cannot authorize a model or reserve a slot', activeCount: active.length, policy: ledger.policy };
   const { run, task } = taskFor(ledger, opts.runId, opts.taskId);
   const settings = readSettings(ledger.authorityProject);
-  const decision = admission(task, run, root);
-  const bound = task.adapter !== 'local-process' && run.snapshot.settings.pricing.unknownPricePolicy === 'bounded' ? run.snapshot.settings.pricing.bounds : null;
+  const decision = admission(task, run, root, ledger);
+  const bound = task.adapter !== 'local-process' && decision.requiresBounds ? run.snapshot.settings.pricing.bounds : null;
   const cap = Math.min(settings.scheduler.maxConcurrency, bound?.maxConcurrency ?? Infinity);
   const terminal = TERMINAL_TASK.has(task.status);
   const available = !terminal && active.length < cap && active.filter(lease => lease.runId === run.runId).length < run.snapshot.maxConcurrency && !ACTIVE.has(ledger.leases[task.currentLeaseId]?.status);
@@ -597,12 +610,12 @@ export function completeHostTask(opts) {
   return transaction(opts, ledger => {
     const { task, lease } = fenced(ledger, opts, true);
     if (lease.status === 'released') return { alreadyReleased: true, lease, task };
-    if (task.adapter !== 'host-managed' || !lease.jobId || !lease.sessionId || opts.jobId !== lease.jobId || opts.sessionId !== lease.sessionId) throw stateError('HOST_RECEIPT_IDENTITY_MISMATCH', 'A host receipt must identify the bound job and fresh session');
+    if (task.adapter !== 'host-managed' || !lease.jobId || opts.jobId !== lease.jobId || (opts.sessionId || null) !== (lease.sessionId || null)) throw stateError('HOST_RECEIPT_IDENTITY_MISMATCH', 'A host receipt must identify the bound native Agent instance; an unexposed session stays null');
     if (!opts.receiptFile) throw stateError('HOST_RECEIPT_REQUIRED', 'Save the actual Agent/Task tool return outside product scope and pass --receipt-file');
     const receiptPath = assertSafePath(path.resolve(opts.receiptFile));
     const bytes = fs.readFileSync(receiptPath);
     if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw stateError('HOST_RECEIPT_REQUIRED', 'Host return receipt must be nonempty and bounded');
-    lease.hostCompletion = { source: 'native-host-agent-return', jobId: lease.jobId, sessionId: lease.sessionId, receiptPath, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), observedAt: now(), enforcementLevel: 'host_managed', limitations: ['Core validates identities and stores the host tool receipt; it cannot independently authenticate a manual host assertion', 'Unregistered background descendants remain outside this receipt'] };
+    lease.hostCompletion = { source: 'native-host-agent-return', identityBasis: 'native_agent_id', jobId: lease.jobId, sessionId: lease.sessionId, parentSessionId: lease.hostLaunch?.hostSessionId || null, parentToolUseId: lease.hostLaunch?.toolUseId || null, receiptPath, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), observedAt: now(), enforcementLevel: 'host_managed', limitations: ['Core validates identities and stores the host tool receipt; it cannot independently authenticate a manual host assertion', 'Unregistered background descendants remain outside this receipt'] };
     event(ledger, 'host_job_completed', { leaseId: lease.leaseId, receipt: lease.hostCompletion });
     releaseInLedger(ledger, task, lease);
     return { released: true, lease, task, enforcementLevel: 'host_managed' };
@@ -622,10 +635,31 @@ export function respecTask(opts, spec) {
 export function claimHostLaunch(opts) {
   return transaction(opts, ledger => {
     const { task, lease } = fenced(ledger, opts);
+    const run = ledger.runs[task.runId];
+    if (!controlledHost(run, task, ledger)) throw stateError('HOST_MODEL_UNVERIFIED', 'Native Agent launch requires a live registered parent with matching observed model, provider and billing');
     if (task.adapter !== 'host-managed' || lease.launchState !== 'permission_issued' || lease.cancelRequestedAt) throw stateError('HOST_LAUNCH_REPLAY', 'The host launch must consume a fresh reserved lease exactly once');
     lease.launchState = 'host_launch_claimed'; lease.status = task.status = 'launching';
     lease.hostLaunch = { hostSessionId: opts.hostSessionId || null, toolUseId: opts.toolUseId || null, at: now() };
     event(ledger, 'host_launch_claimed', { leaseId: lease.leaseId, ...lease.hostLaunch });
     return { allowed: true, action: 'start', leaseId: lease.leaseId };
+  });
+}
+
+export function recordNativeBilling(opts, capability) {
+  return transaction(opts, ledger => {
+    const { task } = taskFor(ledger, opts.runId, opts.taskId);
+    if (!['claude-native', 'host-managed'].includes(task.adapter) || capability.authenticated !== true || !capability.actualProvider || !['claude.ai', 'oauth', 'api_key', 'apiKey', 'api-key'].includes(capability.authMethod)) throw stateError('BILLING_OBSERVATION_UNVERIFIED', 'A current native account observation is required');
+    task.billingObservation = { source: 'claude-auth-status', authenticated: true, authMethod: capability.authMethod, providerId: capability.actualProvider, billingMode: capability.actualBillingMode, observedAt: now(), coverage: 'unknown', quota: 'unknown' };
+    event(ledger, 'native_billing_observed', { runId: task.runId, taskId: task.taskId, observation: task.billingObservation });
+    return { observation: task.billingObservation };
+  });
+}
+export function settleControlledHostChildren(opts) {
+  return transaction(opts, ledger => {
+    const controller = ledger.leases[identifier(opts.controllerLeaseId, 'controllerLeaseId')];
+    if (!controller || !backendStopped(controller).stopped) return { ok: false, reasonCode: 'CONTROLLER_STOP_UNCONFIRMED' };
+    const stopped = [];
+    for (const lease of Object.values(ledger.leases)) if (lease.controllerLeaseId === controller.leaseId && ACTIVE.has(lease.status) && backendStopped(lease).stopped) { lease.cancelRequestedAt ||= now(); releaseInLedger(ledger, ledger.runs[lease.runId].tasks[lease.taskId], lease); stopped.push(lease.taskId); }
+    return { stopped, controllerLeaseId: controller.leaseId };
   });
 }

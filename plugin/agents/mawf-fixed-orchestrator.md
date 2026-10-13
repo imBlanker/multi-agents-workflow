@@ -1,6 +1,7 @@
 ---
 name: mawf-fixed-orchestrator
 description: Fixed mode 1 orchestrator role; follow the supplied run snapshot and exact task specification
+model: inherit
 tools: Read, Grep, Glob, Bash, Agent, TaskOutput, TaskStop
 disallowedTools: Edit, Write
 ---

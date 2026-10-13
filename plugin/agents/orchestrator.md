@@ -1,6 +1,7 @@
 ---
 name: mawf-orchestrator
 description: Dynamic orchestrator role; follow the supplied run snapshot and exact task specification
+model: inherit
 tools: Read, Grep, Glob, Bash, Agent, TaskOutput, TaskStop
 disallowedTools: Edit, Write
 ---

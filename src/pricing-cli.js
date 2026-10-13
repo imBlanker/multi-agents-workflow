@@ -40,7 +40,8 @@ export async function runPricing(command, args, flags) {
   const price = resolvePrice(modelId, { ...context.cc.pricingContext, modelPricing: context.cc.modelPricing, providerId,
     costMultiplier: number(flags, 'multiplier') ?? context.models.find(model => model.providerId === providerId && model.modelId === modelId)?.costMultiplier ?? 1, serviceMode: flags['service-mode'] ?? 'standard', contextTokens: number(flags, 'context-tokens') });
   const usage = flags.usage ? summarizeUsage(readEvents(flags.usage), { runId: flags['run-id'], taskId: flags['task-id'], trustedSources: settings.cost.trustedUsageSources ?? [] }) : undefined;
-  const selection = { role, providerId, modelId, billingMode, price, usage, runId: flags['run-id'], taskId: flags['task-id'] };
+  const billingEvidence = frozen?.billingObservations?.find(item => item.role === role && item.providerId === providerId && item.modelId === modelId && item.billingMode === billingMode)?.billingEvidence;
+  const selection = { role, providerId, modelId, billingMode, billingEvidence, price, usage, runId: flags['run-id'], taskId: flags['task-id'] };
   if (action === 'resolve') return emit({ price, providerId, modelId, billingMode });
   if (action === 'estimate') return emit({ price, estimate: estimateCost(price, { input: number(flags, 'input-tokens'), output: number(flags, 'output-tokens'), cacheRead: number(flags, 'cache-read-tokens'), cacheWrite: number(flags, 'cache-write-tokens') }) });
   if (action === 'project') return emit({ price, projection: projectRate(price, { inputTokensPerMin: number(flags, 'input-per-minute'), outputTokensPerMin: number(flags, 'output-per-minute') }) });
