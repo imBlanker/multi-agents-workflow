@@ -8,7 +8,7 @@ import { assertSafePath, stateError } from './atomic-state.js';
 export const digest = value => crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
 const git = (root, argv) => { try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', timeout: 10000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
 const EXCLUDED = new Set(['.git', '.mawf', '.trellis', 'node_modules', '.venv', '__pycache__']);
-function inside(root, relative) { const target = path.resolve(root, relative); if (target !== root && !target.startsWith(root + path.sep)) throw stateError('CANDIDATE_PATH_ESCAPE', 'Scope/artifact path escapes the candidate'); return target; }
+function inside(root, relative) { const target = path.resolve(root, relative); if (target !== root && !target.startsWith(root + path.sep)) throw stateError('CANDIDATE_PATH_ESCAPE', 'Scope/artifact path escapes the candidate'); assertSafePath(path.dirname(target)); return target; }
 function inventory(root, scopes) {
   const files = new Map(); let count = 0, bytes = 0;
   function visit(target, explicit = false) {
