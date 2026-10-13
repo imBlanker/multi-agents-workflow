@@ -259,6 +259,11 @@ export function acquireTask(opts) {
       const actor = opts.actorId || task.actorId || 'unreported';
       if (task.actorId && task.actorId !== actor) event(ledger, 'task_reassigned', { runId: run.runId, taskId: task.taskId, from: task.actorId, to: actor, attempt });
       task.actorId = actor; task.actorIds = [...new Set([...(task.actorIds || []), actor])];
+      if (attempt !== task.attempt) {
+        task.attemptHistory ||= [];
+        task.attemptHistory.push({ attempt: task.attempt, generation: task.generation, leaseId: task.currentLeaseId, status: task.status, actorId: task.actorId, result: task.result ?? null });
+        delete task.result;
+      }
       task.attempt = attempt; task.generation++;
       const lease = { leaseId: crypto.randomUUID(), fencingToken: `${task.generation}:${crypto.randomUUID()}`, generation: task.generation,
         runId: run.runId, taskId: task.taskId, attempt, launchKey, actorId: opts.actorId || task.actorId || 'unreported', role: task.role, adapter: task.adapter,
@@ -348,7 +353,9 @@ export function backendStopped(lease) {
 }
 function releaseInLedger(ledger, task, lease) {
   lease.status = 'released'; lease.releasedAt = now();
-  task.status = lease.cancelRequestedAt ? 'cancelled' : task.result?.status ?? 'failed';
+  const currentResult = task.result?.attempt === lease.attempt && task.result?.leaseId === lease.leaseId ? task.result : null;
+  task.status = lease.cancelRequestedAt ? 'cancelled' : currentResult?.status ?? 'failed';
+  if (!currentResult && !lease.cancelRequestedAt) task.recoveryReason = 'backend_stopped_without_current_attempt_result';
   event(ledger, 'lease_released', { leaseId: lease.leaseId, taskStatus: task.status });
   const run = ledger.runs[lease.runId];
   const tasks = Object.values(run.tasks);
@@ -398,7 +405,7 @@ export function markLaunchFailed(opts) {
   return transaction(opts, ledger => {
     const { task, lease } = fenced(ledger, opts);
     if (lease.ownerProcess || lease.launchState !== 'launching') throw stateError('LAUNCH_STATE_CONFLICT', 'Only the local adapter can settle a failed spawn before binding');
-    lease.launchState = 'confirmed_not_started'; task.result = { status: 'failed', error: opts.error, reportedAt: now() };
+    lease.launchState = 'confirmed_not_started'; task.result = { status: 'failed', error: opts.error, reportedAt: now(), attempt: lease.attempt, leaseId: lease.leaseId };
     releaseInLedger(ledger, task, lease); return { lease, task };
   });
 }
