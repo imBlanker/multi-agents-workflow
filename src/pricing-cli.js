@@ -1,3 +1,4 @@
+import { authorityProject } from './runtime.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readSettings } from './settings.js';
@@ -14,7 +15,7 @@ function readEvents(file) {
 }
 const number = (flags, name) => { if (flags[name] === undefined) return undefined; if (typeof flags[name] !== 'string' || !flags[name].trim()) throw stateError('INVALID_NUMBER', `--${name} requires a numeric value`); return Number(flags[name]); };
 export async function runPricing(command, args, flags) {
-  const project = path.resolve(flags.project || process.cwd());
+  const project = authorityProject(path.resolve(flags.project || process.cwd()));
   const settings = readSettings(project);
   const emit = result => { process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: result.ok !== false, reasonCode: result.reasonCode ?? 'OK', ...result }, null, flags.json ? 0 : 2) + '\n'); return result.ok === false ? 1 : 0; };
   if (command === 'usage') {
@@ -45,7 +46,7 @@ export async function runPricing(command, args, flags) {
   if (action === 'gate') return emit(evaluateSelection(selection, settings));
   if (action === 'approve') {
     if (flags.yes !== true) throw stateError('CONFIRMATION_REQUIRED', 'Approval requires explicit --yes');
-    return emit(approveSelection(project, selection, { scope: flags.scope, runId: flags['run-id'] }));
+    return emit(approveSelection(project, selection, { scope: flags.scope, runId: flags['run-id'], stateRoot: flags['state-root'] }));
   }
   throw stateError('UNKNOWN_PRICING_ACTION', 'Use pricing resolve|estimate|project|gate|status|refresh');
 }

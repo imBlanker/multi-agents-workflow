@@ -93,3 +93,9 @@ unverified legacy count. Direct writes to the retired ledger are refused.
 The ledger covers registered jobs only and does not impose global machine/API
 billing limits. Independent long-heartbeat and cancellation checks are recorded
 separately from author diagnostics.
+
+Run-scoped `approve-model --scope run --run-id ID --yes` authorization issued
+after queueing is recorded in the runtime ledger as an identity-bound event and
+merged only into that run's admission check. The original settings/pricing/mode
+snapshot stays unchanged. Persistent approvals affect future snapshots. There is
+no implicit authorization from a retry. Revocation/expiry is not implemented.

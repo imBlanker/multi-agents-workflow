@@ -77,6 +77,7 @@ function validateLedger(ledger, root) {
     if (run.runId !== id || !states.has(run.status) || run.snapshot.stateRoot !== root || run.snapshot.authorityProject !== ledger.authorityProject ||
       hash(snapshotBody) !== snapshotHash || hash(run.snapshot.settings) !== run.snapshot.settingsHash || run.snapshot.modeId !== run.snapshot.settings.mode.id || run.snapshot.modeVersion !== run.snapshot.settings.mode.version ||
       !Number.isSafeInteger(run.snapshot.maxConcurrency) || run.snapshot.maxConcurrency < 1) throw stateError('INVALID_RUNTIME_STATE', 'Run snapshot or identity is invalid');
+    if (run.authorizations !== undefined && (!Array.isArray(run.authorizations) || run.authorizations.some(item => !item || item.scope !== 'run' || item.runId !== id || item.decision !== 'approved' || item.source !== 'explicit_cli_confirmation' || !object(item.identity) || hash(item.identity) !== item.identityHash))) throw stateError('INVALID_RUNTIME_STATE', 'Invalid run authorization overlay');
     for (const [taskId, task] of Object.entries(run.tasks)) {
       identifier(taskId, 'taskId');
       if (!object(task) || task.taskId !== taskId || task.runId !== id || !states.has(task.status) || !Number.isSafeInteger(task.attempt) || task.attempt < 1 || !Number.isSafeInteger(task.generation) || task.generation < 0 || task.modeId !== run.snapshot.modeId || task.modeVersion !== run.snapshot.modeVersion || task.configRevision !== run.snapshot.configRevision) throw stateError('INVALID_RUNTIME_STATE', 'Task identity/status is invalid');
@@ -114,6 +115,21 @@ function transaction(opts, fn) {
     validateLedger(ledger, root);
     writeAtomic(ledgerPath(root), ledger);
     return { schemaVersion: 1, ok: result.ok !== false, stateRoot: root, ...copy(result) };
+  });
+}
+// Explicit run-scoped authorizations are mutable runtime events, separate from
+// immutable configuration. Persistent approvals apply to subsequently queued runs.
+export function recordRunApproval(opts, approval) {
+  const root = resolveStateRoot(opts.project, opts.stateRoot);
+  const ledger = readLedger(root, true);
+  if (!ledger?.runs[approval.runId]) return { recorded: false, reasonCode: 'FUTURE_RUN_APPROVAL' };
+  return transaction(opts, ledger => {
+    const run = ledger.runs[identifier(approval.runId, 'runId')];
+    if (!run || approval.scope !== 'run' || approval.decision !== 'approved' || approval.source !== 'explicit_cli_confirmation' || hash(approval.identity) !== approval.identityHash) throw stateError('INVALID_RUN_APPROVAL', 'Run authorization must be explicit and identity-bound');
+    run.authorizations ||= [];
+    run.authorizations = [...run.authorizations.filter(item => item.identityHash !== approval.identityHash), copy(approval)];
+    event(ledger, 'run_model_approved', { runId: run.runId, approval: copy(approval), snapshotHash: run.snapshot.snapshotHash });
+    return { recorded: true, runId: run.runId, snapshotHash: run.snapshot.snapshotHash };
   });
 }
 function taskFor(ledger, runId, taskId) {
@@ -218,7 +234,7 @@ function admission(task, run, root) {
   const prices = pricingFor(root, run);
   const price = resolvePrice(task.selection.modelId, { settings: run.snapshot.settings, modelPricing: prices.modelPricing, priceRecords: prices.priceRecords,
     providerId: task.selection.providerId, costMultiplier: task.selection.costMultiplier });
-  const decision = evaluateSelection({ ...task.selection, price, runId: run.runId, taskId: task.taskId }, run.snapshot.settings);
+  const decision = evaluateSelection({ ...task.selection, price, runId: run.runId, taskId: task.taskId }, { ...run.snapshot.settings, approvals: [...(run.snapshot.settings.approvals || []), ...(run.authorizations || [])] });
   const reliesOnBounds = run.snapshot.settings.pricing.unknownPricePolicy === 'bounded' && (!decision.priceKnown || !task.selection.providerId || task.selection.billingMode === 'unknown');
   if (decision.allowed && reliesOnBounds && task.adapter === 'host-managed') return { ...decision, ok: false, allowed: false, reasonCode: 'BOUNDED_ADAPTER_UNSUPPORTED', reason: 'This host-managed adapter cannot yet confirm timed cancellation; bounded unknown-price execution is unavailable' };
   return decision;

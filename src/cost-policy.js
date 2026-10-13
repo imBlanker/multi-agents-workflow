@@ -1,3 +1,4 @@
+import { recordRunApproval } from './runtime.js';
 import { isCurrentPaymentTelemetry } from './usage.js';
 import crypto from 'node:crypto';
 import { priceNumber } from './pricing.js';
@@ -69,5 +70,6 @@ export function approveSelection(project, selection, options = {}) {
   const settings = updateSettings(project, draft => {
     draft.approvals = [...(draft.approvals ?? []).filter(item => !(item.identityHash === record.identityHash && item.scope === scope && item.runId === record.runId)), record];
   });
-  return { approval: record, configRevision: settings.configRevision };
+  const runtimeAuthorization = scope === 'run' ? recordRunApproval({ project, stateRoot: options.stateRoot }, record) : null;
+  return { approval: record, configRevision: settings.configRevision, runtimeAuthorization };
 }
