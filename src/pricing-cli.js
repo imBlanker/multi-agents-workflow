@@ -25,7 +25,7 @@ export async function runPricing(command, args, flags) {
   const action = command === 'approve-model' ? 'approve' : args[0] ?? 'status';
   if (action === 'refresh') return emit(await refreshPrices(project, args[1], settings));
   if (action === 'status') return emit({ sources: pricingStatus(project, settings), unknownPricePolicy: settings.pricing.unknownPricePolicy });
-  const frozen = action === 'approve' && flags.scope === 'run' && flags['run-id'] ? frozenRunPricing({ project, stateRoot: flags['state-root'], runId: flags['run-id'] }) : null;
+  const frozen = flags['run-id'] ? frozenRunPricing({ project, stateRoot: flags['state-root'], runId: flags['run-id'] }) : null;
   const context = frozen ? { models: frozen.settings.models || [], cc: { modelPricing: frozen.modelPricing, pricingContext: { settings: frozen.settings, priceRecords: frozen.priceRecords } } } : await loadContext(project);
   const role = flags.role || 'worker';
   let configuredRole;
@@ -44,7 +44,7 @@ export async function runPricing(command, args, flags) {
   if (action === 'resolve') return emit({ price, providerId, modelId, billingMode });
   if (action === 'estimate') return emit({ price, estimate: estimateCost(price, { input: number(flags, 'input-tokens'), output: number(flags, 'output-tokens'), cacheRead: number(flags, 'cache-read-tokens'), cacheWrite: number(flags, 'cache-write-tokens') }) });
   if (action === 'project') return emit({ price, projection: projectRate(price, { inputTokensPerMin: number(flags, 'input-per-minute'), outputTokensPerMin: number(flags, 'output-per-minute') }) });
-  if (action === 'gate') return emit(evaluateSelection(selection, settings));
+  if (action === 'gate') return emit(evaluateSelection(selection, frozen?.settings ?? settings));
   if (action === 'approve') {
     if (flags.yes !== true) throw stateError('CONFIRMATION_REQUIRED', 'Approval requires explicit --yes');
     return emit(approveSelection(project, selection, { scope: flags.scope, runId: flags['run-id'], stateRoot: flags['state-root'] }));

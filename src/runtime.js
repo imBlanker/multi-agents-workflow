@@ -234,7 +234,7 @@ export function frozenRunPricing(opts) {
   const ledger = readLedger(root, true);
   const run = ledger?.runs[opts.runId];
   if (!run) return null;
-  return { settings: copy(run.snapshot.settings), ...copy(pricingFor(root, run)), snapshotHash: run.snapshot.snapshotHash };
+  return { settings: { ...copy(run.snapshot.settings), approvals: [...copy(run.snapshot.settings.approvals || []), ...copy(run.authorizations || [])] }, ...copy(pricingFor(root, run)), snapshotHash: run.snapshot.snapshotHash };
 }
 function admission(task, run, root) {
   if (task.adapter === 'local-process') return { schemaVersion: 1, ok: true, allowed: true, reasonCode: 'NON_MODEL_PROCESS', basis: 'not_applicable', enforcementLevel: 'registered_local_processes', limitations: ['No model call is made by this adapter; subprocess-initiated external costs remain out of band'] };
