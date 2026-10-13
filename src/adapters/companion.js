@@ -18,6 +18,13 @@ export function companionCommand(descriptor, action, argv, cwd) {
   try { const result = JSON.parse(stdout); if (!result || typeof result !== 'object') throw Error(); return result; }
   catch { throw stateError('COMPANION_INVALID_RESPONSE', 'Companion did not return a nonempty JSON object'); }
 }
+export function preflightPi(descriptor, selection, effort, cwd) {
+  let observed;
+  try { observed = JSON.parse(execFileSync(process.execPath, [fileURLToPath(new URL('./pi-probe-worker.js', import.meta.url)), descriptor.binary, cwd, selection.modelId, effort], { encoding: 'utf8', timeout: 15000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'pipe'] })); }
+  catch { throw stateError('PI_IDENTITY_UNVERIFIED', 'Pi failed a no-prompt identity resolution with the exact companion model/effort argv'); }
+  if (observed.providerId !== selection.providerId || observed.modelId !== selection.modelId || observed.isStreaming) throw stateError('PI_PROVIDER_MODEL_MISMATCH', `Requested ${selection.providerId}/${selection.modelId}, but Pi resolved ${observed.providerId}/${observed.modelId}; no prompt was sent`);
+  return observed;
+}
 const snapshot = opts => runtimeStatus({ ...opts, runId: opts.runId, taskId: opts.taskId });
 function owned(opts) {
   const state = snapshot(opts), task = state.task;
@@ -44,6 +51,7 @@ export async function startCompanion(opts) {
     if (!auth.provider || auth.provider !== task.selection.providerId) return { ok: false, reasonCode: 'PROVIDER_MISMATCH', configuredProvider: auth.provider || null, requestedProvider: task.selection.providerId, reason: 'The companion cannot override provider; authorization must match the existing app-server provider' };
     descriptor.authentication = auth;
   }
+  if (task.adapter === 'pi-plugin-cc') descriptor.identityPreflight = preflightPi(descriptor, task.selection, effort, task.workspace);
   const prompt = fs.readFileSync(opts.promptFile, 'utf8');
   if (!prompt.trim() || Buffer.byteLength(prompt) > 1024 * 1024) throw stateError('INVALID_PROMPT', 'Prompt must be nonempty and at most 1 MiB');
   const reserved = acquireTask({ ...opts, controllerProcess: processIdentity() });
@@ -83,7 +91,8 @@ export async function cancelCompanion(opts) {
     while (!backendStopped(owned(identity).lease).stopped && Date.now() < until) await delay(50);
   }
   // The upstream payload is retained but never substitutes for process evidence.
-  const released = releaseLease(identity);
+  let released = releaseLease(identity);
+  for (let retry = 0; !released.ok && retry < 10; retry++) { await delay(100); released = releaseLease(identity); }
   return { ...released, cancelled: released.released === true, upstream, signals, reasonCode: released.ok ? 'CANCELLED' : 'STOP_UNCONFIRMED' };
 }
 export async function observeCompanion(opts, wantResult = false) {
@@ -102,7 +111,11 @@ export async function superviseCompanion(request) {
   const task = claimed.task;
   let jobId;
   try {
-    const argv = ['--background', '--fresh', '--model', task.adapter === 'pi-plugin-cc' ? `${task.selection.providerId}/${task.selection.modelId}` : task.selection.modelId, '--effort', request.effort, '--prompt-file', request.promptFile, ...(request.write ? ['--write'] : [])];
+    if (task.adapter === 'pi-plugin-cc') {
+      try { recordAdapterState(identity, { identityPreflight: preflightPi(descriptor, task.selection, request.effort, task.workspace) }); }
+      catch (error) { markLaunchFailed({ ...identity, error: { code: error.code, message: error.message } }); return { ok: false, reasonCode: error.code, reason: error.message, promptSent: false }; }
+    }
+    const argv = ['--background', '--fresh', '--model', task.selection.modelId, '--effort', request.effort, '--prompt-file', request.promptFile, ...(request.write ? ['--write'] : [])];
     const launched = companionCommand(descriptor, 'task', argv, task.workspace);
     jobId = launched.jobId;
     if (typeof jobId !== 'string' || !jobId) throw stateError('MISSING_JOB_ID', 'Start response did not identify a job; reservation retained');

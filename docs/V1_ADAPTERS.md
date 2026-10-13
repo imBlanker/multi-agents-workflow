@@ -8,7 +8,7 @@ No actual provider/model is invented from the requested values.
 Supported companion protocols are pinned to:
 
 - Kagandi/pi-plugin-cc a8c4db32fbd5b3b3a028b1dcb95cbba60c4cc07e,
-  plugin 1.2.0, explicit `task --background --fresh --model provider/model`.
+  plugin 1.2.0, explicit `task --background --fresh --model model` with a mandatory no-prompt get_state identity preflight.
 - imBlanker/codex-plugin-cc d6a979b35741f3654c6f0f64cea0642104e9105b,
   plugin 0.2.0, explicit `task --background --fresh --model model`.
 
@@ -32,8 +32,12 @@ checks the recorded process tree. An unbound/unknown process keeps its slot.
 Codex performs an app-server provider preflight; a provider mismatch is rejected
 because the companion cannot override it. Raw account/config responses are not
 logged. The requested model is explicit, but the pinned companion does not expose
-resolved model or reroutes, so those remain unknown. Pi receives provider/model
-and a fresh non-persistent one-shot session. Pi companion does not enforce
+resolved model or reroutes, so those remain unknown. Pi receives the explicit bare model ID and a fresh non-persistent one-shot session.
+Before acquisition and immediately before launch, the same Pi model/effort argv
+is resolved with get_state without sending a prompt. Any provider/model mismatch
+is rejected. A qualified provider/model string can match another provider’s exact
+model ID and is never treated as provider binding. This preflight is a separate
+observation; the pinned companion still does not expose per-turn resolved identity. Pi companion does not enforce
 read-only access, so researcher/advisor roles are rejected there. Codex requests
 its real upstream sandbox; metadata alone does not claim permission verification.
 Legacy review now requires runtime run/task/prompt identity and uses this path.
