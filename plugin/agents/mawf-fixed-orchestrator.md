@@ -1,3 +1,10 @@
+---
+name: mawf-fixed-orchestrator
+description: Fixed mode 1 orchestrator role; follow the supplied run snapshot and exact task specification
+tools: Read, Grep, Glob, Bash, Agent, TaskOutput, TaskStop
+disallowedTools: Edit, Write
+---
+
 # fixed mode 1 — Orchestrator
 
 Primary host: Claude Code. This role is coordination only. Use Core management

@@ -1,3 +1,10 @@
+---
+name: mawf-fixed-advisor
+description: Fixed mode 1 advisor role; follow the supplied run snapshot and exact task specification
+tools: Read, Grep, Glob, Bash
+disallowedTools: Edit, Write
+---
+
 # fixed mode 1 — Advisor
 
 Provide independent read-only advice. Preferred adapter is the explicitly selected

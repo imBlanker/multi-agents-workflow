@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const BUNDLED_CLI = "node --input-type=commonjs -e \"Promise.resolve().then(()=>import(require('node:url').pathToFileURL(require('node:path').resolve(process.env.CLAUDE_PLUGIN_ROOT,'../src/index.js')).href)).then(m=>m.main(process.argv.slice(1))).catch(e=>{console.error(e.message);process.exitCode=1})\" --";
+const LEGACY_BUNDLED_CLI = "node --input-type=commonjs -e \"Promise.resolve().then(()=>import(require('node:url').pathToFileURL(require('node:path').resolve(process.env.CLAUDE_PLUGIN_ROOT,'../src/index.js')).href)).then(m=>m.main(process.argv.slice(1))).catch(e=>{console.error(e.message);process.exitCode=1})\" --";
+export const BUNDLED_CLI = 'node "${CLAUDE_PLUGIN_ROOT}/../bin/mawf.js"';
 
 // Copied command files have no CLAUDE_PLUGIN_ROOT. Resolve against the package
 // that installed them; update/upgrade regenerates these paths for both hosts.
@@ -12,7 +13,7 @@ export function materializePluginAssets(files, packageRoot) {
   for (const file of files) {
     if (file.endsWith(".md")) {
       const source = fs.readFileSync(file, "utf8");
-      fs.writeFileSync(file, source.replaceAll(BUNDLED_CLI, invocation));
+      fs.writeFileSync(file, source.replaceAll(BUNDLED_CLI, invocation).replaceAll(LEGACY_BUNDLED_CLI, invocation));
     } else if (path.basename(file) === "hooks.json") {
       const config = JSON.parse(fs.readFileSync(file, "utf8"));
       // URL encoded module name has no shell metacharacters; import invokes the

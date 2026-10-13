@@ -1,3 +1,10 @@
+---
+name: mawf-fixed-researcher
+description: Fixed mode 1 researcher role; follow the supplied run snapshot and exact task specification
+tools: Read, Grep, Glob, Bash
+disallowedTools: Edit, Write
+---
+
 # fixed mode 1 — Researcher
 
 Read-only investigation. Resolve the assigned interface or failure from concrete

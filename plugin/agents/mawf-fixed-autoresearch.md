@@ -1,3 +1,9 @@
+---
+name: mawf-fixed-autoresearch
+description: Fixed mode 1 autoresearch role; follow the supplied run snapshot and exact task specification
+tools: Read, Grep, Glob, Bash, Edit, Write
+---
+
 # fixed mode 1 — Autoresearch worker
 
 Run only when objective, metric/unit/direction, baseline, allowed change scope,

@@ -1,0 +1,69 @@
+// Claude host capability probe and real headless entrypoint. Account summaries
+// are allowlisted; OAuth is not treated as unlimited free usage.
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { execFileSync, spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
+import { findExecutable } from './platform/index.js';
+import { isEnabled } from './integrations.js';
+import { processIdentity, stateError, assertSafePath, writeAtomic } from './atomic-state.js';
+import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection } from './runtime.js';
+import { signalKnownBackend } from './local-runtime.js';
+export function nativeHostCapability(settings, project) {
+  const selected = isEnabled(settings, 'host.claude-code');
+  const base = { host: 'claude-code', selected, installed: false, authenticated: 'unknown', compatible: 'unknown', ready: false, verificationStatus: 'unverified', actualBillingMode: 'unknown', actualProvider: null };
+  if (!selected) return { ...base, reasonCode: 'HOST_NOT_SELECTED' };
+  const binary = findExecutable('claude'); if (!binary) return { ...base, reasonCode: 'HOST_UNAVAILABLE' };
+  let auth;
+  try { auth = JSON.parse(execFileSync(binary, ['auth', 'status', '--json'], { cwd: project, encoding: 'utf8', timeout: 10000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'ignore'] })); } catch { return { ...base, binary, installed: true, reasonCode: 'AUTHENTICATION_UNVERIFIED' }; }
+  const method = auth.authMethod || auth.method || null;
+  const billing = ['claude.ai', 'oauth'].includes(method) ? 'subscription' : ['api_key', 'apiKey', 'api-key'].includes(method) ? 'api' : 'unknown';
+  return { ...base, binary, installed: true, authenticated: auth.loggedIn === true, compatible: true, authMethod: method, apiProvider: auth.apiProvider || null, actualProvider: auth.apiProvider === 'firstParty' ? 'anthropic' : null, actualBillingMode: billing, reasonCode: auth.loggedIn ? 'BILLING_AND_MODEL_POLICY_REQUIRED' : 'HOST_NOT_AUTHENTICATED', limitations: ['Authentication does not prove subscription quota or paid usage coverage', 'Existing unrelated host plugins/hooks may load', 'Main orchestrator delegation restriction is policy_only'] };
+}
+export function enforceNativeBilling(capability, selection) {
+  if (capability.authenticated !== true) throw stateError('HOST_AUTHENTICATION_UNVERIFIED', 'Claude is not verified authenticated');
+  if (capability.actualBillingMode === 'unknown') throw stateError('BILLING_IDENTITY_UNVERIFIED', 'The current Claude authentication mechanism does not establish billing mode');
+  if (selection.billingMode !== capability.actualBillingMode) throw stateError('BILLING_IDENTITY_MISMATCH', 'Requested billing mode differs from the existing Claude account; MAWF will not change account or relabel OAuth as API');
+  if (!capability.actualProvider || selection.providerId !== capability.actualProvider) throw stateError('PROVIDER_IDENTITY_UNVERIFIED', 'Requested provider is not proven by the current native host account');
+}
+export async function executeNative(opts) {
+  const state = runtimeStatus(opts), task = state.task;
+  const capability = nativeHostCapability(state.run.snapshot.settings, task.workspace);
+  enforceNativeBilling(capability, task.selection);
+  const reserved = acquireTask({ ...opts, controllerProcess: processIdentity() });
+  if (!reserved.allowed || reserved.action !== 'start') return { ...reserved, capability };
+  const identity = { ...opts, stateRoot: reserved.stateRoot, leaseId: reserved.leaseId, token: reserved.fencingToken };
+  const claim = claimLocalLaunch(identity); if (claim.action !== 'start') return claim;
+  const directory = path.join(reserved.stateRoot, 'runs', task.runId, 'native'); assertSafePath(directory); fs.mkdirSync(directory, { recursive: true });
+  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const request = Buffer.from(JSON.stringify({ runId: task.runId, project: state.run.snapshot.authorityProject, task: opts.description || '', nativeControllerTaskId: task.taskId })).toString('base64');
+  const argv = ['-p', `/mawf:run --request-base64 ${request}`, '--plugin-dir', path.join(packageRoot, 'plugin'), '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--forward-subagent-text', '--include-hook-events', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--tools', state.run.snapshot.modeId === 'fixed-1' ? 'Agent,Bash,Read,TaskOutput,TaskStop' : 'default', ...(state.run.snapshot.modeId === 'fixed-1' ? ['--agent', 'mawf:mawf-fixed-orchestrator'] : []), '--model', task.selection.modelId];
+  const child = spawn(capability.binary, argv, { cwd: task.workspace, detached: true, stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+  const outputPath = path.join(directory, 'host-events.jsonl');
+  let buffer = '', total = 0, interval, deadline, resultEvent = null, mainSessionId = null, cancelling = false;
+  const cancel = async () => { if (cancelling) return; cancelling = true; markCancelPending(identity); const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); signalKnownBackend(lease, 'SIGTERM'); await delay(1000); if (!backendStopped(lease).stopped) signalKnownBackend(lease, 'SIGKILL'); };
+  const scrub = value => { if (Array.isArray(value)) return value.filter(item => item?.type !== 'thinking').map(scrub); if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([key]) => !['thinking', 'signature', 'apiKey', 'api_key', 'authorization', 'access_token'].includes(key)).map(([key, entry]) => [key, scrub(entry)])); return value; };
+  child.stdout.on('data', chunk => {
+    total += chunk.length;
+    if (total > 32 * 1024 * 1024) { void cancel(); return; }
+    buffer += chunk.toString('utf8');
+    let end; while ((end = buffer.indexOf('\n')) >= 0) { const line = buffer.slice(0, end); buffer = buffer.slice(end + 1); if (!line.trim()) continue; let event; try { event = JSON.parse(line); } catch { continue; }
+      const clean = scrub(event); fs.appendFileSync(outputPath, JSON.stringify(clean) + '\n', { mode: 0o600 });
+      if (event.type === 'system' && event.subtype === 'init') { mainSessionId = event.session_id || null; const selectionGate = evaluateObservedSelection(identity, { modelId: event.model || null, providerId: capability.actualProvider }); if (!selectionGate.allowed) void cancel(); recordAdapterState(identity, { status: 'running', sessionId: mainSessionId, actualModel: event.model || null, actualProvider: capability.actualProvider, selectionGate, capability, transport: 'claude_stream_json', pluginPaths: (event.plugins || []).map(plugin => ({ name: plugin.name, path: plugin.path })), slashCommands: event.slash_commands || [], outputPath }); }
+      if (event.type === 'result') resultEvent = clean;
+    }
+  });
+  child.stderr.on('data', chunk => { if (total < 32 * 1024 * 1024) fs.appendFileSync(path.join(directory, 'stderr.log'), chunk.toString().replace(/(?:Bearer\s+|api[_-]?key\s*[:=]\s*)[^\s"']+/gi, '[REDACTED]').slice(0, 8192), { mode: 0o600 }); });
+  child.once('spawn', () => { bindJob({ ...identity, process: processIdentity(child.pid), processGroup: child.pid, jobId: `claude-process:${child.pid}` }); interval = setInterval(() => { try { const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); if (lease.cancelRequestedAt) void cancel(); else heartbeat(identity); } catch { void cancel(); } }, 1000); deadline = setTimeout(() => { void cancel(); }, task.maxDurationMs); });
+  const exit = await new Promise(resolve => { child.once('error', error => resolve({ code: null, error: error.message })); child.once('close', (code, signal) => resolve({ code, signal })); });
+  clearInterval(interval); clearTimeout(deadline);
+  const produced = exit.code === 0 && resultEvent && resultEvent.is_error !== true;
+  reportResult({ ...identity, status: produced ? 'produced' : 'failed', result: { ...exit, outputPath, sessionId: mainSessionId, costCoverage: { basis: 'client_estimate', amountUsd: resultEvent?.total_cost_usd ?? null, paymentVerified: false }, hostResult: resultEvent, enforcementLevel: 'registered_host_process_and_host_managed_children' } });
+  for (let wait = 0; wait < 20 && !backendStopped(runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId)).stopped; wait++) await delay(100);
+  const released = releaseLease(identity);
+  const run = runtimeStatus({ project: opts.project, runId: opts.runId }).run;
+  const acceptance = released.ok && run.candidate ? acceptCandidate({ project: opts.project, stateRoot: identity.stateRoot, runId: opts.runId }) : null;
+  return { ...released, hostSessionId: mainSessionId, outputPath, acceptance, produced, capability };
+}

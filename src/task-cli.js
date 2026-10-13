@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { freezeCandidate, submitEvidence, acceptCandidate, acceptanceStatus, createRun, addTask, acquireTask, bindJob, heartbeat, reportResult, releaseLease, resumeRun, runtimeStatus, queryAdmission } from './runtime.js';
+import { completeHostTask, freezeCandidate, submitEvidence, acceptCandidate, acceptanceStatus, createRun, addTask, acquireTask, bindJob, heartbeat, reportResult, releaseLease, resumeRun, runtimeStatus, queryAdmission } from './runtime.js';
 import { dispatchLocal, cancelLocal } from './local-runtime.js';
 import { processIdentity, stateError } from './atomic-state.js';
 const numeric = (flags, name) => {
@@ -31,6 +31,7 @@ export async function runTask(args, flags) {
   } else if (command === 'heartbeat') result = heartbeat({ ...opts, progress: flags.progress, waitingExternal: flags['waiting-external'] === true });
   else if (command === 'result') result = reportResult({ ...opts, status: flags.status, result: flags['result-json'] ? JSON.parse(flags['result-json']) : null });
   else if (command === 'cancel') result = await cancelLocal({ ...opts, graceMs: numeric(flags, 'grace-ms') });
+  else if (command === 'host-complete') result = completeHostTask({ ...opts, jobId: flags['job-id'], sessionId: flags['session-id'], receiptFile: flags['receipt-file'] });
   else if (command === 'release') result = releaseLease(opts);
   else if (command === 'resume') result = resumeRun(opts);
   else if (command === 'candidate') result = freezeCandidate({ ...opts, workspace: flags.workspace, scope: flags['scope-json'] ? JSON.parse(flags['scope-json']) : undefined, artifacts: flags['artifacts-json'] ? JSON.parse(flags['artifacts-json']) : undefined });

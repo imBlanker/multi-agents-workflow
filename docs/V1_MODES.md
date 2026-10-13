@@ -10,7 +10,7 @@ lease count. A mode change does not launch a model or reset the ledger.
 primary host, at least one independent Hacker (or the larger configured count),
 a real user path, an implementer who does not write tests, delegation-only
 orchestration, continuous refill, and a facts report after two same-cause
-failures. Prompts are in `plugin/agents/fixed-1/`. These are policy-only promises
+failures. Prompts are in `plugin/agents/mawf-fixed-*.md`. These are policy-only promises
 until a host adapter demonstrates enforcement. Pi/Codex fallbacks are proposed,
 with null actual actor/adapter/model until execution supplies evidence. An
 unavailable Claude host is reported honestly; users can select dynamic.

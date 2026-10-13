@@ -42,6 +42,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
       process.stdout.write('mawf — Core planning and optional host execution\nCommands: init, plan, config settings, mode, integrations, doctor, models, run, task, cost, guard, acquire, release, install, update, upgrade, uninstall\nOptional: inventory, advise, watchdog, routing, review, knowledge, bridge, companion, components, observer, archify\nUse --project PATH and --json. Enable integrations explicitly; no automatic upstream download.\n'); return 0;
     }
     if (['acquire', 'release', 'guard'].includes(command)) return await (await import('./task-cli.js')).runTaskCompatibility(command, flags);
+    if (command === 'run') return await (await import('./run-cli.js')).runExecution(rest, flags);
     if (command === 'autoresearch') return await (await import('./autoresearch/cli.js')).runAutoresearch(rest, flags);
     if (command === 'adapter') return await (await import('./adapters/cli.js')).runAdapter(rest, flags);
     if (command === 'task') return await (await import('./task-cli.js')).runTask(rest, flags);

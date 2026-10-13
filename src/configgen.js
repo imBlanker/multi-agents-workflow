@@ -386,6 +386,6 @@ function planMarkdown(plan, ccSwitch) {
 function fixedAgentMarkdown(agent, plan) {
   const role = agent.role.replace(/-\d+$/, '');
   const name = ['orchestrator', 'implementer', 'researcher', 'advisor', 'autoresearch', 'hacker'].includes(role) ? role : 'implementer';
-  const policy = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'plugin', 'agents', 'fixed-1', `${name}.md`), 'utf8');
+  const policy = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'plugin', 'agents', `mawf-fixed-${name}.md`), 'utf8');
   return `${policy}\n## Effective task\n\n${agent.task}\n\n## Frozen policy inputs\n\n- Mode: fixed-1 / ${plan.mode.version}\n- Configuration revision: ${plan.configRevision}\n- Minimum independent Hackers: ${plan.rolePolicy.minIndependentHackers}\n- Target/max concurrency: ${plan.scheduler.targetConcurrency}/${plan.scheduler.maxConcurrency}\n- Tools requested: ${agent.tools.join(', ')}\n- Model requested: ${agent.model || 'unresolved'}; actual model/actor are not inferred\n- Enforcement: policy_only until adapter evidence establishes more\n\nGenerated view; change settings.roleOverrides for future plans. Actual run/task/attempt/lease/candidate identities must be supplied by the dispatch spec.\n`;
 }

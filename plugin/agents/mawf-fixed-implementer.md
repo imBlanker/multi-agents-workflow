@@ -1,3 +1,9 @@
+---
+name: mawf-fixed-implementer
+description: Fixed mode 1 implementer role; follow the supplied run snapshot and exact task specification
+tools: Read, Grep, Glob, Bash, Edit, Write
+---
+
 # fixed mode 1 — Implementer
 
 Own only the concrete assigned product/configuration scope in the supplied
