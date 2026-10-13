@@ -1,3 +1,4 @@
+import { candidateIdentity, candidateAuthors, checkCandidateCurrent, validateEvidence, acceptanceDecision } from './verification.js';
 import { ChildProcess } from 'node:child_process';
 // Shared, fenced runtime ledger. A reservation is permission to start once,
 // never evidence that an unbound backend did not start.
@@ -174,9 +175,13 @@ export async function createRun(opts) {
         const maxConcurrency = opts.maxConcurrency ?? settings.scheduler.maxConcurrency;
         if (!Number.isSafeInteger(maxConcurrency) || maxConcurrency < 1) throw stateError('INVALID_RUN_CAP', 'Run concurrency must be a positive integer');
         const mode = getMode(settings.mode.id);
+        const verification = mode.id === 'fixed-1' ? modePolicy(mode.id, settings).verification : copy(settings.verification);
+        const requiredCapabilities = opts.requiredCapabilities ?? verification.requiredCapabilities ?? [];
+        if (!Array.isArray(requiredCapabilities) || !requiredCapabilities.every(item => typeof item === 'string' && item.trim())) throw stateError('INVALID_CAPABILITY_REQUIREMENTS', 'Required capabilities must be an array of names');
+        const acceptancePolicy = { ...verification, requireCounterexamples: mode.id === 'fixed-1' || verification.requireCounterexamples === true, requiredCapabilities: copy(requiredCapabilities), policySource: 'run_snapshot' };
         const snapshot = { schemaVersion: 1, runId, stateRoot: root, project, authorityProject: project, workspace, modeId: mode.id, modeVersion: mode.version, configRevision: settings.configRevision,
           rolePolicy: modePolicy(mode.id, settings), integrationSelection: copy(settings.integrations), capabilityStatus: listIntegrations().map(item => capabilityStatus(settings, item.id)),
-          settings: copy(settings), settingsHash: hash(settings), pricingHash: hash(pricing), maxConcurrency,
+          acceptancePolicy, settings: copy(settings), settingsHash: hash(settings), pricingHash: hash(pricing), maxConcurrency,
           effectiveConfigHash: hash({ settings, pricing }), createdAt: now() };
         snapshot.snapshotHash = hash(snapshot);
         const run = { runId, status: 'queued', snapshot, actorId: opts.actorId || 'unreported', tasks: {}, createdAt: snapshot.createdAt };
@@ -201,6 +206,11 @@ export function addTask(opts) {
     if (!run) throw stateError('RUN_NOT_FOUND', 'Create the parent run first');
     const taskId = identifier(opts.taskId, 'taskId');
     if (run.tasks[taskId]) throw stateError('TASK_EXISTS', 'Task IDs are not overwritten');
+    if (opts.verificationOf) {
+      if (!run.candidate || run.candidate.candidateId !== opts.verificationOf) throw stateError('CANDIDATE_REQUIRED', 'Verification must target the currently frozen candidate');
+      checkCandidateCurrent(run, run.candidate);
+      if (!opts.actorId || candidateAuthors(run).includes(opts.actorId)) throw stateError('AUTHOR_CANNOT_VERIFY', 'Verification needs a distinct non-author actor');
+    }
     const adapter = opts.adapter || 'host-managed';
     if (!['local-process', 'host-managed', 'codex-plugin-cc', 'pi-plugin-cc', 'autoresearch.pi'].includes(adapter)) throw stateError('ADAPTER_UNSUPPORTED', 'Unknown runtime adapter');
     if (adapter === 'local-process') {
@@ -214,7 +224,7 @@ export function addTask(opts) {
     const task = { taskId, runId: run.runId, role: opts.role || 'worker', adapter, status: 'queued', attempt: 1, generation: 0, currentLeaseId: null,
       modeId: run.snapshot.modeId, modeVersion: run.snapshot.modeVersion, configRevision: run.snapshot.configRevision, createdAt: now(),
       effectiveRolePolicy: copy(run.snapshot.rolePolicy), roleOverrides: copy(run.snapshot.settings.roleOverrides[opts.role || 'worker'] || {}),
-      actorId: opts.actorId || null, workspace: canonical(opts.workspace || run.snapshot.workspace || run.snapshot.project), maxDurationMs: duration,
+      verificationTarget: opts.verificationOf || null, actorId: opts.actorId || null, workspace: canonical(opts.workspace || run.snapshot.workspace || run.snapshot.project), maxDurationMs: duration,
       command: adapter === 'local-process' ? [...opts.command] : null,
       selection: adapter !== 'local-process' ? { role: opts.role || 'worker', providerId: opts.providerId ?? null, modelId: opts.modelId ?? null, billingMode: opts.billingMode ?? 'unknown', costMultiplier: opts.costMultiplier ?? 1 } : null,
       costKind: adapter === 'local-process' ? 'non_model_process' : 'model', enforcementLevel: adapter === 'local-process' ? 'registered_local_processes' : 'host_managed', limitations: ['Unregistered processes and external billing are outside this ledger'] };
@@ -281,6 +291,7 @@ export function acquireTask(opts) {
       if (opts.controllerProcess && processAlive(opts.controllerProcess) !== true) throw stateError('OWNER_IDENTITY_UNVERIFIED', 'Controller PID/start identity could not be verified');
       if (task.generation >= Number.MAX_SAFE_INTEGER) throw stateError('GENERATION_EXHAUSTED', 'Cannot allocate another fencing generation');
       const actor = opts.actorId || task.actorId || 'unreported';
+      if (task.verificationTarget && (candidateAuthors(run).includes(actor) || run.candidate?.candidateId !== task.verificationTarget)) throw stateError('AUTHOR_CANNOT_VERIFY', 'Verification actor or candidate no longer satisfies independence');
       if (task.actorId && task.actorId !== actor) event(ledger, 'task_reassigned', { runId: run.runId, taskId: task.taskId, from: task.actorId, to: actor, attempt });
       if (attempt !== task.attempt) {
         task.attemptHistory ||= [];
@@ -407,6 +418,15 @@ export function releaseLease(opts) {
     return { released: true, lease, task, reasonCode: 'RELEASED' };
   });
 }
+function visibleRun(run, ledger) {
+  const result = copy(run);
+  if (result.status === 'accepted' && result.candidate) {
+    const decision = acceptanceDecision(run, run.candidate, ledger);
+    result.acceptanceCurrent = decision;
+    if (!decision.allowed) { result.previousStatus = 'accepted'; result.status = 'blocked'; for (const task of Object.values(result.tasks)) if (task.status === 'accepted') task.status = 'blocked'; }
+  }
+  return result;
+}
 export function runtimeStatus(opts = {}) {
   const root = resolveStateRoot(opts.project, opts.stateRoot);
   const ledger = readLedger(root, true);
@@ -414,7 +434,7 @@ export function runtimeStatus(opts = {}) {
   const run = opts.runId ? ledger.runs[identifier(opts.runId, 'runId')] : undefined;
   if (opts.runId && !run) throw stateError('RUN_NOT_FOUND', 'Unknown run');
   return { schemaVersion: 1, ok: true, stateRoot: root, policy: copy(ledger.policy), revision: ledger.revision,
-    ...(run ? { run: copy(run), ...(opts.taskId ? { task: copy(taskFor(ledger, opts.runId, opts.taskId).task) } : {}) } : { runs: Object.values(ledger.runs).map(copy) }),
+    ...(run ? { run: visibleRun(run, ledger), ...(opts.taskId ? { task: visibleRun(run, ledger).tasks[taskFor(ledger, opts.runId, opts.taskId).task.taskId] } : {}) } : { runs: Object.values(ledger.runs).map(item => visibleRun(item, ledger)) }),
     leases: Object.values(ledger.leases).filter(lease => !opts.runId || lease.runId === opts.runId).map(copy),
     activeCount: Object.values(ledger.leases).filter(lease => ACTIVE.has(lease.status)).length, ...legacyStatus(root), enforcementLevel: 'registered_jobs_only' };
 }
@@ -510,4 +530,61 @@ export function queryAdmission(opts = {}) {
   const available = !terminal && active.length < cap && active.filter(lease => lease.runId === run.runId).length < run.snapshot.maxConcurrency && !ACTIVE.has(ledger.leases[task.currentLeaseId]?.status);
   return { schemaVersion: 1, ok: true, ...decision, allowed: decision.allowed && available, admission: false, stateRoot: root,
     reasonCode: terminal ? 'TASK_TERMINAL' : decision.allowed && !available ? 'CONCURRENCY_LIMIT' : decision.reasonCode, activeCount: active.length, projectCap: cap, runCap: run.snapshot.maxConcurrency };
+}
+
+export function freezeCandidate(opts) {
+  return transaction(opts, ledger => {
+    const run = ledger.runs[identifier(opts.runId, 'runId')];
+    if (!run) throw stateError('RUN_NOT_FOUND', 'Create a run first');
+    const tasks = Object.values(run.tasks).filter(task => !task.verificationTarget && (!opts.taskId || task.taskId === opts.taskId));
+    if (!tasks.length || tasks.some(task => !['produced', 'accepted', 'awaiting_acceptance', 'blocked'].includes(task.status))) throw stateError('CANDIDATE_NOT_PRODUCED', 'Selected author tasks must finish and release resources before candidate freeze');
+    if (Object.values(ledger.leases).some(lease => lease.runId === run.runId && ACTIVE.has(lease.status) && !run.tasks[lease.taskId].verificationTarget)) throw stateError('AUTHORS_STILL_ACTIVE', 'An author still owns active resources');
+    const authors = candidateAuthors(run);
+    if (!authors.length || tasks.some(task => !task.actorId || task.actorId === 'unreported')) throw stateError('AUTHOR_IDENTITY_REQUIRED', 'Freeze requires recorded author instances');
+    const content = candidateIdentity(run, opts);
+    if (candidateIdentity(run, opts).candidateId !== content.candidateId) throw stateError('CANDIDATE_BUSY', 'Candidate changed while its identity was collected');
+    const candidate = { ...content, runId: run.runId, taskId: opts.taskId || null, modeId: run.snapshot.modeId, modeVersion: run.snapshot.modeVersion, configRevision: run.snapshot.configRevision, implementerActorIds: authors, createdAt: now() };
+    run.candidateHistory ||= [];
+    if (run.candidate) run.candidateHistory.push(copy(run.candidate));
+    run.candidate = candidate; run.status = 'awaiting_acceptance';
+    for (const task of tasks) task.status = 'awaiting_acceptance';
+    delete run.acceptance;
+    event(ledger, 'candidate_frozen', { runId: run.runId, candidateId: candidate.candidateId, implementerActorIds: authors });
+    return { candidate, acceptancePolicy: run.snapshot.acceptancePolicy, status: run.status };
+  });
+}
+export function submitEvidence(opts, record) {
+  return transaction(opts, ledger => {
+    const run = ledger.runs[identifier(opts.runId, 'runId')];
+    if (!run?.candidate) throw stateError('CANDIDATE_REQUIRED', 'Freeze a candidate before recording evidence');
+    checkCandidateCurrent(run, run.candidate);
+    const evidence = validateEvidence(run, run.candidate, record, ledger);
+    run.evidence ||= [];
+    if (!run.evidence.some(item => item.evidenceId === evidence.evidenceId)) run.evidence.push(evidence);
+    if (evidence.verdict !== 'passed') run.status = 'blocked';
+    event(ledger, 'verification_evidence', { runId: run.runId, candidateId: run.candidate.candidateId, evidenceId: evidence.evidenceId, verdict: evidence.verdict });
+    return { evidence, status: run.status, decision: acceptanceDecision(run, run.candidate, ledger) };
+  });
+}
+export function acceptCandidate(opts) {
+  return transaction(opts, ledger => {
+    const run = ledger.runs[identifier(opts.runId, 'runId')];
+    if (!run?.candidate) throw stateError('CANDIDATE_REQUIRED', 'Freeze a candidate before acceptance');
+    const decision = acceptanceDecision(run, run.candidate, ledger);
+    if (run.candidate.taskId && Object.values(run.tasks).filter(task => !task.verificationTarget).length > 1) return { ok: false, reasonCode: 'FULL_RUN_CANDIDATE_REQUIRED', reason: 'Freeze the integrated run candidate without --task-id before accepting multiple author tasks' };
+    if (!decision.allowed) { run.status = 'blocked'; return { ok: false, status: run.status, ...decision }; }
+    if (Object.values(ledger.leases).some(lease => lease.runId === run.runId && ACTIVE.has(lease.status))) return { ok: false, reasonCode: 'RUN_STILL_ACTIVE', status: run.status };
+    const pending = Object.values(run.tasks).filter(task => !task.verificationTarget && !['produced', 'awaiting_acceptance', 'accepted'].includes(task.status));
+    if (pending.length) return { ok: false, reasonCode: 'AUTHOR_TASKS_INCOMPLETE', taskIds: pending.map(task => task.taskId) };
+    for (const task of Object.values(run.tasks)) if (!task.verificationTarget) task.status = 'accepted';
+    run.status = 'accepted'; run.acceptance = { ...decision, candidateId: run.candidate.candidateId, acceptedAt: now() };
+    event(ledger, 'candidate_accepted', { runId: run.runId, candidateId: run.candidate.candidateId, evidenceIds: decision.evidenceIds });
+    return { status: 'accepted', acceptance: run.acceptance };
+  });
+}
+export function acceptanceStatus(opts) {
+  const ledger = readLedger(resolveStateRoot(opts.project, opts.stateRoot));
+  const run = ledger.runs[identifier(opts.runId, 'runId')];
+  if (!run) throw stateError('RUN_NOT_FOUND', 'Unknown run');
+  return { schemaVersion: 1, ok: true, status: visibleRun(run, ledger).status, candidate: run.candidate || null, policy: run.snapshot.acceptancePolicy || run.snapshot.settings.verification, decision: run.candidate ? acceptanceDecision(run, run.candidate, ledger) : { allowed: false, reasonCode: 'CANDIDATE_REQUIRED' }, evidence: run.evidence || [], acceptance: run.acceptance || null };
 }

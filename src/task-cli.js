@@ -1,4 +1,5 @@
-import { createRun, addTask, acquireTask, bindJob, heartbeat, reportResult, releaseLease, resumeRun, runtimeStatus, queryAdmission } from './runtime.js';
+import fs from 'node:fs';
+import { freezeCandidate, submitEvidence, acceptCandidate, acceptanceStatus, createRun, addTask, acquireTask, bindJob, heartbeat, reportResult, releaseLease, resumeRun, runtimeStatus, queryAdmission } from './runtime.js';
 import { dispatchLocal, cancelLocal } from './local-runtime.js';
 import { processIdentity, stateError } from './atomic-state.js';
 const numeric = (flags, name) => {
@@ -11,9 +12,9 @@ export async function runTask(args, flags) {
   const opts = { project: flags.project, stateRoot: flags['state-root'], runId: flags['run-id'], taskId: flags['task-id'], leaseId: flags['lease-id'], token: flags.token,
     role: flags.role, actorId: flags['actor-id'], attempt: numeric(flags, 'attempt'), launchKey: flags['launch-key'] };
   let result;
-  if (command === 'create') result = await createRun({ ...opts, maxConcurrency: numeric(flags, 'max-concurrency') });
+  if (command === 'create') result = await createRun({ ...opts, maxConcurrency: numeric(flags, 'max-concurrency'), requiredCapabilities: flags['required-capabilities'] ? String(flags['required-capabilities']).split(',') : undefined });
   else if (command === 'add') result = addTask({ ...opts, adapter: flags.adapter, command: flags['command-json'] ? JSON.parse(flags['command-json']) : undefined,
-    workspace: flags.workspace, maxDurationMs: numeric(flags, 'max-duration-ms'), modelId: flags.model, providerId: flags.provider, billingMode: flags.billing,
+    verificationOf: flags['verification-of'], workspace: flags.workspace, maxDurationMs: numeric(flags, 'max-duration-ms'), modelId: flags.model, providerId: flags.provider, billingMode: flags.billing,
     costMultiplier: flags.multiplier === undefined ? undefined : Number(flags.multiplier) });
   else if (command === 'acquire' || command === 'dispatch') {
     let controllerProcess = null;
@@ -32,6 +33,10 @@ export async function runTask(args, flags) {
   else if (command === 'cancel') result = await cancelLocal({ ...opts, graceMs: numeric(flags, 'grace-ms') });
   else if (command === 'release') result = releaseLease(opts);
   else if (command === 'resume') result = resumeRun(opts);
+  else if (command === 'candidate') result = freezeCandidate({ ...opts, workspace: flags.workspace, scope: flags['scope-json'] ? JSON.parse(flags['scope-json']) : undefined, artifacts: flags['artifacts-json'] ? JSON.parse(flags['artifacts-json']) : undefined });
+  else if (command === 'evidence') { if (!flags.input) throw stateError('EVIDENCE_INPUT_REQUIRED', 'Use --input FILE'); result = submitEvidence(opts, JSON.parse(fs.readFileSync(flags.input, 'utf8'))); }
+  else if (command === 'accept') result = acceptCandidate(opts);
+  else if (command === 'acceptance') result = acceptanceStatus(opts);
   else if (command === 'guard') result = queryAdmission(opts);
   else if (command === 'list' || command === 'status') result = runtimeStatus(opts);
   else throw stateError('UNKNOWN_TASK_ACTION', 'Use task create/list/status/add/acquire/dispatch/bind/heartbeat/result/cancel/release/resume');
