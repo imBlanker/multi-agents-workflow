@@ -23,13 +23,13 @@ export function publishGeneration(project, plan, context, opts, render) {
     const projected = [];
     const current = new Set(files.map(file => file.path));
     const warnings = [...generated.warnings];
-    const migrationOwned = new Set();
+    const migrationOwned = new Map();
     const migration = context.pricingContext?.settings?.migrations?.legacyV1;
-    if (migration?.backupDir) for (const entry of readStrict(path.join(migration.backupDir, 'manifest.json'), { records: [] }).records) if (entry.type === 'file') migrationOwned.add(entry.rel);
+    if (migration?.backupDir) for (const entry of readStrict(path.join(migration.backupDir, 'manifest.json'), { records: [] }).records) if (entry.type === 'file') migrationOwned.set(entry.rel, entry.sha256);
     for (const file of files) {
       if (file.path.startsWith('runtime' + path.sep)) continue;
       const target = safe(views, file.path);
-      if (fs.existsSync(target) && (!owned.has(file.path) || sha(fs.readFileSync(target)) !== owned.get(file.path)) && !migrationOwned.has(file.path)) { warnings.push(`Preserved unowned compatibility file ${target}; current generation is ${directory}`); continue; }
+      if (fs.existsSync(target) && (!owned.has(file.path) || sha(fs.readFileSync(target)) !== owned.get(file.path)) && !(old === null && migrationOwned.get(file.path) === sha(fs.readFileSync(target)))) { warnings.push(`Preserved unowned compatibility file ${target}; current generation is ${directory}`); continue; }
       fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(path.join(directory, file.path), target); projected.push(file);
       if (!explicit) { const stable = safe(root, file.path); fs.mkdirSync(path.dirname(stable), { recursive: true }); fs.copyFileSync(path.join(directory, file.path), stable); }
     }

@@ -3,7 +3,7 @@ import { checkPriceGate } from './pricegate.js';
 export function applyRoleOverrides(plan, settings, context) {
   const modeId = settings.mode.id;
   const scoped = settings.modeOverrides?.[modeId] || {};
-  const overrides = { ...settings.roleOverrides, ...(scoped.roleOverrides || {}) };
+  const overrides = Object.fromEntries([...new Set([...Object.keys(settings.roleOverrides || {}), ...Object.keys(scoped.roleOverrides || {})])].map(role => [role, { ...(settings.roleOverrides?.[role] || {}), ...(scoped.roleOverrides?.[role] || {}) }]));
   const disabled = new Set(scoped.disabledRoles || settings.disabledRoles || []);
   const mandatory = role => modeId === 'fixed-1' && ['orchestrator', 'implementer', 'hacker'].includes(role.replace(/-\d+$/, ''));
   plan.agents = plan.agents.filter(agent => !disabled.has(agent.role) || mandatory(agent.role));

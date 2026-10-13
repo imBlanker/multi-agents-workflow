@@ -62,6 +62,7 @@ export function migrateLegacyProject(project, opts = {}) {
   const imported = legacyOverrides(directory);
   if (opts.dryRun) return { ok: true, dryRun: true, sources, importedRoles: Object.keys(imported.roles), warnings: imported.warnings };
   return withLock(directory, 'migration', () => {
+    const existingSettings = readStrict(settingsPath(project), null);
     const current = readSettings(project);
     if (current.migrations?.legacyV1?.state === 'applied') return { ok: true, applied: false, reasonCode: 'ALREADY_MIGRATED', migration: current.migrations.legacyV1 };
     const id = `legacy-v1-${Date.now()}-${crypto.randomUUID()}`;
@@ -75,7 +76,7 @@ export function migrateLegacyProject(project, opts = {}) {
     const migration = { id, state: 'applied', backupDir, appliedAt: new Date().toISOString(), source: 'legacy_user_configuration', importedRoles: Object.keys(imported.roles), warnings: imported.warnings };
     const changed = updateSettings(project, draft => {
       for (const [role, override] of Object.entries(imported.roles)) draft.roleOverrides[role] = { ...override, ...(draft.roleOverrides[role] || {}) };
-      if (Number.isSafeInteger(imported.scheduler) && imported.scheduler > 0) { draft.scheduler.maxConcurrency = imported.scheduler; draft.scheduler.targetConcurrency = Math.min(draft.scheduler.targetConcurrency, imported.scheduler); }
+      if (!existingSettings?.scheduler && Number.isSafeInteger(imported.scheduler) && imported.scheduler > 0) { draft.scheduler.maxConcurrency = imported.scheduler; draft.scheduler.targetConcurrency = Math.min(draft.scheduler.targetConcurrency, imported.scheduler); }
       draft.customAgents ||= {};
       for (const [role, override] of Object.entries(imported.roles)) if (!/^(orchestrator|implementer|researcher|reviewer|advisor|autoresearch|hacker)(-\d+)?$/.test(role)) draft.customAgents[role] = { ...override, ...(draft.customAgents[role] || {}) };
       draft.legacyApprovalHistory = [...(draft.legacyApprovalHistory || []), ...imported.approvals];
