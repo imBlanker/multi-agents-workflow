@@ -25,7 +25,7 @@ const OPTIONAL = {
   observer: 'observer', archify: 'archify', 'archify-registry': 'archify',
 };
 function failure(error, json) {
-  const result = { schemaVersion: 1, ok: false, reasonCode: error.code ?? 'COMMAND_FAILED', reason: error.message };
+  const result = { schemaVersion: 1, ok: false, allowed: false, reasonCode: error.code ?? 'COMMAND_FAILED', reason: error.message };
   (json ? process.stdout : process.stderr).write((json ? JSON.stringify(result) : `mawf: ${result.reason}`) + '\n');
   return 1;
 }
@@ -41,6 +41,8 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     if (!command || command === 'help' || flags.help) {
       process.stdout.write('mawf — Core planning and optional host execution\nCommands: init, plan, config settings, mode, integrations, doctor, models, run, task, cost, guard, acquire, release, install, update, upgrade, uninstall\nOptional: inventory, advise, watchdog, routing, review, knowledge, bridge, companion, components, observer, archify\nUse --project PATH and --json. Enable integrations explicitly; no automatic upstream download.\n'); return 0;
     }
+    if (['acquire', 'release', 'guard'].includes(command)) return await (await import('./task-cli.js')).runTaskCompatibility(command, flags);
+    if (command === 'task') return await (await import('./task-cli.js')).runTask(rest, flags);
     const project = path.resolve(typeof flags.project === 'string' ? flags.project : process.cwd());
     const settings = readSettings(project);
     let required = OPTIONAL[command];

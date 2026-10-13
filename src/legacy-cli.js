@@ -274,6 +274,7 @@ function costCfgFrom(flags, ctx) {
     windowSeconds: Number(flags.window) || 3600,
     usageEnabled: isEnabled(ctx.settings, "cc-switch.usage"),
     usageProvider: ctx.usageProvider,
+    project: flags.project, stateRoot: flags["state-root"],
     enforcement: ctx.settings.cost.enforcement,
     dbPath: flags.db || ctx.cc.dbPath || undefined,
   };
