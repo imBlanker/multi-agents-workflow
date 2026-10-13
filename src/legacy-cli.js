@@ -1,3 +1,4 @@
+import { readGeneratedPlan } from './generated.js';
 import { readStrict } from './atomic-state.js';
 // Compatibility commands share Core selection; no optional module is imported.
 import fs from 'node:fs';
@@ -165,7 +166,7 @@ function cmdAddAgent(f, flags) {
   const project = flags.project ? path.resolve(flags.project) : process.cwd();
   const wfPath = path.join(project, ".mawf", "workflow.json");
   if (!exists(wfPath)) { out(`no workflow.json; run \`mawf plan\` first`, false); return; }
-  const plan = readJson(wfPath);
+  const plan = readGeneratedPlan(project);
   const role = flags.role || `agent-${plan.agents.length + 1}`;
   if (plan.agents.some((a) => a.role === role)) { out(`role ${role} already exists`, false); return; }
   const ctx = loadCtx({ dbPath: flags.db });
@@ -208,7 +209,7 @@ function cmdRemoveAgent(f, flags) {
   const project = flags.project ? path.resolve(flags.project) : process.cwd();
   const wfPath = path.join(project, ".mawf", "workflow.json");
   if (!exists(wfPath)) { out(`no workflow.json`, false); return; }
-  const plan = readJson(wfPath);
+  const plan = readGeneratedPlan(project);
   const role = flags.role;
   const before = plan.agents.length;
   plan.agents = plan.agents.filter((a) => a.role !== role);
@@ -226,7 +227,7 @@ function cmdRun(f, flags) {
   const project = flags.project ? path.resolve(flags.project) : process.cwd();
   const wfPath = path.join(project, ".mawf", "workflow.json");
   if (!exists(wfPath)) { out(`no workflow.json; run \`mawf plan\` first`, false); return; }
-  const plan = readJson(wfPath);
+  const plan = readGeneratedPlan(project);
   const g = graphFromPlan({ ...plan, name: plan.name });
   const { batches, notes } = g.topoBatches();
   out(`Execution guide for ${plan.name} (primary: ${plan.primary})`);
@@ -284,7 +285,7 @@ function readPlanCost(flags) {
   const project = flags.project ? path.resolve(flags.project) : process.cwd();
   const wf = path.join(project, ".mawf", "workflow.json");
   if (exists(wf)) {
-    const p = readJson(wf);
+    const p = readGeneratedPlan(project);
     return p.cost || {};
   }
   return {};

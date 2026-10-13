@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+import { publishGeneration } from './generated.js';
 import { checkPriceGate } from './pricegate.js';
 // @ts-check
 // Generate per-agent / per-role, independently-editable config files from a
@@ -27,6 +29,10 @@ import { graphFromPlan, WorkflowGraph } from "./graph.js";
  * @returns {{ dir: string, files: string[], warnings: string[] }}
  */
 export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
+  const piViews = opts.materializePi && !opts.outDir ? plan.agents.filter(a => a.appType === "pi" || a.agent === "pi").map(a => ({ path: `.pi/agents/maw-${slug(a.role)}.md`, content: piAgentFileMd(a, plan) })) : [];
+  return publishGeneration(projectRoot, plan, ccSwitch, { ...opts, piViews }, renderConfigs);
+}
+function renderConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
   const maw = opts.outDir ? path.resolve(opts.outDir) : path.join(projectRoot, ".mawf");
   const agentsDir = path.join(maw, "agents");
   const files = [];
@@ -59,7 +65,7 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
     },
     codex: { enabled: plan.codex.enabled, when: plan.codex.when, review_scopes: plan.codex.reviewScopes },
     models: Object.fromEntries(plan.agents.map((a) => [a.role, { model: a.model, app_type: a.appType }])),
-    editable: "Every field above is user-editable. Re-run `mawf plan` to regenerate from signals.",
+    editable: "Generated compatibility view; edit .mawf/settings.json roleOverrides/scheduler instead.",
   });
   files.push(writeText(path.join(maw, "config.yaml"), configYaml));
 
@@ -102,11 +108,11 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
       review_required: a.reviewRequired,
       task: a.task,
       price: price || { model_id: a.model, source: "unknown", estimated: true, notes: ["Price not found in cc-switch or fallback."] },
-      editable: "All fields are independently editable. The runner reads this file at execute time.",
+      editable: "Generated view; edit settings.roleOverrides or use add-agent/remove-agent. Runs use frozen snapshots.",
     }));
 
     // agent definition (portable)
-    files.push(writeText(`${base}.md`, agentMarkdown(a, price, plan)));
+    files.push(writeText(`${base}.md`, plan.mode?.id === "fixed-1" ? fixedAgentMarkdown(a, plan) : agentMarkdown(a, price, plan)));
 
     // When the host is pi (or this specific agent is pi-native), also
     // materialize the native pi agent file so pi-subagents can spawn it
@@ -171,7 +177,7 @@ released until a human acts. Thresholds: Input > $${gate.thresholdIn}/1M Tokens 
     : "";
   return `# Agent: ${a.role}
 ${gateBlock}${coveredNote}
-> Part of workflow \`${plan.name}\` (primary: ${plan.primary}). Edit freely; the runner re-reads this file at execute time.
+> Part of workflow \`${plan.name}\` (primary: ${plan.primary}). Generated view. Edit .mawf/settings.json roleOverrides; running tasks keep their frozen snapshot.
 
 ## Identity
 
@@ -191,7 +197,7 @@ ${a.tools.map((t) => `- \`${t}\``).join("\n")}
 
 ## Cost control
 
-- **Per-agent cost-rate limit**: $${a.costRateLimitUsdPerMin}/min (USD, real inference spend measured from cc-switch logs)
+- **Per-agent cost-rate limit**: $${a.costRateLimitUsdPerMin}/min (USD, best-effort estimate where selected telemetry applies)
 - **Concurrency**: ${a.concurrency}
 - **Review required at this agent's output**: ${a.reviewRequired ? "yes" : "no"}
 
@@ -375,4 +381,11 @@ function planMarkdown(plan, ccSwitch) {
   lines.push("");
   lines.push("Edit any file under `.mawf/agents/` directly; the runner reads them at execute time.");
   return lines.join("\n") + "\n";
+}
+
+function fixedAgentMarkdown(agent, plan) {
+  const role = agent.role.replace(/-\d+$/, '');
+  const name = ['orchestrator', 'implementer', 'researcher', 'advisor', 'autoresearch', 'hacker'].includes(role) ? role : 'implementer';
+  const policy = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'plugin', 'agents', 'fixed-1', `${name}.md`), 'utf8');
+  return `${policy}\n## Effective task\n\n${agent.task}\n\n## Frozen policy inputs\n\n- Mode: fixed-1 / ${plan.mode.version}\n- Configuration revision: ${plan.configRevision}\n- Minimum independent Hackers: ${plan.rolePolicy.minIndependentHackers}\n- Target/max concurrency: ${plan.scheduler.targetConcurrency}/${plan.scheduler.maxConcurrency}\n- Tools requested: ${agent.tools.join(', ')}\n- Model requested: ${agent.model || 'unresolved'}; actual model/actor are not inferred\n- Enforcement: policy_only until adapter evidence establishes more\n\nGenerated view; change settings.roleOverrides for future plans. Actual run/task/attempt/lease/candidate identities must be supplied by the dispatch spec.\n`;
 }

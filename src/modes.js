@@ -1,3 +1,4 @@
+import { fixedPlan } from './fixed-plan.js';
 import { stateError } from './atomic-state.js';
 
 const registry = new Map([
@@ -11,12 +12,18 @@ export function getMode(id) {
   if (!mode) throw stateError('UNKNOWN_MODE', `Unknown mode ${id}; available: ${[...registry.keys()].join(', ')}`);
   return structuredClone(mode);
 }
-export function modePolicy(id) { return getMode(id).rolePolicy; }
+export function modePolicy(id, settings = {}) {
+  const mode = getMode(id);
+  if (mode.id === 'dynamic') return { ...mode.rolePolicy, ...(settings.scheduler ? { scheduler: structuredClone(settings.scheduler) } : {}) };
+  const minIndependentHackers = Math.max(1, settings.verification?.minIndependentHackers ?? 1);
+  return { ...mode.rolePolicy, minIndependentHackers, requireRealUserPath: true, scheduler: structuredClone(settings.scheduler ?? { targetConcurrency: 3, maxConcurrency: 6 }),
+    verification: { ...(settings.verification ?? {}), minIndependentHackers, requireRealUserPath: true }, implementation: { writesTests: false }, enforcementLevel: 'policy_only' };
+}
 export function createModePlan(id, context = {}) {
   const mode = getMode(id);
   if (mode.id === 'dynamic') {
     if (typeof context.dynamicPlanner !== 'function') throw stateError('PLANNER_REQUIRED', 'dynamic requires the existing planner entrypoint');
     return context.dynamicPlanner(context);
   }
-  return { mode, phases: ['implement', 'autoresearch-if-applicable', 'advisor-if-triggered', 'freeze-candidate', 'independent-hack', 'repair-if-needed', 'deliver'], rolePolicy: mode.rolePolicy, scheduler: context.settings?.scheduler ?? { targetConcurrency: 3, maxConcurrency: 6 }, executionStatus: 'plan_only' };
+  return fixedPlan(context);
 }

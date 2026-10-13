@@ -6,7 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { withLock, readStrict, writeAtomic, assertSafePath, processIdentity, processAlive, stateError } from './atomic-state.js';
 import { readSettings, settingsPath } from './settings.js';
-import { getMode } from './modes.js';
+import { getMode, modePolicy } from './modes.js';
 import { listIntegrations, capabilityStatus } from './integrations.js';
 import { loadContext } from './context.js';
 import { resolvePrice } from './pricing.js';
@@ -159,7 +159,7 @@ export async function createRun(opts) {
         if (!Number.isSafeInteger(maxConcurrency) || maxConcurrency < 1) throw stateError('INVALID_RUN_CAP', 'Run concurrency must be a positive integer');
         const mode = getMode(settings.mode.id);
         const snapshot = { schemaVersion: 1, runId, stateRoot: root, project, authorityProject: project, workspace, modeId: mode.id, modeVersion: mode.version, configRevision: settings.configRevision,
-          rolePolicy: mode.rolePolicy, integrationSelection: copy(settings.integrations), capabilityStatus: listIntegrations().map(item => capabilityStatus(settings, item.id)),
+          rolePolicy: modePolicy(mode.id, settings), integrationSelection: copy(settings.integrations), capabilityStatus: listIntegrations().map(item => capabilityStatus(settings, item.id)),
           settings: copy(settings), settingsHash: hash(settings), pricingHash: hash(pricing), maxConcurrency,
           effectiveConfigHash: hash({ settings, pricing }), createdAt: now() };
         snapshot.snapshotHash = hash(snapshot);
@@ -197,6 +197,7 @@ export function addTask(opts) {
     if (!Number.isSafeInteger(duration) || duration < 1) throw stateError('INVALID_DURATION', 'maxDurationMs must be a positive integer');
     const task = { taskId, runId: run.runId, role: opts.role || 'worker', adapter, status: 'queued', attempt: 1, generation: 0, currentLeaseId: null,
       modeId: run.snapshot.modeId, modeVersion: run.snapshot.modeVersion, configRevision: run.snapshot.configRevision, createdAt: now(),
+      effectiveRolePolicy: copy(run.snapshot.rolePolicy), roleOverrides: copy(run.snapshot.settings.roleOverrides[opts.role || 'worker'] || {}),
       actorId: opts.actorId || null, workspace: canonical(opts.workspace || run.snapshot.workspace || run.snapshot.project), maxDurationMs: duration,
       command: adapter === 'local-process' ? [...opts.command] : null,
       selection: adapter === 'host-managed' ? { role: opts.role || 'worker', providerId: opts.providerId ?? null, modelId: opts.modelId ?? null, billingMode: opts.billingMode ?? 'unknown', costMultiplier: opts.costMultiplier ?? 1 } : null,
@@ -258,12 +259,12 @@ export function acquireTask(opts) {
       if (task.generation >= Number.MAX_SAFE_INTEGER) throw stateError('GENERATION_EXHAUSTED', 'Cannot allocate another fencing generation');
       const actor = opts.actorId || task.actorId || 'unreported';
       if (task.actorId && task.actorId !== actor) event(ledger, 'task_reassigned', { runId: run.runId, taskId: task.taskId, from: task.actorId, to: actor, attempt });
-      task.actorId = actor; task.actorIds = [...new Set([...(task.actorIds || []), actor])];
       if (attempt !== task.attempt) {
         task.attemptHistory ||= [];
         task.attemptHistory.push({ attempt: task.attempt, generation: task.generation, leaseId: task.currentLeaseId, status: task.status, actorId: task.actorId, result: task.result ?? null });
         delete task.result;
       }
+      task.actorId = actor; task.actorIds = [...new Set([...(task.actorIds || []), actor])];
       task.attempt = attempt; task.generation++;
       const lease = { leaseId: crypto.randomUUID(), fencingToken: `${task.generation}:${crypto.randomUUID()}`, generation: task.generation,
         runId: run.runId, taskId: task.taskId, attempt, launchKey, actorId: opts.actorId || task.actorId || 'unreported', role: task.role, adapter: task.adapter,

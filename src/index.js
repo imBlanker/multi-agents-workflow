@@ -51,7 +51,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     const deferredBridgeSelection = command === 'bridge' && rest[0] === 'serve' && typeof flags.project !== 'string';
     if (required && !deferredBridgeSelection && !isEnabled(settings, required)) throw stateError('INTEGRATION_DISABLED', `${required} is disabled; use mawf integrations enable ${required} --project ${project}`);
     if (['pricing', 'usage', 'approve-model'].includes(command)) return await (await import('./pricing-cli.js')).runPricing(command, rest, flags);
-    if (['init', 'plan', 'doctor', 'models', 'inventory', 'install', 'uninstall', 'update', 'upgrade', 'components'].includes(command)) {
+    if (['init', 'plan', 'doctor', 'models', 'inventory', 'install', 'uninstall', 'update', 'upgrade', 'components', 'migrate', 'add-agent', 'remove-agent'].includes(command)) {
       return await (await import('./core-cli.js')).runCore(command, rest, flags, deps);
     }
     if (['advise', 'observer', 'watchdog', 'routing', 'review'].includes(command)) return await (await import('./optional-cli.js')).runOptional(command, rest, flags);

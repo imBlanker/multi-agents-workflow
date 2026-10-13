@@ -1,3 +1,7 @@
+import { authorityProject } from './runtime.js';
+import { createModePlan } from './modes.js';
+import { applyRoleOverrides } from './role-overrides.js';
+import { migrateLegacyProject, rollbackLegacyProject } from './legacy-migration.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -94,23 +98,48 @@ export async function upgradeLifecycle(opts = {}, deps = {}) {
 
 export async function runCore(command, args, flags = {}, deps = {}) {
   const project = path.resolve(typeof flags.project === 'string' ? flags.project : process.cwd());
-  let settings = readSettings(project);
+  const configProject = authorityProject(project);
+  if (flags.out && command !== 'plan') throw stateError('OUT_REQUIRES_PLAN', '--out is only supported by plan and writes exclusively to its target');
+  if (['plan', 'init', 'add-agent', 'remove-agent'].includes(command) && !flags.out) migrateLegacyProject(configProject, { auto: true });
+  let settings = readSettings(configProject);
   if (command === 'init') {
     if (flags.host) {
       const host = flags.host === 'claude' ? 'claude-code' : flags.host;
-      settings = setIntegration(project, `host.${host}`, true);
+      settings = setIntegration(configProject, `host.${host}`, true);
     }
-    if (flags.trellis && !flags['no-trellis']) settings = setIntegration(project, 'trellis', true);
-    if (flags['no-trellis']) settings = setIntegration(project, 'trellis', false);
-    if (!fs.existsSync(settingsPath(project))) settings = updateSettings(project, draft => draft);
+    if (flags.trellis && !flags['no-trellis']) settings = setIntegration(configProject, 'trellis', true);
+    if (flags['no-trellis']) settings = setIntegration(configProject, 'trellis', false);
+    if (!fs.existsSync(settingsPath(configProject))) settings = updateSettings(configProject, draft => draft);
     // Preserve an existing explicit marker byte-for-byte. New unselected
     // workspaces use native storage, without deleting legacy data.
     const marker = path.join(project, '.mawf', 'workspace.json');
     if (!fs.existsSync(marker) && !isEnabled(settings, 'trellis')) writeAtomic(marker, { version: 1, backend: 'mawf', trellis: false });
     workspaceLayout(project);
   }
+  if (command === 'migrate') return emit(args[0] === 'rollback' ? rollbackLegacyProject(configProject, { force: !!flags.force }) : migrateLegacyProject(configProject, { dryRun: !!flags['dry-run'] }), flags);
+  if (command === 'add-agent' || command === 'remove-agent') {
+    const role = flags.role;
+    if (!role || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(role)) throw stateError('INVALID_ROLE', 'Provide a plain --role identifier');
+    settings = updateSettings(configProject, draft => {
+      draft.modeOverrides ||= {};
+      const scoped = draft.modeOverrides[draft.mode.id] ||= {};
+      scoped.customAgents ||= {}; scoped.roleOverrides ||= {}; scoped.disabledRoles ||= [];
+      if (command === 'remove-agent') scoped.disabledRoles = [...new Set([...scoped.disabledRoles, role])];
+      else {
+        scoped.disabledRoles = scoped.disabledRoles.filter(value => value !== role);
+        const entry = { ...(scoped.customAgents[role] || {}) };
+        for (const field of ['model', 'task', 'agent']) if (flags[field] !== undefined) entry[field] = flags[field];
+        if (flags.tools) entry.tools = String(flags.tools).split(',');
+        if (flags.provider) entry.providerId = flags.provider;
+        if (flags.billing) entry.billingMode = flags.billing;
+        if (flags.concurrency) entry.concurrency = Number(flags.concurrency);
+        scoped.customAgents[role] = entry; scoped.roleOverrides[role] = { ...(scoped.roleOverrides[role] || {}), ...entry };
+      }
+    });
+    command = 'plan';
+  }
   if (command === 'init' || command === 'plan') {
-    const ctx = await loadContext(project, { dbPath: flags.db });
+    const ctx = await loadContext(configProject, { dbPath: flags.db, settings });
     const { planWorkflow, inferSignals } = await import('./planner.js');
     const { probeProject } = await import('./probe.js');
     const { generateConfigs } = await import('./configgen.js');
@@ -118,12 +147,12 @@ export async function runCore(command, args, flags = {}, deps = {}) {
       ...(flags['task-type'] ? { taskType: flags['task-type'] } : {}), ...(flags.parallel ? { parallelizableSubtasks: Number(flags.parallel) } : {}),
       ...(flags['max-iter'] ? { maxIterations: Number(flags['max-iter']) } : {}), ...(flags.hitl ? { needHITL: true } : {}), ...(flags.persistence ? { needPersistence: true } : {}),
       ...(flags.risk ? { risk: flags.risk } : {}), ...(flags.context ? { contextNeed: flags.context } : {}), ...(flags.value ? { valuePerRun: flags.value } : {}) };
-    const plan = planWorkflow(signals, { host: ctx.host, ccSwitch: ctx.cc, codexPlan: null,
-      cost: { maxConcurrency: settings.scheduler.maxConcurrency, perAgentLimitUsdPerMin: Number(flags['per-agent-limit']) || 1, totalLimitUsdPerMin: Number(flags['total-limit']) || 3 } });
+    const planContext = { settings, signals, host: ctx.host, ccSwitch: ctx.cc, codexPlan: null, cost: { maxConcurrency: settings.scheduler.maxConcurrency, perAgent: settings.cost.perAgentLimitUsdPerMin ?? 5, total: settings.cost.totalLimitUsdPerMin ?? 10 }, dynamicPlanner: context => planWorkflow(context.signals, context) };
+    const plan = applyRoleOverrides(createModePlan(settings.mode.id, planContext), settings, ctx);
     plan.mode = settings.mode; plan.configRevision = settings.configRevision;
     const generated = generateConfigs(project, plan, ctx.cc, { ...(flags.out ? { outDir: path.resolve(flags.out) } : {}), materializePi: isEnabled(settings, 'pi-subagents-lite') && !flags.out });
     const stages = command === 'init' ? await optionalInit(project, settings, flags, ctx) : [];
-    const execution = ctx.host.app === 'unknown' ? { available: false, reason: 'No execution host selected; configuration and planning remain available' } : { selectedHost: ctx.host.app, installed: ctx.host.installed, authenticated: 'unknown', ready: 'unknown' };
+    const execution = plan.execution ?? (ctx.host.app === 'unknown' ? { available: false, reason: 'No execution host selected; configuration and planning remain available' } : { selectedHost: ctx.host.app, installed: ctx.host.installed, authenticated: 'unknown', ready: 'unknown' });
     return emit({ ok: !stages.some(stage => stage.ok === false), project, modeId: settings.mode.id, configRevision: settings.configRevision, plan, generated, stages, execution }, flags);
   }
   if (command === 'doctor') return emit(await (await import('./selected-doctor.js')).diagnoseSelected(project, settings), flags);
