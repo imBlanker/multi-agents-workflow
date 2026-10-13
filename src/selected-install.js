@@ -1,3 +1,4 @@
+import { workspaceLayout } from './workspace/backend.js';
 import { resolvePiAgentRoot } from './util.js';
 // Install only selected surfaces; preserve all previously owned files when a
 // selection is disabled. Disabling a project is not a global uninstall.
@@ -14,6 +15,7 @@ const PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const installRoot = opts => path.resolve(opts.installStateDir || process.env.MAWF_INSTALL_STATE_DIR || path.join(os.homedir(), '.mawf'));
 const OPTIONAL_SKILLS = { 'mawf-archify': 'archify', 'mawf-knowledge': 'knowledge', 'mawf-compound': 'compound', 'mawf-decision': 'decision', 'mawf-grill': 'grill', vendor: 'grill' };
 export function installSelected(opts = {}) {
+  workspaceLayout(opts.project || process.cwd());
   if (opts.dryRun) return installTransaction(opts);
   return withLock(installRoot(opts), "installer", () => installTransaction(opts), { timeoutMs: 30000 });
 }
