@@ -11,7 +11,7 @@ function currentLease(opts) {
   const status = runtimeStatus(opts);
   return status.leases.find(lease => lease.leaseId === opts.leaseId);
 }
-function signalKnownBackend(lease, signal) {
+export function signalKnownBackend(lease, signal) {
   if (!lease.ownerProcess) return { sent: false, reason: 'No backend binding; launch may be running elsewhere' };
   if (process.platform !== 'linux') return { sent: false, reason: 'Identity-safe process-tree signaling is unsupported on this platform' };
   const actual = linuxProcess(lease.ownerProcess.pid);

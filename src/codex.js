@@ -50,7 +50,7 @@ export function status() {
   let reason = "ok";
   if (!binary) reason = "codex binary not found on PATH";
   else if (!companion) reason = "codex-plugin-cc companion script not found";
-  return { binary, companion, ready: !!(binary && companion), reason };
+  return { binary, companion, installed: !!(binary && companion), ready: false, authenticated: 'unknown', compatible: 'unknown', verificationStatus: 'unverified', reason: reason === 'ok' ? 'Installation found; actual adapter execution is unverified' : reason };
 }
 
 /**
@@ -66,33 +66,9 @@ export function status() {
  * @param {boolean} [opts.background] spawn detached
  * @returns {{ ok: boolean, stdout: string, stderr: string, code: number|null }}
  */
-export function runReview(opts = {}) {
-  const companion = opts.companion ?? findCodexCompanion();
-  if (!companion) {
-    return { ok: false, stdout: "", stderr: "codex-plugin-cc companion script not found; install codex-plugin-cc or run `mawf doctor`", code: null };
-  }
-  const cmd = opts.command ?? "review";
-  const args = [cmd];
-  if (opts.mode === "wait") args.push("--wait");
-  if (opts.mode === "background") args.push("--background");
-  if (opts.base) args.push("--base", opts.base);
-  if (opts.scope) args.push("--scope", opts.scope);
-  if (opts.task && cmd === "delegate") args.push("--", opts.task);
-
-  const spawnFn = opts.spawnFn ?? spawnSync;
-  const r = spawnFn(process.execPath, [companion, ...args], {
-    encoding: "utf8",
-    timeout: opts.timeoutMs ?? 120000,
-    maxBuffer: 16 * 1024 * 1024,
-    cwd: opts.cwd,
-    env: { ...process.env, CLAUDE_PLUGIN_ROOT: path.dirname(path.dirname(companion)) },
-  });
-  return {
-    ok: r.status === 0,
-    stdout: r.stdout ?? "",
-    stderr: r.stderr ?? "",
-    code: r.status,
-  };
+export async function runReview(opts = {}) {
+  if (!opts.runId || !opts.taskId || !opts.promptFile) return { ok: false, code: null, stdout: '', stderr: 'Review requires a runtime run/task and promptFile', reasonCode: 'TASK_CONTEXT_REQUIRED' };
+  return (await import('./adapters/companion.js')).startCompanion({ ...opts, write: false });
 }
 
 /**

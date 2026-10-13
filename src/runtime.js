@@ -202,7 +202,7 @@ export function addTask(opts) {
     const taskId = identifier(opts.taskId, 'taskId');
     if (run.tasks[taskId]) throw stateError('TASK_EXISTS', 'Task IDs are not overwritten');
     const adapter = opts.adapter || 'host-managed';
-    if (!['local-process', 'host-managed'].includes(adapter)) throw stateError('ADAPTER_UNSUPPORTED', 'This runtime slice supports local-process and explicit host-managed reservations');
+    if (!['local-process', 'host-managed', 'codex-plugin-cc', 'pi-plugin-cc', 'autoresearch.pi'].includes(adapter)) throw stateError('ADAPTER_UNSUPPORTED', 'Unknown runtime adapter');
     if (adapter === 'local-process') {
       if (opts.modelId || opts.providerId || opts.billingMode) throw stateError('LOCAL_MODEL_IDENTITY_CONFLICT', 'Non-model local commands cannot relabel a model request as free');
       if (opts.command?.[0] && /^(claude|codex|pi|dsh)(?:\.exe|\.cmd)?$/i.test(path.basename(opts.command[0]))) throw stateError('MODEL_RUNNER_REQUIRES_ADAPTER', 'Known model runners require the model adapter and shared price gate');
@@ -216,7 +216,7 @@ export function addTask(opts) {
       effectiveRolePolicy: copy(run.snapshot.rolePolicy), roleOverrides: copy(run.snapshot.settings.roleOverrides[opts.role || 'worker'] || {}),
       actorId: opts.actorId || null, workspace: canonical(opts.workspace || run.snapshot.workspace || run.snapshot.project), maxDurationMs: duration,
       command: adapter === 'local-process' ? [...opts.command] : null,
-      selection: adapter === 'host-managed' ? { role: opts.role || 'worker', providerId: opts.providerId ?? null, modelId: opts.modelId ?? null, billingMode: opts.billingMode ?? 'unknown', costMultiplier: opts.costMultiplier ?? 1 } : null,
+      selection: adapter !== 'local-process' ? { role: opts.role || 'worker', providerId: opts.providerId ?? null, modelId: opts.modelId ?? null, billingMode: opts.billingMode ?? 'unknown', costMultiplier: opts.costMultiplier ?? 1 } : null,
       costKind: adapter === 'local-process' ? 'non_model_process' : 'model', enforcementLevel: adapter === 'local-process' ? 'registered_local_processes' : 'host_managed', limitations: ['Unregistered processes and external billing are outside this ledger'] };
     run.tasks[taskId] = task;
     run.status = Object.values(ledger.leases).some(lease => lease.runId === run.runId && ACTIVE.has(lease.status)) ? 'running' : 'queued';
@@ -318,7 +318,7 @@ export function bindJob(opts) {
       if (lease.ownerProcess.pid !== opts.process?.pid || lease.ownerProcess.startIdentity !== opts.process?.startIdentity) throw stateError('JOB_ALREADY_BOUND', 'Lease is already bound to another process');
       return { lease, bound: false, reasonCode: 'BIND_REPLAY' };
     }
-    if (task.adapter !== 'local-process') {
+    if (task.adapter === 'host-managed') {
       if (!opts.jobId) throw stateError('JOB_ID_REQUIRED', 'Host-managed bindings need an actual job/session identity');
       lease.jobId = opts.jobId; lease.sessionId = opts.sessionId ?? null; lease.status = task.status = lease.cancelRequestedAt ? 'cancel_pending' : 'running'; lease.launchState = 'host_bound';
       event(ledger, 'host_job_bound', { leaseId: lease.leaseId, jobId: lease.jobId });
@@ -338,6 +338,16 @@ export function bindJob(opts) {
     lease.status = task.status = lease.cancelRequestedAt ? 'cancel_pending' : 'running'; lease.launchState = 'bound'; lease.heartbeatAt = now();
     event(ledger, 'job_bound', { leaseId: lease.leaseId, jobId: lease.jobId });
     return { bound: true, lease };
+  });
+}
+export function recordAdapterState(opts, patch) {
+  return transaction(opts, ledger => {
+    const { task, lease } = fenced(ledger, opts);
+    if (!['codex-plugin-cc', 'pi-plugin-cc', 'autoresearch.pi'].includes(task.adapter)) throw stateError('ADAPTER_UNSUPPORTED', 'Not an adapter task');
+    task.adapterState = { ...(task.adapterState || {}), ...copy(patch), updatedAt: now() };
+    if (patch.sessionId && !lease.sessionId) lease.sessionId = patch.sessionId;
+    event(ledger, 'adapter_observed', { taskId: task.taskId, runId: task.runId, leaseId: lease.leaseId, status: patch.status || null });
+    return { task, lease };
   });
 }
 export function heartbeat(opts) {
@@ -428,7 +438,7 @@ export function resumeRun(opts) {
 export function markLaunchFailed(opts) {
   return transaction(opts, ledger => {
     const { task, lease } = fenced(ledger, opts);
-    if (lease.ownerProcess || lease.launchState !== 'launching') throw stateError('LAUNCH_STATE_CONFLICT', 'Only the local adapter can settle a failed spawn before binding');
+    if (lease.ownerProcess || !['permission_issued', 'launching'].includes(lease.launchState)) throw stateError('LAUNCH_STATE_CONFLICT', 'Only the local adapter can settle a failed spawn before binding');
     lease.launchState = 'confirmed_not_started'; task.result = { status: 'failed', error: opts.error, reportedAt: now(), attempt: lease.attempt, leaseId: lease.leaseId };
     releaseInLedger(ledger, task, lease); return { lease, task };
   });
@@ -436,7 +446,7 @@ export function markLaunchFailed(opts) {
 export function claimLocalLaunch(opts) {
   return transaction(opts, ledger => {
     const { run, task, lease } = fenced(ledger, opts);
-    if (task.adapter !== 'local-process') throw stateError('ADAPTER_UNSUPPORTED', 'Only the local process adapter can launch here');
+    if (task.adapter === 'host-managed') throw stateError('ADAPTER_UNSUPPORTED', 'Host-managed launch requires its host owner');
     if (lease.cancelRequestedAt || lease.status === 'cancel_pending') return { action: 'observe', lease, task, reasonCode: 'CANCEL_PENDING' };
     if (lease.launchState !== 'permission_issued') return { action: 'observe', lease, task };
     lease.launchState = 'launching'; lease.status = task.status = 'launching'; lease.controllerProcess = processIdentity();
@@ -476,6 +486,12 @@ export function observeLocalExit(opts, child) {
     event(ledger, 'backend_exit_observed', { leaseId: lease.leaseId, ...lease.exitReceipt });
     return { lease };
   });
+}
+export function evaluateObservedSelection(opts, selection) {
+  const root = resolveStateRoot(opts.project, opts.stateRoot);
+  const ledger = readLedger(root);
+  const { run, task } = taskFor(ledger, opts.runId, opts.taskId);
+  return admission({ ...task, selection: { ...task.selection, ...selection } }, run, root);
 }
 export function queryAdmission(opts = {}) {
   const root = resolveStateRoot(opts.project, opts.stateRoot);

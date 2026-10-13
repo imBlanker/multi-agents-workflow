@@ -22,8 +22,8 @@ export async function runOptional(command, args, flags) {
     return emit({ spool: adapter.spoolPath(project), selected: true });
   }
   if (command === 'review') {
-    const adapter = await import('./codex.js');
-    return emit(await adapter.runReview({ project, cwd: project, task: flags.task || args.join(' '), prompt: flags.prompt || args.join(' '), scope: flags.scope || 'uncommitted', model: flags.model, effort: flags.effort }));
+    if (!flags['run-id'] || !flags['task-id'] || !flags['prompt-file']) throw stateError('TASK_CONTEXT_REQUIRED', 'Review requires an existing codex-plugin-cc task and --run-id/--task-id/--prompt-file; all model launches use the shared ledger');
+    return await (await import('./adapters/cli.js')).runAdapter(['start'], { ...flags, write: false });
   }
   if (command === 'watchdog') {
     const adapter = await import('./watchdog/scan.js');
