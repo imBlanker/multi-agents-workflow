@@ -1,3 +1,4 @@
+import { normalizeQueueTask } from './run-queue-policy.js';
 import { readNativeRequest } from './native-request.js';
 import { observedParentSelection, inheritNativeSelection } from './native-selection.js';
 // Real execution entrypoints and a ready-work queue. Guide output is explicit.
@@ -40,13 +41,17 @@ async function prepare(opts) {
 async function queue(opts, spec) {
   if (!Array.isArray(spec.tasks) || !spec.tasks.length) throw stateError('INVALID_RUN_SPEC', 'Spec requires a nonempty tasks array');
   const state = runtimeStatus(opts), run = state.run;
+  spec = { ...spec, tasks: spec.tasks.map(item => normalizeQueueTask(run, item)) };
   const file = executionFile(state.stateRoot, run.runId);
   const plan = readStrict(file)?.plan || planFor(run, frozenRunPricing(opts));
   const names = new Set(spec.tasks.map(task => task.taskId));
   if (names.size !== spec.tasks.length) throw stateError('DUPLICATE_TASK', 'Queue IDs must be unique');
   for (const item of spec.tasks) {
     if (typeof item.taskId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(item.taskId) || typeof item.prompt !== 'string' || !item.prompt.trim()) throw stateError('INVALID_RUN_SPEC', 'Each task requires a plain taskId and concrete prompt');
-    if (!Number.isFinite(item.expectedMinutes) || item.expectedMinutes <= 0 || !Array.isArray(item.scope) || !Array.isArray(item.dependsOn) || item.writesProduct !== false && !item.scope.length) throw stateError('INVALID_RUN_SPEC', 'Each task needs expectedMinutes, scope and dependsOn arrays');
+    if (!Number.isFinite(item.expectedMinutes) || item.expectedMinutes <= 0) throw stateError('INVALID_EXPECTED_MINUTES', `${item.taskId}: expectedMinutes must be a positive number`);
+    if (!Array.isArray(item.scope)) throw stateError('INVALID_TASK_SCOPE', `${item.taskId}: scope must be an array of owned paths`);
+    if (!Array.isArray(item.dependsOn)) throw stateError('INVALID_TASK_DEPENDENCIES', `${item.taskId}: dependsOn must be an array of task IDs`);
+    if (item.writesProduct !== false && !item.scope.length) throw stateError('WRITABLE_SCOPE_REQUIRED', `${item.taskId}: a product-writing task needs a nonempty scope; verification tasks must be registered against a frozen candidate`);
     for (const dependency of item.dependsOn) if (!names.has(dependency) && !run.tasks[dependency]) throw stateError('MISSING_DEPENDENCY', `Unknown dependency ${dependency}`);
   }
   const visiting = new Set(), visited = new Set();
@@ -105,7 +110,7 @@ function next(opts) {
     const roleName = task.role.replace(/-\d+$/, '');
     const template = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'plugin', 'agents', run.snapshot.modeId === 'fixed-1' ? `mawf-fixed-${roleName}.md` : `${roleName}.md`);
     const roleInstructions = fs.existsSync(template) ? fs.readFileSync(template, 'utf8') : '';
-    selected.push({ task, action: 'invoke_native_agent_now', agentType: nativeAgentType(task, run.snapshot.modeId), modelSelection: 'inherit_via_agent_definition', lease: { leaseId: reservation.leaseId, token: reservation.fencingToken }, prompt: `${roleInstructions}\n\n${spec.prompt}\n\nMAWF_LEASE:${JSON.stringify({ project: run.snapshot.authorityProject, stateRoot: state.stateRoot, runId: run.runId, taskId: task.taskId, leaseId: reservation.leaseId, token: reservation.fencingToken })}\nRun/task/attempt: ${run.runId}/${task.taskId}/${task.attempt}. Actor: ${task.actorId}. Mode/revision: ${task.modeId}/${task.configRevision}. Workspace: ${task.workspace}. Owned scope: ${JSON.stringify(spec.scope)}. Expected minutes: ${spec.expectedMinutes}. At twice this duration report facts. Preserve other workers. ${task.verificationTarget ? 'Independent verification: never modify the product; collect counterexamples and a real user path against candidate ' + task.verificationTarget : run.snapshot.modeId === 'fixed-1' ? 'Implementation: do not create or maintain tests; produce a candidate for an independent Hacker.' : ''}\nReturn actual output paths and factual failures; no self-acceptance.` });
+    selected.push({ task, action: 'invoke_native_agent_now', agentType: nativeAgentType(task, run.snapshot.modeId), modelSelection: 'inherit_via_agent_definition', lease: { leaseId: reservation.leaseId, token: reservation.fencingToken }, prompt: `${roleInstructions}\n\n${spec.prompt}\n\nMAWF_LEASE:${JSON.stringify({ project: run.snapshot.authorityProject, stateRoot: state.stateRoot, runId: run.runId, taskId: task.taskId, leaseId: reservation.leaseId, token: reservation.fencingToken })}\nRun/task/attempt: ${run.runId}/${task.taskId}/${task.attempt}. Actor: ${task.actorId}. Mode/revision: ${task.modeId}/${task.configRevision}. Workspace: ${task.workspace}. Owned scope: ${JSON.stringify(spec.scope)}. Expected minutes: ${spec.expectedMinutes}. At twice this duration report facts. Preserve other workers. ${task.verificationTarget ? 'Independent verification: never modify the product; collect counterexamples and a real user path against candidate ' + task.verificationTarget + '. Read ' + path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'V1_VERIFICATION.md') + '; use the real MAWF_LEASE above and the actual bound job identity. Write independent evidence outside product scope and return paths. Do not call task evidence or task accept: the coordinator registers your evidence only after your produced result and confirmed release.' : run.snapshot.modeId === 'fixed-1' ? 'Implementation: do not create or maintain tests; produce a candidate for an independent Hacker.' : ''}\nReturn actual output paths and factual failures; no self-acceptance.` });
   }
   const waiting = Object.values(run.tasks).filter(task => task.status === 'queued').map(task => task.taskId);
   return { ok: blockers.length === 0 || selected.length > 0, runId: run.runId, dispatches: selected, blockers, waiting, activeCount: active.length, targetConcurrency: run.snapshot.settings.scheduler.targetConcurrency, refill: 'Invoke next after each completion; do not wait for a whole batch', enforcementLevel: 'host_managed' };

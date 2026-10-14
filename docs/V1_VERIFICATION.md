@@ -24,6 +24,18 @@ Freeze an integrated run without `--task-id` before accepting multiple author
 tasks. `.mawf/settings.json` is represented by the run's immutable effective
 configuration, not by a subsequently changed default for another run.
 
+For native fixed-1 queues, task candidate also returns hackerQueueExample.
+`run queue` defaults fixed Hacker tasks to writesProduct:false and freezes the
+current candidate ID into verificationOf when omitted. It rejects explicit
+product writes, a different target, missing candidate and author identities.
+Explicit verificationOf queues in other modes get the same verification policy;
+dynamic custom role names alone do not. Normalized values remain visible in the
+queued task's dispatchSpec. The target does not follow future candidate changes.
+Hacker prompts supply the concrete independent oracle and evidence directory;
+Core adds actual lease identity at dispatch. Never include invented lease tokens.
+The Hacker returns evidence file paths; only after produced and released does
+the coordinator call task evidence. Acceptance policy remains unchanged.
+
 Register a distinct verification job using ordinary `task add` plus
 `--verification-of CANDIDATE_ID --actor-id HACKER`. This status is established
 before execution, not inferred from a role name. A prior author cannot become

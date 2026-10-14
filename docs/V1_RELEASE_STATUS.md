@@ -48,8 +48,15 @@ queueing and real Agent dispatch, and produced an artifact. It stopped at the
 or end-to-end acceptance occurred. The raw failed traces remain preserved.
 The next local repair uses a validated short request reference, the default
 built-in tool pool with role-specific restrictions, exact result CLI instructions,
-and original correlated native completion events as receipts. These changes
-remain pending independent checks and a complete real workflow recheck. Ordinary already-open Slash sessions lack the observed
+and original correlated native completion events as receipts. Those changes
+passed 15 independent no-model checks, followed by an a506fda live run with a
+4.378-second prepare, actual artifact, exact raw receipt and candidate freeze.
+That run ended at its deadline before Hacker execution after two queue errors
+from omitted writesProduct:false. Write was available but denied under dontAsk.
+A subsequent local candidate normalizes fixed verification queue policy, emits
+an exact Hacker handoff, and selects per-launch acceptEdits for fixed-1 ordinary
+workspace edits while preserving existing deny rules and main role restrictions.
+Those follow-up changes still need independent checks and live confirmation. Ordinary already-open Slash sessions lack the observed
 parent-model binding and cannot silently acquire it from caller labels.
 
 Windows v1 execution/process-tree behavior and strict current measured payment

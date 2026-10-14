@@ -1,3 +1,4 @@
+import { fixedVerificationHandoff } from './run-queue-policy.js';
 import { captureNativeReceipt } from './native-receipt.js';
 import { candidateIdentity, candidateAuthors, checkCandidateCurrent, validateEvidence, acceptanceDecision } from './verification.js';
 import { ChildProcess } from 'node:child_process';
@@ -581,7 +582,7 @@ export function freezeCandidate(opts) {
     for (const task of tasks) task.status = 'awaiting_acceptance';
     delete run.acceptance;
     event(ledger, 'candidate_frozen', { runId: run.runId, candidateId: candidate.candidateId, implementerActorIds: authors });
-    return { candidate, acceptancePolicy: run.snapshot.acceptancePolicy, status: run.status };
+    return { candidate, acceptancePolicy: run.snapshot.acceptancePolicy, status: run.status, ...fixedVerificationHandoff(run) };
   });
 }
 export function submitEvidence(opts, record) {

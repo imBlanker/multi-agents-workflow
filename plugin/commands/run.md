@@ -72,7 +72,14 @@ environment. Do not use an unrelated global mawf executable.
    (`run respec`) or independent advisor route, not inline takeover or blind retry.
 5. After implementation/integration, call `task candidate --run-id R --workspace
    INTEGRATED_WORKSPACE --project P`. Scope includes relevant dirty/untracked
-   product and build artifacts. Create at least the snapshot's minimum independent
+   product and build artifacts; pass explicit --scope-json and --artifacts-json
+   when the assigned product scope is narrower than the workspace. Use the
+   returned hackerQueueExample, adapting only the concrete user oracle and
+   evidence directory; do not retype role definitions or evidence schemas.
+   Fixed-1 Hacker queues default writesProduct:false and bind an omitted
+   verificationOf to the current frozen candidate at queue time. Explicit product
+   writes or a different target are rejected. Do not fabricate lease/token fields;
+   run next supplies them. Create at least the snapshot's minimum independent
    Hacker tasks through run queue, with verificationOf equal to candidateId,
    new actor IDs and new Agent calls without resume; each must return a unique actual agentId. They must be different from
    every recorded author/attempt. Their prompts require counterexamples, an
@@ -80,7 +87,9 @@ environment. Do not use an unrelated global mawf executable.
    A Hacker never repairs its own findings. Failures go to a new implementation
    task/spec; freeze a new candidate and repeat the affected independent checks.
 6. Have each Hacker deliver the JSON evidence contract in
-   `${CLAUDE_PLUGIN_ROOT}/../docs/V1_VERIFICATION.md`; register it with
+   `${CLAUDE_PLUGIN_ROOT}/../docs/V1_VERIFICATION.md`; Hackers write evidence
+   and return paths, never register it while their job is still active. After
+   their task result is produced and host-complete confirms release, register it with
    `task evidence --run-id R --input FILE --project P`. An author's result, exit 0,
    directory existence, source match, or HTTP 200 is not independent acceptance.
    If there is no registered outer native controller, call `task accept`; otherwise

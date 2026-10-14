@@ -18,7 +18,14 @@ Fixed roles are top-level `mawf-fixed-*` agents with real frontmatter/tool lists
 Native CLI uses the default built-in tool pool; each role's frontmatter narrows
 that pool. A global Read/Bash-only pool would also disable Implementer Write/Edit.
 The fixed main role remains mawf:mawf-fixed-orchestrator; existing permission
-rules and dontAsk mode still apply. Bash can still write files: orchestration-only
+rules still apply. Fixed-1 native sessions use acceptEdits so an authorized
+Implementer can use Write/Edit for ordinary files inside the working directory;
+dynamic sessions keep dontAsk. The main fixed role still excludes Write/Edit.
+Claude ignores permissionMode in plugin subagent definitions, so this is an
+explicit per-launch mode, not a claimed role-specific permission override.
+Managed/user/project deny rules and protected paths still apply. This does not
+grant arbitrary external directory writes or enforce each task's owned scope.
+Bash can still write files: orchestration-only
 and file scope are policy_only. This follows the Claude Code CLI and subagent
 tool contracts: https://code.claude.com/docs/en/cli-reference and
 https://code.claude.com/docs/en/sub-agents.
@@ -46,6 +53,18 @@ conflicting fields or frozen role overrides are rejected before any task is
 added. External adapter tasks use explicit selection{providerId,modelId,billingMode}.
 Optional fields include actorId, adapter (default host-managed), maxDurationMs,
 writesProduct, verificationOf. Writable work needs a concrete nonempty scope.
+For fixed-1 hacker roles (including hacker-N), Core defaults writesProduct to
+false and verificationOf to the currently frozen candidate ID; the resulting
+concrete values are persisted in dispatchSpec. Explicit verificationOf tasks in
+any mode receive the same non-product-writing policy. An explicit true,
+conflicting target, missing candidate or author actor is rejected with a specific
+reason. Dynamic custom roles named hacker do not acquire this fixed-role policy.
+A later candidate never redirects an already queued verification task. Field
+errors distinguish expectedMinutes, array types and an empty writable scope.
+The task candidate response supplies hackerQueueExample for the exact candidate.
+Adapt its prompt's concrete oracle/evidence directory; run next supplies real
+lease identity and the verification contract. Hackers return their evidence paths;
+the coordinator registers evidence only after produced and confirmed release.
 
 `run next --run-id R` returns currently ready tasks up to target concurrency,
 respecting dependencies, overlapping write scopes, the project cap, and model
@@ -163,3 +182,15 @@ Implementer Write, a model-reconstructed receipt and an invalid result CLI flag.
 The short request, per-role tool pool and raw receipt changes above address those
 specific observations. Their full live acceptance remains pending; reduced
 startup overhead is a hypothesis until independently measured.
+
+### Follow-up from the a506fda real run
+
+The short reference reached prepare in 4.378 seconds (previous run 133.328),
+and the native receipt exactly matched the completed host-event line. Actual
+Agent output and candidate freeze succeeded. Hacker queueing failed twice because
+scope was empty and writesProduct was omitted; the run reached its deadline
+without independent acceptance. Write was available but denied under dontAsk,
+so default tool availability alone did not prove working edit permission.
+The next candidate normalizes verification queue policy and uses bounded native
+acceptEdits as described above. These follow-up changes still need independent
+interface checks and live confirmation; no acceptance is inferred from them.

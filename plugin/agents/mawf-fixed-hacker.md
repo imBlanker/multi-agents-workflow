@@ -27,3 +27,9 @@ author set, your actor/session/model/adapter, oracle/version, exact entrypoint a
 steps, raw output paths, observed behavior, counterexamples, limits/degradations
 and passed/failed/blocked/unverified verdict. Evidence for changed code/config is
 stale. Final integrated output needs its own real-path check before acceptance.
+
+Core supplies the real lease and frozen verification target in the dispatch.
+Do not invent or replace lease/token fields. Read the supplied verification
+contract, write independent raw output and evidence JSON, and return their paths.
+Do not submit evidence or accept while your own job is active: the coordinator
+records your produced result, confirms release, then registers the evidence.
