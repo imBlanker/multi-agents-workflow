@@ -22,8 +22,10 @@ export function normalizeQueueTask(run, input) {
 export function fixedVerificationHandoff(run) {
   if (run.snapshot.modeId !== 'fixed-1' || !run.candidate) return {};
   const candidate = run.candidate;
+  let taskId = 'hack-candidate', suffix = 1;
+  while (Object.hasOwn(run.tasks, taskId)) taskId = `hack-candidate-${suffix++}`;
   return {
-    hackerQueueExample: { tasks: [{ taskId: 'hack-candidate', role: 'hacker',
+    hackerQueueExample: { tasks: [{ taskId, role: 'hacker',
       prompt: 'Independently check the frozen candidate against the original user oracle, including counterexamples and the real user path. Read the supplied verification contract. Write raw output and evidence JSON outside product scope, then return their paths; the coordinator registers evidence after your job completes and releases.',
       expectedMinutes: 1, scope: [], dependsOn: Object.values(run.tasks).filter(task => !task.verificationTarget && !task.coordinationOnly).map(task => task.taskId),
       workspace: candidate.workspace, selection: 'inherit', writesProduct: false, verificationOf: candidate.candidateId }] },
