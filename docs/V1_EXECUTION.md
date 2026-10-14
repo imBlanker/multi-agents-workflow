@@ -25,10 +25,11 @@ Claude ignores permissionMode in plugin subagent definitions, so this is an
 explicit per-launch mode, not a claimed role-specific permission override.
 Slash-command allowed-tools apply only to the turn that invoked /mawf:run; a
 background Agent notification starts a new main turn. Native launches therefore
-add session-level --allowedTools rules for exactly the installed Core entry
-(`node <package>/bin/mawf.js ...`, quoted or not, via plugin/.. or direct) and
-Read under the package root, so post-notification result/host-complete/freeze
-calls are not auto-denied. No other command or path is pre-approved.
+pass the same list (read from plugin/commands/run.md) as session-level
+--allowedTools, so post-notification turns keep the first turn's permissions
+instead of auto-denying Core calls, spec-file writes or evidence reads. This
+does not widen what the first turn already had; existing deny rules and
+protected paths still apply, and Bash remains policy_only, not a sandbox.
 Managed/user/project deny rules and protected paths still apply. This does not
 grant arbitrary external directory writes or enforce each task's owned scope.
 Bash can still write files: orchestration-only
