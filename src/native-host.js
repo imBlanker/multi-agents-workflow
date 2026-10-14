@@ -46,7 +46,8 @@ export async function executeNative(opts) {
   const requestRef = storeNativeRequest(identity, state, opts.description || '');
   // Slash-command allowed-tools only cover the first turn; background notifications start later turns.
   // Grant the installed Core entry and package reads for the whole session, nothing broader.
-  const core = [path.join(packageRoot, 'plugin', '..', 'bin', 'mawf.js'), path.join(packageRoot, 'bin', 'mawf.js')];
+  // Literal plugin/.. form: path.join would normalize it away, and run.md tells the host to use it.
+  const core = [`${packageRoot}/plugin/../bin/mawf.js`, `${packageRoot}/bin/mawf.js`];
   const allowedTools = [...core.flatMap(file => [`Bash(node "${file}" *)`, `Bash(node ${file} *)`]), `Read(/${packageRoot}/**)`];
   const argv = ['-p', `/mawf:run --request-ref ${requestRef}`, '--plugin-dir', path.join(packageRoot, 'plugin'), '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--forward-subagent-text', '--include-hook-events', '--permission-mode', state.run.snapshot.modeId === 'fixed-1' ? 'acceptEdits' : 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--tools', 'default', '--allowedTools', ...allowedTools, ...(state.run.snapshot.modeId === 'fixed-1' ? ['--agent', 'mawf:mawf-fixed-orchestrator'] : []), '--model', task.selection.modelId];
   const child = spawn(capability.binary, argv, { cwd: task.workspace, detached: true, stdio: ['ignore', 'pipe', 'pipe'], shell: false, env: { ...process.env, MAWF_NATIVE_RUN_CONTEXT: JSON.stringify({ project: state.run.snapshot.authorityProject, runId: task.runId, stateRoot: identity.stateRoot, controllerLeaseId: identity.leaseId }) } });

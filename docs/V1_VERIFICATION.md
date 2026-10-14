@@ -51,7 +51,8 @@ independent child session. Reusing an author or another task's session is reject
 - modeId, modeVersion, configRevision;
 - candidateId, commitSha (nullable for a non-Git project), diffHash,
   effectiveConfigHash, scope, implementerActorIds copied from the frozen candidate;
-- hackerActorId, sessionId, model (actual if observed; otherwise the recorded
+- hackerActorId, sessionId (native Hackers omit it; `task evidence` fills it from
+  the Core-bound lease and records sessionIdSource; a supplied value must match), model (actual if observed; otherwise the recorded
   request, or `not_applicable` for a local non-model job), adapter. Stored records
   explicitly label modelBasis observed/requested/not_applicable and retain
   requestedModel separately from observedModel (null plus a reason when unknown);

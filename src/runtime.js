@@ -585,12 +585,20 @@ export function freezeCandidate(opts) {
     return { candidate, acceptancePolicy: run.snapshot.acceptancePolicy, status: run.status, ...fixedVerificationHandoff(run) };
   });
 }
+// A native Hacker starts before its agentId is bound, so it cannot name its own job.
+// An omitted sessionId is filled from the Core-bound lease; a supplied one must still match.
+function withBoundSession(run, record, ledger) {
+  if (!record || typeof record !== 'object' || record.sessionId !== undefined) return record;
+  const task = run.tasks[record.hackerTaskId], lease = task && ledger.leases[task.currentLeaseId];
+  const bound = lease?.sessionId || lease?.jobId;
+  return bound ? { ...record, sessionId: bound, sessionIdSource: 'core_bound_lease' } : record;
+}
 export function submitEvidence(opts, record) {
   return transaction(opts, ledger => {
     const run = ledger.runs[identifier(opts.runId, 'runId')];
     if (!run?.candidate) throw stateError('CANDIDATE_REQUIRED', 'Freeze a candidate before recording evidence');
     checkCandidateCurrent(run, run.candidate);
-    const evidence = validateEvidence(run, run.candidate, record, ledger);
+    const evidence = validateEvidence(run, run.candidate, withBoundSession(run, record, ledger), ledger);
     run.evidence ||= [];
     if (!run.evidence.some(item => item.evidenceId === evidence.evidenceId)) run.evidence.push(evidence);
     if (evidence.verdict !== 'passed') run.status = 'blocked';
