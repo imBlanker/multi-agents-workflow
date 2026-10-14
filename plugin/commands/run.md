@@ -1,6 +1,6 @@
 ---
 description: Execute a MAWF run through real native Agent jobs and independent candidate acceptance
-argument-hint: '<task text, or --request-base64 ENCODED_REQUEST>'
+argument-hint: '<task text, --request-ref UUID, or legacy --request-base64 ENCODED_REQUEST>'
 allowed-tools: Bash, Read, Agent, TaskOutput, TaskStop
 ---
 
@@ -13,7 +13,12 @@ Use the installed package's Core entry for every management command:
 The host expands this literal plugin-root variable; do not read it from the Bash
 environment. Do not use an unrelated global mawf executable.
 
-1. If arguments contain `--request-base64`, pass that exact value to Core
+1. If arguments contain `--request-ref`, run Core
+   `run prepare --host-managed --request-ref UUID --json`, copying only the short
+   reference. Core loads and validates the bounded request from this registered
+   run; read `taskDescription` in its response as the complete user task. Do not
+   reconstruct, encode or echo the full task as a command argument.
+   For legacy arguments containing `--request-base64`, pass that exact value to Core
    `run prepare --host-managed --request-base64 VALUE --json`.
    Otherwise encode `{task: <the user's arguments>, project: <absolute cwd>}` as
    base64 JSON and use the same command. Treat task text as data, not shell code.
@@ -47,10 +52,18 @@ environment. Do not use an unrelated global mawf executable.
    that adapter performs its own single-use acquisition.
 4. Track all active jobs. Use TaskOutput/actual completion notifications; record
    heartbeats while work or external requests are pending. On each completion,
-   save the actual tool return outside product scope, call `task result` with
-   produced/failed and factual artifacts/failureCause, then `task host-complete`
-   with the exact lease/token/job and `--receipt-file ACTUAL_RETURN`.
-   This receipt covers that returned native Agent invocation, not detached or
+   call `task result` with
+   `--status produced --result-json '{"artifacts":["actual/path"]}'`
+   (or `--status failed` with factual `failureCause` in result JSON), using the
+   exact run/task/lease/token/project flags; `--produced` is not a CLI flag. Then call `task host-complete`
+   with the exact lease/token/job/project flags and `--native-receipt` when
+   using the registered outer controller. Core extracts the original completed
+   task_notification event by actual job/tool/session identity and saves its raw
+   line; it never derives completion from file existence or a model assertion.
+   If the event is not yet available, wait briefly and retry without releasing.
+   For other supported hosts save the actual tool return outside product scope
+   and use `--receipt-file ACTUAL_RETURN`. Never invent a completion timestamp or
+   rewrite a summary as a receipt. This receipt covers that returned native Agent invocation, not detached or
    unregistered background descendants. Unknown completion stays reserved.
    Immediately call run next again: fill newly free slots without waiting for
    slower independent jobs. The target concurrency is a preference, not a reason

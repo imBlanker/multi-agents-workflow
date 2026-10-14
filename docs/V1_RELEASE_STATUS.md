@@ -30,7 +30,9 @@ performed; existing tests and prepublishOnly were preserved.
 - Claude plugin metadata: exact run/mode/integrations command discovery, ten role
   definitions and strict manifest validation. Native billing policy and parent
   inheritance have separate no-model/simulated interface checks; those do not
-  establish a real Claude Agent execution.
+  alone establish a real Claude Agent execution. The later 9da6fe1 live run
+  separately reached a real Implementer Agent and created the requested artifact;
+  it did not reach independent Hacker acceptance before its deadline.
 
 ## Remaining limits
 
@@ -38,11 +40,16 @@ The installed Codex custom provider lacks an applicable current pricing/billing
 record, so its real companion path remains blocked. Claude OAuth login does not
 prove subscription quota or payment coverage. Its default policy pauses. An
 explicit optional bounded unknown-coverage route is implemented for a managed
-native controller and bound children, and the user authorized exactly one temporary 180-second run. That run verified
-actual package/Slash loading, parent identity and deadline cleanup, but failed
+native controller and bound children. The original d25dddd 180-second run failed
 before Agent dispatch because an empty queue selection masked parent inheritance.
-The queue/outcome repair is checked without another model invocation; its full
-real workflow remains unverified and the one-run authorization is exhausted. Ordinary already-open Slash sessions lack the observed
+A later separately authorized run on 9da6fe1 passed prepare, inherited selection,
+queueing and real Agent dispatch, and produced an artifact. It stopped at the
+180-second deadline with both leases released and a nonzero CLI exit; no Hacker
+or end-to-end acceptance occurred. The raw failed traces remain preserved.
+The next local repair uses a validated short request reference, the default
+built-in tool pool with role-specific restrictions, exact result CLI instructions,
+and original correlated native completion events as receipts. These changes
+remain pending independent checks and a complete real workflow recheck. Ordinary already-open Slash sessions lack the observed
 parent-model binding and cannot silently acquire it from caller labels.
 
 Windows v1 execution/process-tree behavior and strict current measured payment

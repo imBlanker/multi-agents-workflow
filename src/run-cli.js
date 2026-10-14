@@ -1,3 +1,4 @@
+import { readNativeRequest } from './native-request.js';
 import { observedParentSelection, inheritNativeSelection } from './native-selection.js';
 // Real execution entrypoints and a ready-work queue. Guide output is explicit.
 import fs from 'node:fs';
@@ -34,7 +35,7 @@ async function prepare(opts) {
   const file = executionFile(made.stateRoot, run.runId);
   if (opts.nativeControllerTaskId) { const previous = readStrict(file, null); if (previous) writeAtomic(file, { ...previous, nativeControllerTaskId: opts.nativeControllerTaskId, mainSessionBillingCoverage: 'registered_native_controller' }); }
   if (!readStrict(file, null)) writeAtomic(file, { schemaVersion: 1, runId: run.runId, description: opts.description || '', createdAt: new Date().toISOString(), tasks: {}, hostManaged: true, mainSessionBillingCoverage: opts.nativeControllerTaskId ? 'registered_native_controller' : 'existing_host_session_out_of_band', capability, plan });
-  return { ok: true, runId: run.runId, stateRoot: made.stateRoot, modeId: run.snapshot.modeId, configRevision: run.snapshot.configRevision, acceptancePolicy: run.snapshot.acceptancePolicy, nativeExecution, scheduler: run.snapshot.settings.scheduler, capability, plan, action: 'host_dispatch_required', enforcementLevel: 'host_managed', message: 'Use run queue and run next, then actually invoke native Agent/Task; producing this response did not launch a child' };
+  return { ok: true, taskDescription: opts.description || '', runId: run.runId, stateRoot: made.stateRoot, modeId: run.snapshot.modeId, configRevision: run.snapshot.configRevision, acceptancePolicy: run.snapshot.acceptancePolicy, nativeExecution, scheduler: run.snapshot.settings.scheduler, capability, plan, action: 'host_dispatch_required', enforcementLevel: 'host_managed', message: 'Use run queue and run next, then actually invoke native Agent/Task; producing this response did not launch a child' };
 }
 async function queue(opts, spec) {
   if (!Array.isArray(spec.tasks) || !spec.tasks.length) throw stateError('INVALID_RUN_SPEC', 'Spec requires a nonempty tasks array');
@@ -112,8 +113,11 @@ function next(opts) {
 export async function runExecution(args, flags) {
   const project = path.resolve(flags.project || process.cwd());
   let request = {};
-  if (flags['request-base64']) { try { request = JSON.parse(Buffer.from(flags['request-base64'], 'base64').toString('utf8')); } catch { throw stateError('INVALID_RUN_REQUEST', 'Invalid encoded run request'); } }
-  const opts = { project: request.project || project, stateRoot: flags['state-root'], runId: flags['run-id'] || request.runId, taskId: flags['task-id'], actorId: flags['actor-id'], description: flags.task || request.task || args.filter(arg => !['prepare', 'queue', 'next', 'respec'].includes(arg)).join(' '), nativeControllerTaskId: request.nativeControllerTaskId, requiredCapabilities: flags['required-capabilities'] ? String(flags['required-capabilities']).split(',') : undefined };
+  if (flags['request-ref'] !== undefined) {
+    if (args[0] !== 'prepare' || !flags['host-managed']) throw stateError('INVALID_NATIVE_REQUEST', 'Use a native request reference only with run prepare --host-managed');
+    request = readNativeRequest(flags['request-ref'], flags);
+  } else if (flags['request-base64']) { try { request = JSON.parse(Buffer.from(flags['request-base64'], 'base64').toString('utf8')); } catch { throw stateError('INVALID_RUN_REQUEST', 'Invalid encoded run request'); } }
+  const opts = { project: request.project || project, stateRoot: request.stateRoot || flags['state-root'], runId: flags['run-id'] || request.runId, taskId: flags['task-id'], actorId: flags['actor-id'], description: flags.task || request.task || args.filter(arg => !['prepare', 'queue', 'next', 'respec'].includes(arg)).join(' '), nativeControllerTaskId: request.nativeControllerTaskId, requiredCapabilities: flags['required-capabilities'] ? String(flags['required-capabilities']).split(',') : undefined };
   const action = args[0]; let result;
   if (flags.guide) { const settings = readSettings(authorityProject(project)); result = { ok: true, guide: true, mode: settings.mode, plan: readGeneratedPlan(project), executionStarted: false, steps: ['Prepare a run snapshot', 'Queue concrete independent task specifications', 'Acquire ready tasks and actually invoke Agent', 'Bind actual jobs; heartbeat; collect returns and release', 'Freeze candidate; dispatch independent Hacker; register raw evidence; accept'] }; }
   else if (action === 'queue') { if (!flags.input) throw stateError('RUN_SPEC_REQUIRED', 'Use run queue --input FILE'); result = await queue(opts, readStrict(path.resolve(flags.input))); }

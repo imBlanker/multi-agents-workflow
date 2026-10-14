@@ -1,3 +1,4 @@
+import { captureNativeReceipt } from './native-receipt.js';
 import { candidateIdentity, candidateAuthors, checkCandidateCurrent, validateEvidence, acceptanceDecision } from './verification.js';
 import { ChildProcess } from 'node:child_process';
 // Shared, fenced runtime ledger. A reservation is permission to start once,
@@ -624,8 +625,10 @@ export function completeHostTask(opts) {
     const { task, lease } = fenced(ledger, opts, true);
     if (lease.status === 'released') return { alreadyReleased: true, lease, task };
     if (task.adapter !== 'host-managed' || !lease.jobId || opts.jobId !== lease.jobId || (opts.sessionId || null) !== (lease.sessionId || null)) throw stateError('HOST_RECEIPT_IDENTITY_MISMATCH', 'A host receipt must identify the bound native Agent instance; an unexposed session stays null');
-    if (!opts.receiptFile) throw stateError('HOST_RECEIPT_REQUIRED', 'Save the actual Agent/Task tool return outside product scope and pass --receipt-file');
-    const receiptPath = assertSafePath(path.resolve(opts.receiptFile));
+    if (opts.nativeReceipt && opts.receiptFile) throw stateError('INVALID_HOST_RECEIPT', 'Choose --native-receipt or --receipt-file, not both');
+    const receiptFile = opts.nativeReceipt ? captureNativeReceipt({ stateRoot: ledger.stateRoot, runId: task.runId, lease, controller: ledger.runs[task.runId].tasks[task.controllerTaskId] }) : opts.receiptFile;
+    if (!receiptFile) throw stateError('HOST_RECEIPT_REQUIRED', 'Save the actual Agent/Task tool return outside product scope and pass --receipt-file');
+    const receiptPath = assertSafePath(path.resolve(receiptFile));
     const bytes = fs.readFileSync(receiptPath);
     if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw stateError('HOST_RECEIPT_REQUIRED', 'Host return receipt must be nonempty and bounded');
     lease.hostCompletion = { source: 'native-host-agent-return', identityBasis: 'native_agent_id', jobId: lease.jobId, sessionId: lease.sessionId, parentSessionId: lease.hostLaunch?.hostSessionId || null, parentToolUseId: lease.hostLaunch?.toolUseId || null, receiptPath, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), observedAt: now(), enforcementLevel: 'host_managed', limitations: ['Core validates identities and stores the host tool receipt; it cannot independently authenticate a manual host assertion', 'Unregistered background descendants remain outside this receipt'] };

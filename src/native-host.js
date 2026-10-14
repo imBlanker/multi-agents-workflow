@@ -11,6 +11,7 @@ import { isEnabled } from './integrations.js';
 import { processIdentity, stateError, assertSafePath, writeAtomic } from './atomic-state.js';
 import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed } from './runtime.js';
 import { signalKnownBackend } from './local-runtime.js';
+import { storeNativeRequest, validateNativeDescription } from './native-request.js';
 export function nativeHostCapability(settings, project) {
   const selected = isEnabled(settings, 'host.claude-code');
   const base = { host: 'claude-code', selected, installed: false, authenticated: 'unknown', compatible: 'unknown', ready: false, verificationStatus: 'unverified', actualBillingMode: 'unknown', actualProvider: null };
@@ -30,6 +31,7 @@ export function enforceNativeBilling(capability, selection) {
 }
 export async function executeNative(opts) {
   if (process.platform !== 'linux') return { ok: false, reasonCode: 'NATIVE_PROCESS_CONTROL_UNSUPPORTED', reason: 'This native process-tree controller is verified only for Linux' };
+  validateNativeDescription(opts.description || '');
   const state = runtimeStatus(opts), task = state.task;
   const capability = nativeHostCapability(state.run.snapshot.settings, task.workspace);
   enforceNativeBilling(capability, task.selection);
@@ -41,9 +43,9 @@ export async function executeNative(opts) {
   const directory = path.join(reserved.stateRoot, 'runs', task.runId, 'native'); assertSafePath(directory); fs.mkdirSync(directory, { recursive: true });
   const deadlineAt = Date.parse(reserved.lease.startedAt) + task.maxDurationMs;
   const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const request = Buffer.from(JSON.stringify({ runId: task.runId, project: state.run.snapshot.authorityProject, task: opts.description || '', nativeControllerTaskId: task.taskId })).toString('base64');
-  const argv = ['-p', `/mawf:run --request-base64 ${request}`, '--plugin-dir', path.join(packageRoot, 'plugin'), '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--forward-subagent-text', '--include-hook-events', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--tools', state.run.snapshot.modeId === 'fixed-1' ? 'Agent,Bash,Read,TaskOutput,TaskStop' : 'default', ...(state.run.snapshot.modeId === 'fixed-1' ? ['--agent', 'mawf:mawf-fixed-orchestrator'] : []), '--model', task.selection.modelId];
-  const child = spawn(capability.binary, argv, { cwd: task.workspace, detached: true, stdio: ['ignore', 'pipe', 'pipe'], shell: false, env: { ...process.env, MAWF_NATIVE_RUN_CONTEXT: JSON.stringify({ project: opts.project, runId: opts.runId, stateRoot: identity.stateRoot, controllerLeaseId: identity.leaseId }) } });
+  const requestRef = storeNativeRequest(identity, state, opts.description || '');
+  const argv = ['-p', `/mawf:run --request-ref ${requestRef}`, '--plugin-dir', path.join(packageRoot, 'plugin'), '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--forward-subagent-text', '--include-hook-events', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--tools', 'default', ...(state.run.snapshot.modeId === 'fixed-1' ? ['--agent', 'mawf:mawf-fixed-orchestrator'] : []), '--model', task.selection.modelId];
+  const child = spawn(capability.binary, argv, { cwd: task.workspace, detached: true, stdio: ['ignore', 'pipe', 'pipe'], shell: false, env: { ...process.env, MAWF_NATIVE_RUN_CONTEXT: JSON.stringify({ project: state.run.snapshot.authorityProject, runId: task.runId, stateRoot: identity.stateRoot, controllerLeaseId: identity.leaseId }) } });
   const outputPath = path.join(directory, 'host-events.jsonl');
   let buffer = '', total = 0, interval, deadline, resultEvent = null, mainSessionId = null, cancelling = false;
   const cancel = async () => { if (cancelling) return; cancelling = true; markCancelPending(identity); const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); signalKnownBackend(lease, 'SIGTERM'); await delay(1000); if (!backendStopped(lease).stopped) signalKnownBackend(lease, 'SIGKILL'); };

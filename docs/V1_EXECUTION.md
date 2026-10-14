@@ -15,7 +15,24 @@ assets are materialized to the owning package's absolute Core path. The complete
 package must contain plugin, bin, src and docs together. In-place plugin loading
 has been metadata-validated; a plugin-only cache is not claimed equivalent.
 Fixed roles are top-level `mawf-fixed-*` agents with real frontmatter/tool lists.
-Bash can still write files: orchestration-only and file scope are policy_only.
+Native CLI uses the default built-in tool pool; each role's frontmatter narrows
+that pool. A global Read/Bash-only pool would also disable Implementer Write/Edit.
+The fixed main role remains mawf:mawf-fixed-orchestrator; existing permission
+rules and dontAsk mode still apply. Bash can still write files: orchestration-only
+and file scope are policy_only. This follows the Claude Code CLI and subagent
+tool contracts: https://code.claude.com/docs/en/cli-reference and
+https://code.claude.com/docs/en/sub-agents.
+
+A registered native launch writes a private schemaVersion 1 request under its
+run's native directory and sends only `--request-ref UUID` to Slash.
+`run prepare --host-managed --request-ref UUID` resolves the inherited native
+context, verifies the active controller/lease, run and project identities,
+canonical runtime path, bounded regular file and registered SHA256. Task text
+is limited to 128 KiB; request files to 256 KiB. Overrides and expired controller
+references fail closed. The response's taskDescription retains the full original
+user task without requiring the model to retype its encoding. Legacy
+`--request-base64` and direct task text remain supported. This shared-storage
+integrity check is not an OS isolation boundary.
 
 `run prepare --host-managed --task TEXT` is the management handshake inside an
 existing Claude session. It returns frozen policy/roles, but does not claim a
@@ -46,7 +63,15 @@ arbitrary full IDs. task bind records the real returned agentId, optional
 resolvedModel, and the actual parent session/tool-use correlation. An unexposed
 child sessionId remains null; the fresh agentId is the independent instance. and emits heartbeats while waiting. After the
 actual tool returns, task result records produced/failed plus artifacts and
-failureCause. `task host-complete --job-id ACTUAL_AGENT_ID --receipt-file FILE` checks the exact fenced binding and retains the tool-return hash before
+failureCause (`--status produced --result-json '{"artifacts":["actual/path"]}'`;
+there is no --produced flag). Registered native jobs can use
+`task host-complete --job-id ACTUAL_AGENT_ID --native-receipt` with their exact
+run/task/lease/token/project flags: Core selects the original completed
+task_notification event by job, tool-use and parent session IDs, stores the raw
+line in the run's native/receipts directory, and uses the existing fenced
+completion path. Missing/ambiguous events keep the slot reserved. No model-made
+timestamps or completion assertions are used. Other hosts still use explicit
+receipt files. `task host-complete --job-id ACTUAL_AGENT_ID --receipt-file FILE` checks the exact fenced binding and retains the tool-return hash before
 release. This is a host_managed completion receipt, not OS proof that every
 unregistered detached descendant has stopped. Unknown jobs retain reservations.
 Native process adapters still require real process-tree termination.
@@ -130,6 +155,11 @@ controller lease. Stopped controllers cancel their associated unstarted children
 with recorded reasons; task/run outcome is distinct from release success.
 Failure, cancellation or missing required acceptance returns nonzero. Repeating
 execution with an existing controller run does not start another parent implicitly.
-This repair is being checked without model calls. The one-run authorization is
-used; there has been no second real Claude invocation, and the repaired complete
-native workflow is not claimed live-verified.
+A separately authorized live run on 9da6fe1 subsequently passed inherited selection
+and real Agent dispatch, producing the artifact. It reached the 180-second deadline
+before independent Hacker acceptance, released both leases and returned nonzero.
+Its trace exposed slow full-base64 copying, a global tool pool that disabled
+Implementer Write, a model-reconstructed receipt and an invalid result CLI flag.
+The short request, per-role tool pool and raw receipt changes above address those
+specific observations. Their full live acceptance remains pending; reduced
+startup overhead is a hypothesis until independently measured.

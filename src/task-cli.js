@@ -31,7 +31,7 @@ export async function runTask(args, flags) {
   } else if (command === 'heartbeat') result = heartbeat({ ...opts, progress: flags.progress, waitingExternal: flags['waiting-external'] === true });
   else if (command === 'result') result = reportResult({ ...opts, status: flags.status, result: flags['result-json'] ? JSON.parse(flags['result-json']) : null });
   else if (command === 'cancel') result = await cancelLocal({ ...opts, graceMs: numeric(flags, 'grace-ms') });
-  else if (command === 'host-complete') result = completeHostTask({ ...opts, jobId: flags['job-id'], sessionId: flags['session-id'], receiptFile: flags['receipt-file'] });
+  else if (command === 'host-complete') result = completeHostTask({ ...opts, jobId: flags['job-id'], sessionId: flags['session-id'], receiptFile: flags['receipt-file'], nativeReceipt: flags['native-receipt'] === true });
   else if (command === 'release') result = releaseLease(opts);
   else if (command === 'resume') result = resumeRun(opts);
   else if (command === 'candidate') result = freezeCandidate({ ...opts, workspace: flags.workspace, scope: flags['scope-json'] ? JSON.parse(flags['scope-json']) : undefined, artifacts: flags['artifacts-json'] ? JSON.parse(flags['artifacts-json']) : undefined });
