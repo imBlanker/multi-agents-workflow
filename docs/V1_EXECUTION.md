@@ -23,6 +23,12 @@ Implementer can use Write/Edit for ordinary files inside the working directory;
 dynamic sessions keep dontAsk. The main fixed role still excludes Write/Edit.
 Claude ignores permissionMode in plugin subagent definitions, so this is an
 explicit per-launch mode, not a claimed role-specific permission override.
+Slash-command allowed-tools apply only to the turn that invoked /mawf:run; a
+background Agent notification starts a new main turn. Native launches therefore
+add session-level --allowedTools rules for exactly the installed Core entry
+(`node <package>/bin/mawf.js ...`, quoted or not, via plugin/.. or direct) and
+Read under the package root, so post-notification result/host-complete/freeze
+calls are not auto-denied. No other command or path is pre-approved.
 Managed/user/project deny rules and protected paths still apply. This does not
 grant arbitrary external directory writes or enforce each task's owned scope.
 Bash can still write files: orchestration-only
