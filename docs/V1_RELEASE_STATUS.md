@@ -56,11 +56,24 @@ from omitted writesProduct:false. Write was available but denied under dontAsk.
 A subsequent local candidate normalizes fixed verification queue policy, emits
 an exact Hacker handoff, and selects per-launch acceptEdits for fixed-1 ordinary
 workspace edits while preserving existing deny rules and main role restrictions.
-Those follow-up changes still need independent checks and live confirmation. Ordinary already-open Slash sessions lack the observed
+Those changes passed 15 independent no-model checks. Serial live Claude Code runs
+(Sonnet 4.6 subscription, one main invocation each) then found and fixed, in turn:
+Core calls denied after the background-notification turn (session-level Core
+and run.md allowed-tools grants), a normalized `plugin/..` allow rule, Hacker
+identity fields it cannot know at start (Core now fills omitted or null
+hackerActorId/sessionId/adapter/model from the bound job; supplied mismatches are
+rejected), and a coordinator that edited Hacker evidence before registration
+(a native Hacker now declares `MAWF_EVIDENCE <sha256> <path>` in its own return,
+and Core registers only those exact bytes). The e1ef9c5 live run completed the
+full chain: Implementer, candidate freeze, independent native Hacker, two
+evidence records registered unmodified on first attempt, and acceptance with
+ACCEPTANCE_REQUIREMENTS_MET and CLI exit 0, with no stray processes or active
+leases. Those fixes were written by the same Claude Code session that ran the
+checks; the code still needs independent review. Ordinary already-open Slash sessions lack the observed
 parent-model binding and cannot silently acquire it from caller labels.
 
-Windows v1 execution/process-tree behavior and strict current measured payment
-telemetry are not verified. Some planned W09 negative checks were stopped by the
+Windows v1 execution/process-tree behavior is not verified here; that work moves
+to a Windows host. Strict current measured payment telemetry is not verified. Some planned W09 negative checks were stopped by the
 tool's automatic content review; their absent results remain unverified. No test
 content was transferred or self-accepted to fill that gap.
 
