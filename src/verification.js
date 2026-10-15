@@ -60,6 +60,8 @@ export function checkCandidateCurrent(run, candidate) {
 function requiredString(value, field) { if (typeof value !== 'string' || !value.trim()) throw stateError('INVALID_EVIDENCE', `${field} is required`); }
 export function validateEvidence(run, candidate, record, ledger) {
   if (!record || typeof record !== 'object') throw stateError('INVALID_EVIDENCE', 'Evidence must be a JSON object');
+  // A real user path has no attempted counterexamples of its own; an omitted list is empty.
+  if (record.kind === 'real_user_path' && record.counterexamples === undefined) record = { ...record, counterexamples: [] };
   for (const field of ['requirementId', 'scenarioId', 'hackerActorId', 'hackerTaskId', 'sessionId', 'model', 'adapter', 'expectedBehavior', 'observedBehavior', 'entrypoint', 'enforcementLevel']) requiredString(record[field], field);
   if (!['passed', 'failed', 'blocked', 'unverified'].includes(record.verdict) || !['counterexamples', 'real_user_path'].includes(record.kind)) throw stateError('INVALID_EVIDENCE', 'Evidence needs an explicit verdict and counterexamples/real_user_path kind');
   if (record.runId !== run.runId || record.candidateId !== candidate.candidateId || record.commitSha !== candidate.commitSha || record.diffHash !== candidate.diffHash || record.effectiveConfigHash !== candidate.effectiveConfigHash || record.modeId !== run.snapshot.modeId || record.modeVersion !== run.snapshot.modeVersion || record.configRevision !== run.snapshot.configRevision || digest(record.scope) !== digest(candidate.scope)) throw stateError('EVIDENCE_IDENTITY_MISMATCH', 'Evidence does not describe the exact candidate, configuration, scope and run');

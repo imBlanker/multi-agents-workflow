@@ -585,15 +585,15 @@ export function freezeCandidate(opts) {
     return { candidate, acceptancePolicy: run.snapshot.acceptancePolicy, status: run.status, ...fixedVerificationHandoff(run) };
   });
 }
-// A native Hacker starts before its agentId is bound and cannot see its executor
-// labels, so omitted (or null/blank) job identity fields are filled from the
+// A native Hacker starts before its agentId is bound and cannot reliably name its
+// actor or executor labels, so omitted (or null/blank) job identity fields are filled from the
 // Core-bound lease. Supplied values must still match.
-const BOUND_FIELDS = ['sessionId', 'adapter', 'model'];
+const BOUND_FIELDS = ['hackerActorId', 'sessionId', 'adapter', 'model'];
 function withBoundJob(run, record, ledger) {
   if (!record || typeof record !== 'object') return record;
   const task = run.tasks[record.hackerTaskId], lease = task && ledger.leases[task.currentLeaseId];
   if (!lease) return record;
-  const bound = { sessionId: lease.sessionId || lease.jobId, adapter: task.adapter, model: task.adapterState?.actualModel || task.selection?.modelId || 'not_applicable' };
+  const bound = { hackerActorId: task.actorId, sessionId: lease.sessionId || lease.jobId, adapter: task.adapter, model: task.adapterState?.actualModel || task.selection?.modelId || 'not_applicable' };
   const filled = BOUND_FIELDS.filter(field => (record[field] === undefined || record[field] === null || record[field] === '') && bound[field]);
   if (!filled.length) return record;
   return { ...record, ...Object.fromEntries(filled.map(field => [field, bound[field]])), boundFields: filled, boundFieldsSource: 'core_bound_lease' };

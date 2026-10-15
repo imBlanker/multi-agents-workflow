@@ -53,7 +53,7 @@ independent child session. Reusing an author or another task's session is reject
   effectiveConfigHash, scope, implementerActorIds copied from the frozen candidate;
 - hackerActorId, sessionId, model (actual if observed; otherwise the recorded
   request, or `not_applicable` for a local non-model job), adapter. Native Hackers
-  omit sessionId, adapter and model; `task evidence` fills omitted, null or blank
+  omit hackerActorId, sessionId, adapter and model; `task evidence` fills omitted, null or blank
   values from the Core-bound job and lists them in boundFields with
   boundFieldsSource `core_bound_lease`; a supplied value must match. Stored records
   explicitly label modelBasis observed/requested/not_applicable and retain
@@ -64,7 +64,8 @@ independent child session. Reusing an author or another task's session is reject
   external_protocol, independent_calculation, real_observation or real_payment;
   oracleVersion, expectedBehavior, observedBehavior;
 - entrypoint, exactSteps (nonempty string array), controlledInputs, environment
-  (real paths cannot set simulated:true), counterexamples (nonempty for that kind);
+  (real paths cannot set simulated:true), counterexamples (array, nonempty for
+  kind counterexamples; a real_user_path record may omit it and Core treats it as empty);
 - rawOutputs: [{path, sha256}], each nonempty file outside the product scope;
 - timestamps: {startedAt, finishedAt}, after candidate freeze, copied from real
   `date -u` output; placeholders are rejected or misstate the run;
