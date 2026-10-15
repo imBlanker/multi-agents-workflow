@@ -1,3 +1,4 @@
+import { workspaceLayout } from "./workspace/backend.js";
 import { fileURLToPath } from "node:url";
 // @ts-check
 // `mawf doctor` — environment + capability + policy report.
@@ -42,6 +43,7 @@ function pricingSyncInfo() {
 export function doctor(opts = {}) {
   const checks = [];
   const projectDir = opts.projectDir ? path.resolve(opts.projectDir) : null;
+  const nativeWorkspace = workspaceLayout(projectDir || process.cwd()).native;
 
   // node version
   const nv = process.versions.node;
@@ -142,9 +144,9 @@ export function doctor(opts = {}) {
     checks.push({ name: "Pi Agent config", status: "warn", detail: "~/.pi/agent not found (not installed)" });
   }
 
-  // grill-brainstorm swap (workspace-level)
-  {
-    const st = grillSwapStatus(process.cwd());
+  // grill-brainstorm swap (legacy workspaces only)
+  if (!nativeWorkspace) {
+    const st = grillSwapStatus(projectDir || process.cwd());
     if (st.trellisBrainstormPresent) {
       if (st.wrapperInstalled && st.wrapperCurrent && !st.missing.length) {
         checks.push({ name: "trellis-brainstorm (grill edition)", status: "ok", detail: `wrapper current in ${st.roots.join(", ")}; vendored: ${st.vendored.join(", ")}${st.origBackup ? "; stock backup: trellis-brainstorm.orig.md" : ""}` });
@@ -208,8 +210,10 @@ export function doctor(opts = {}) {
     checks.push({ name: "DeepSeek Harness (dsh) config", status: "warn", detail: "$DSH_HOME (~/.dsh) not found (not installed)" });
   }
 
-  // trellis (the mandatory next-step init)
-  try {
+  // Native workspaces explicitly disable external workflow lifecycle.
+  if (nativeWorkspace) {
+    checks.push({ name: "workspace backend", status: "ok", detail: "native MAWF; Trellis lifecycle disabled" });
+  } else try {
     const det = detectTrellis();
     checks.push({ name: "trellis (next-step init)", status: det.via === "npx" ? "warn" : "ok", detail: det.via === "npx" ? "not on PATH; will use `npx --yes @mindfoldhq/trellis@latest`" : `${det.bin}` });
   } catch (e) {

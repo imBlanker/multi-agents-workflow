@@ -5,6 +5,9 @@ description: "Guides collaborative requirements discovery before implementation.
 
 # Trellis Brainstorm — grill edition (mawf)
 
+Legacy Trellis workspaces only. If `.mawf/workspace.json` selects backend `mawf`
+with `trellis: false`, use `mawf-brainstorm` instead; do not run this wrapper.
+
 This workspace's brainstorm runs the **grill-with-docs** interview: the mattpocock `grilling` methodology (rounds, design tree, frontier) with `domain-modeling` discipline (terms land in `CONTEXT.md`, irreversible decisions land as ADRs) — mapped onto the **Trellis planning contract**. The interview method is grilling's; the workflow obligations are Trellis's.
 
 ## Non-Negotiable Planning Contract (Trellis)

@@ -24,18 +24,19 @@ import { exists, readText, writeText, ensureDir, isoNow, home } from "./util.js"
 
 /**
  * Detect how to invoke trellis.
- * Order: TRELLIS_BIN env → `trellis` on PATH → `npx --yes @mindfoldhq/trellis@latest`.
+ * Order: explicit TRELLIS_BIN → local PATH, with pinned compatibility check. No download fallback.
  * @returns {{ via: "env"|"path"|"npx", bin: string|null, args: string[] }}
  */
 export function detectTrellis(opts = {}) {
   const env = opts.env || process.env;
   const find = opts.findExecutable || findExecutable;
-  if (env.TRELLIS_BIN && exists(env.TRELLIS_BIN)) {
-    return { via: "env", bin: env.TRELLIS_BIN, args: [] };
-  }
-  const p = find("trellis", { env });
-  if (p && exists(p)) return { via: "path", bin: p, args: [] };
-  return { via: "npx", bin: null, args: ["--yes", "@mindfoldhq/trellis@latest"] };
+  const candidate = env.TRELLIS_BIN && exists(env.TRELLIS_BIN) ? env.TRELLIS_BIN : find("trellis", { env });
+  const install = "npm install -g @mindfoldhq/trellis@0.6.17 (explicit user action; historically verified compatible version)";
+  if (!candidate || !exists(candidate)) return { via: "unavailable", bin: null, args: [], installed: false, compatible: "unknown", reason: "Selected Trellis has no local executable; no automatic download", install };
+  const result = (opts.runner || platformRun)(candidate, ["--version"], { env, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"] });
+  const version = String(result.stdout || "").match(/\b(\d+\.\d+\.\d+)\b/)?.[1] || null;
+  if (result.status !== 0 || version !== "0.6.17") return { via: "unavailable", bin: null, args: [], installed: true, discoveredPath: candidate, version, compatible: false, reason: `Trellis version ${version || "unknown"} is outside the verified 0.6.17 contract`, install };
+  return { via: env.TRELLIS_BIN ? "env" : "path", bin: candidate, args: [], installed: true, version, compatible: true };
 }
 
 /**
@@ -188,7 +189,7 @@ export function buildTrellisLaunchSpec(opts) {
   const stdoutIsTTY = opts.stdoutIsTTY ?? process.stdout.isTTY;
   const interactive = opts.nonInteractive !== true && stdinIsTTY === true && stdoutIsTTY === true;
   const trellisArgs = ["init", "-u", opts.user];
-  if (!interactive) trellisArgs.push("-y", ...trellisPlatformFlags(opts.hostApp || ""));
+  if (!interactive) trellisArgs.push("-y", ...(opts.selectedHosts ? opts.selectedHosts.map(host => host === "claude-code" ? "--claude" : `--${host}`) : trellisPlatformFlags(opts.hostApp || "")));
   const command = detection.via === "npx" ? "npx" : detection.bin;
   if (!command) throw new Error("Trellis command could not be resolved");
   const args = detection.via === "npx" ? [...detection.args, ...trellisArgs] : trellisArgs;

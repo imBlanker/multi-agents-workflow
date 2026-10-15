@@ -1,3 +1,6 @@
+import { readSettings } from '../settings.js';
+import { isEnabled } from '../integrations.js';
+import { workspaceLayout } from "./backend.js";
 // @ts-check
 // `mawf bridge` — CLI surface for the workspace bridge (P4.2).
 //
@@ -63,14 +66,14 @@ export function readOrCreateMachineId(h = home()) {
 }
 
 /** Capability set offered by `mawf bridge serve` (read-only + transport features). */
-function bridgeCapabilities() {
+function bridgeCapabilities(project) {
   return [
     CAPABILITIES.PROJECT_READ,
-    CAPABILITIES.KNOWLEDGE_READ,
+    ...(project && isEnabled(readSettings(project), "knowledge") ? [CAPABILITIES.KNOWLEDGE_READ] : []),
     CAPABILITIES.ARTIFACT_READ,
     CAPABILITIES.CHUNKED_ARTIFACTS,
     CAPABILITIES.RUNTIME_EVENTS,
-    CAPABILITIES.TERMINAL_META,
+    ...(project && isEnabled(readSettings(project), "workspace-runtime-tmux") ? [CAPABILITIES.TERMINAL_META] : []),
     CAPABILITIES.EVENT_RESUME,
     CAPABILITIES.CANCEL,
   ];
@@ -90,17 +93,19 @@ async function bridgeServe(_rest, flags) {
   const project = explicitProject ? expand(flags.project) : null;
   /** Build an authorized provider set for a remote-supplied root. */
   const buildProvidersFor = (root) => {
-    if (typeof root !== "string" || !root.startsWith("/") || root.includes("\0")) {
+    if (typeof root !== "string" || !path.isAbsolute(root) || root.includes("\0")) {
       throw new Error("workspace root must be an absolute remote path");
     }
     const resolved = fs.realpathSync(root); // throws on missing/symlink loops
-    if (!fs.existsSync(path.join(resolved, ".trellis"))) {
-      throw new Error("workspace root must contain .trellis");
+    if (!workspaceLayout(resolved).native && !fs.existsSync(path.join(resolved, ".trellis"))) {
+      throw new Error("workspace root must contain a valid MAWF workspace marker or .trellis");
     }
-    const store2 = KnowledgeStore.open(resolved);
-    return createProviders({ projectDir: resolved, store: store2, machineId });
+    const selection = readSettings(resolved);
+    if (!isEnabled(selection, "workspace-bridge")) throw new Error("workspace-bridge disabled for requested workspace");
+    const store2 = isEnabled(selection, "knowledge") ? KnowledgeStore.open(resolved) : null;
+    return { providers: createProviders({ projectDir: resolved, store: store2, machineId }), capabilities: bridgeCapabilities(resolved) };
   };
-  const store = explicitProject ? KnowledgeStore.open(project) : null;
+  const store = explicitProject && isEnabled(readSettings(project), "knowledge") ? KnowledgeStore.open(project) : null;
   const flagId = typeof flags["machine-id"] === "string" ? flags["machine-id"].trim() : "";
   const machineId = flagId || readOrCreateMachineId();
   const providers = explicitProject
@@ -109,7 +114,7 @@ async function bridgeServe(_rest, flags) {
   const server = new BridgeServer({
     serverId: "mawf-bridge",
     machineId,
-    capabilities: bridgeCapabilities(),
+    capabilities: bridgeCapabilities(project),
     providers,
     ...(explicitProject ? {} : { onWorkspace: buildProvidersFor }),
   });
@@ -159,6 +164,9 @@ async function bridgeServe(_rest, flags) {
  * @returns {Promise<number>} 0 recorded | 1 probe failed | 2 usage
  */
 export async function bridgeInstallHelper(rest, _flags = {}, deps = {}) {
+  if (!isEnabled(readSettings(_flags.project || process.cwd()), "workspace-ssh")) {
+    (deps.err || (text => process.stderr.write(text)))("workspace-ssh disabled; explicitly enable it before remote helper probing\n"); return 1;
+  }
   const out = deps.out ?? ((t) => process.stdout.write(t));
   const err = deps.err ?? ((t) => process.stderr.write(t));
   const alias = rest[0];

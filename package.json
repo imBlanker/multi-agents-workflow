@@ -1,7 +1,7 @@
 {
   "name": "multi-agents-workflow",
-  "version": "0.8.4",
-  "description": "A portable, dynamic multi-agents workflow system for complex codebases. Reads cc-switch config, selects the right agent architecture (loop / orchestrator-workers / multi-agent / graph / dynamic / ultracode), generates per-agent configs, enforces cost-rate limits, and integrates Codex review.",
+  "version": "1.0.0",
+  "description": "Explicit dynamic and fixed multi-agent workflows, fenced task execution, optional adapters, and independent candidate acceptance.",
   "type": "module",
   "main": "src/index.js",
   "bin": {
@@ -16,7 +16,20 @@
     "examples",
     "README.md",
     "CHANGELOG.md",
-    "vendor"
+    "vendor",
+    "README.zh-Hans.md",
+    "README.zh-Hant.md",
+    "CHANGELOG.zh-Hans.md",
+    "CHANGELOG.zh-Hant.md",
+    "LICENSE",
+    "NOTICE.md",
+    "docs/V1_*.md",
+    "docs/AGENT_INSTALL.md",
+    "docs/ARCHITECTURE.md",
+    "docs/UPSTREAM_COMPATIBILITY.md",
+    "docs/CROSS_PLATFORM.md",
+    "docs/NATIVE_WORKSPACES.md",
+    "docs/AGENT_CHANGELOG.md"
   ],
   "scripts": {
     "test": "node scripts/run-tests.mjs",

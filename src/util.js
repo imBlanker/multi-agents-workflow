@@ -289,3 +289,8 @@ export function nowSec() {
 export function isoNow() {
   return new Date().toISOString();
 }
+
+/** Resolve the user-selected Pi home without reading its contents. */
+export function resolvePiAgentRoot(piDir) {
+  return piDir ?? (process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || path.join(home(), '.pi', 'agent'));
+}

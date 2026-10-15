@@ -113,7 +113,7 @@ export function readCcSwitch(opts = {}) {
   const vRow = (r.all("PRAGMA user_version") || [])[0];
   const schemaVersion = num(vRow ? vRow.user_version : 0);
   const schemaSupported = schemaVersion <= SUPPORTED_CC_SCHEMA;
-  const allProviders = r.all(
+  const allProviders = opts.models === false ? [] : r.all(
     "SELECT id, app_type, name, is_current, provider_type, cost_multiplier, limit_daily_usd, limit_monthly_usd, website_url, category, sort_index, settings_config FROM providers ORDER BY app_type, is_current DESC, sort_index"
   );
   // Parse each provider's settings_config into `settingsConfig` so callers can
@@ -138,7 +138,7 @@ export function readCcSwitch(opts = {}) {
     }
   }
 
-  const pricingRows = r.all(
+  const pricingRows = opts.pricing === false ? [] : r.all(
     "SELECT model_id, display_name, input_cost_per_million, output_cost_per_million, cache_read_cost_per_million, cache_creation_cost_per_million FROM model_pricing"
   );
   const modelPricing = {};
@@ -146,15 +146,15 @@ export function readCcSwitch(opts = {}) {
     modelPricing[p.model_id] = {
       model_id: p.model_id,
       display_name: p.display_name,
-      input_per_m: num(p.input_cost_per_million),
-      output_per_m: num(p.output_cost_per_million),
-      cache_read_per_m: num(p.cache_read_cost_per_million),
-      cache_creation_per_m: num(p.cache_creation_cost_per_million),
+      input_per_m: p.input_cost_per_million !== null && p.input_cost_per_million !== undefined && Number.isFinite(Number(p.input_cost_per_million)) && Number(p.input_cost_per_million) >= 0 ? Number(p.input_cost_per_million) : null,
+      output_per_m: p.output_cost_per_million !== null && p.output_cost_per_million !== undefined && Number.isFinite(Number(p.output_cost_per_million)) && Number(p.output_cost_per_million) >= 0 ? Number(p.output_cost_per_million) : null,
+      cache_read_per_m: p.cache_read_cost_per_million !== null && p.cache_read_cost_per_million !== undefined && Number.isFinite(Number(p.cache_read_cost_per_million)) && Number(p.cache_read_cost_per_million) >= 0 ? Number(p.cache_read_cost_per_million) : null,
+      cache_creation_per_m: p.cache_creation_cost_per_million !== null && p.cache_creation_cost_per_million !== undefined && Number.isFinite(Number(p.cache_creation_cost_per_million)) && Number(p.cache_creation_cost_per_million) >= 0 ? Number(p.cache_creation_cost_per_million) : null,
       source: "cc-switch",
     };
   }
 
-  const settingsRows = r.all("SELECT key, value FROM settings");
+  const settingsRows = opts.settings === true ? r.all("SELECT key, value FROM settings") : [];
   const settings = {};
   for (const s of settingsRows) settings[s.key] = s.value;
 
@@ -174,7 +174,7 @@ export function readCcSwitch(opts = {}) {
  */
 export function spendSince(opts = {}) {
   const dbPath = opts.dbPath ?? findDb();
-  if (!dbPath || !Number.isFinite(opts.sinceSec)) return 0;
+  if (!dbPath || !Number.isFinite(opts.sinceSec)) return null;
   try {
     const r = makeReader(dbPath);
     let where = `created_at >= ${Math.floor(opts.sinceSec)}`;
@@ -184,8 +184,8 @@ export function spendSince(opts = {}) {
     }
     const rows = r.all(`SELECT COALESCE(SUM(CAST(total_cost_usd AS REAL)),0) as t FROM proxy_request_logs WHERE ${where}`);
     r.close();
-    return num(rows?.[0]?.t);
-  } catch { return 0; }
+    return rows?.[0] ? num(rows[0].t) : null;
+  } catch { return null; }
 }
 
 /**
@@ -318,7 +318,7 @@ export function resolveModel(currentProviders, appType) {
 export function costRate(opts = {}) {
   const dbPath = opts.dbPath ?? findDb();
   const win = opts.windowSeconds ?? 3600;
-  if (!dbPath) return { ratePerMin: 0, totalUsd: 0, requestCount: 0, windowSeconds: win, impl: "none" };
+  if (!dbPath) return { ratePerMin: null, totalUsd: null, requestCount: 0, windowSeconds: win, impl: "none", basis: "unknown" };
   const r = makeReader(dbPath);
   const since = Math.floor(Date.now() / 1000) - win;
   let where = "created_at >= " + since;
@@ -327,11 +327,14 @@ export function costRate(opts = {}) {
   const rows = r.all(
     `SELECT COUNT(*) as cnt, COALESCE(SUM(CAST(total_cost_usd AS REAL)),0) as total FROM proxy_request_logs WHERE ${where}`
   );
-  const row = rows[0] || { cnt: 0, total: 0 };
+  const row = rows[0];
   r.close();
+  if (!row) return { ratePerMin: null, totalUsd: null, requestCount: 0, windowSeconds: win, impl: r.impl, basis: "unknown", reason: "usage_query_unavailable" };
   const totalUsd = num(row.total);
   const minutes = Math.max(win / 60, 1 / 60);
   return {
+    basis: "estimated",
+    coverage: "cc-switch token-price logs only; not payment telemetry",
     ratePerMin: round(totalUsd / minutes, 4),
     totalUsd: round(totalUsd, 6),
     requestCount: num(row.cnt),

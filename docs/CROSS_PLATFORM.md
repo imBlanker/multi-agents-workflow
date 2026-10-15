@@ -2,6 +2,23 @@
 
 Starting with **0.8.0**, mawf maintains Linux and native Windows in one source tree and one coordinated package/plugin version.
 
+
+## v1.0.0 verified scope
+
+Package and plugin metadata are synchronized at 1.0.0. Core remains portable
+JavaScript, but portability is not execution evidence. Linux registered local
+processes have independently exercised PID/start identity, process-group stop,
+concurrency races, recovery, and a real 32-minute heartbeat. Native controlled
+Claude execution and its inherited child bounds use this Linux process boundary.
+The native runner explicitly rejects unsupported process-control platforms.
+
+Windows v1 actual process-tree cancellation, companion/native model execution,
+and live payment telemetry have not been run in this delivery. Report those
+capabilities unverified/unsupported, not passed based on a CI matrix definition.
+Configuration/plan source compatibility and prior platform tests are different
+scopes. Authentication, host installation and real request success remain
+separate on every platform. Role prompts/worktrees are not an OS sandbox.
+
 ## Structure
 
 | Location | Responsibility |

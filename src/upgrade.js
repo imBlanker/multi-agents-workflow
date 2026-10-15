@@ -84,9 +84,9 @@ function npmGlobalPrefix() {
  * there is no manifest or the recorded host is unknown.
  * @returns {string|undefined}
  */
-function manifestHostHint() {
+function manifestHostHint(installStateDir) {
   try {
-    const m = readJson(path.join(os.homedir(), ".mawf", "installed.json"), null);
+    const m = readJson(path.join(installStateDir || process.env.MAWF_INSTALL_STATE_DIR || path.join(os.homedir(), ".mawf"), "installed.json"), null);
     const app = m?.host?.app;
     return ["pi", "dsh", "claude-code", "codex"].includes(app) ? app : undefined;
   } catch { return undefined; }
@@ -105,11 +105,11 @@ function manifestHostHint() {
  * @param {string} [hostHint] recorded install host to inject as MAW_HOST (0.4.2)
  * @returns {{ appliedTemplates: boolean }}
  */
-function refreshTemplates(pkgRoot, output, spawnFn, hostHint) {
+function refreshTemplates(pkgRoot, output, spawnFn, hostHint, project, installOptions = {}) {
   const spawnOpts = { cwd: pkgRoot, encoding: "utf8", timeout: 300000 };
   if (hostHint) spawnOpts.env = { ...process.env, MAW_HOST: hostHint };
   // The top-level lifecycle runs Trellis only after the MAWF stage completes.
-  const r = spawnFn(process.execPath, [path.join(pkgRoot, "bin", "mawf.js"), "update", "--mawf-only"], spawnOpts);
+  const r = spawnFn(process.execPath, [path.join(pkgRoot, "bin", "mawf.js"), "update", "--mawf-only", ...(project ? ["--project", project] : []), ...Object.entries({ "install-state-dir": installOptions.installStateDir, "claude-dir": installOptions.claudeDir, "codex-dir": installOptions.codexDir, "pi-dir": installOptions.piDir, "dsh-home": installOptions.dshHome }).filter(([, value]) => value).flatMap(([key, value]) => [`--${key}`, value])], spawnOpts);
   const ok = !r.error && r.status === 0;
   const tail = String(r.stdout || "").trim().split("\n").filter(Boolean).slice(-3);
   if (ok) {
@@ -137,7 +137,7 @@ export function upgrade(opts = {}) {
   const applyTpl = opts.applyTemplates !== false; // default ON since 0.4.1 (was opt-in)
   const spawnFn = opts.spawnFn ?? spawnSync;
   const runSh = opts.runSh ?? sh;
-  const hostHint = opts.hostHint !== undefined ? opts.hostHint : manifestHostHint(); // test seam: explicit override
+  const hostHint = opts.hostHint !== undefined ? opts.hostHint : manifestHostHint(opts.installStateDir); // test seam: explicit override
 
   if (opts.tag && det.mode === "checkout") {
     return { ok: false, mode: det.mode, output: [], error: "--tag is reserved for npm-mode installs; this is a git checkout — pull a branch/tag with git instead" };
@@ -170,7 +170,7 @@ export function upgrade(opts = {}) {
       // npm i -g overwrites the package in place — <pkgRoot>/bin/mawf.js is
       // already the NEW code, so spawning it refreshes templates with 0.4.1+.
       const tpl = applyTpl
-        ? refreshTemplates(det.pkgRoot, output, spawnFn, hostHint)
+        ? refreshTemplates(det.pkgRoot, output, spawnFn, hostHint, opts.project, opts)
         : { appliedTemplates: false };
       if (!applyTpl) output.push("follow-up: run `mawf update` manually to refresh installed host templates");
       return { ok: true, mode: "npm", from: det.version, appliedTemplates: tpl.appliedTemplates, output };
@@ -233,7 +233,7 @@ export function upgrade(opts = {}) {
   // 0.4.1: template refresh is the DEFAULT (opt out with --no-apply-templates);
   // spawn the post-merge code so the refresh runs with the NEW templates.
   const tpl = applyTpl
-    ? refreshTemplates(gitRoot, output, spawnFn, hostHint)
+    ? refreshTemplates(gitRoot, output, spawnFn, hostHint, opts.project, opts)
     : { appliedTemplates: false };
   if (!applyTpl) output.push(`follow-up: run \`${followUp}\` to refresh installed host templates (automatic unless --no-apply-templates)`);
   return { ok: true, mode: "checkout", from: det.version, to: newPkg.version, followUp, appliedTemplates: tpl.appliedTemplates, output };

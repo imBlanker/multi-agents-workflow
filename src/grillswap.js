@@ -1,3 +1,4 @@
+import { workspaceLayout } from "./workspace/backend.js";
 import { fileURLToPath } from "node:url";
 // @ts-check
 // Grill-brainstorm swap (task 08-21-grill-brainstorm-swap): in mawf-initialized
@@ -85,6 +86,7 @@ function existsWith(fsh, p) { try { return fsh.existsSync(p); } catch { return f
  * @returns {{ applied: boolean, reason: string, wrote: string[] }}
  */
 export function applyGrillSwap(projectDir, opts = {}) {
+  if (workspaceLayout(projectDir).native) return { applied: false, reason: "native MAWF workspace opted out", wrote: [] };
   const fsh = opts.fs ?? fs;
   const root = grillAssetsRoot(opts.pkgRoot);
   const roots = skillRoots(projectDir, fsh);

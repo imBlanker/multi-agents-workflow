@@ -379,9 +379,10 @@ test("providers: authorization rejects empty/NUL/escaping rels at the source", a
   assert.equal(e1.epoch, 1);
 });
 
-test("onWorkspace: hello root builds providers; invalid/relative roots refuse the hello (§8.1)", async () => {
+test("onWorkspace: hello root builds providers; invalid/relative roots refuse the hello (§8.1)", async (t) => {
   // lazy mode: no --project; the root arrives via the hello (stdin, §8.1)
   const b = startServe(["--lazy"]);
+  t.after(() => b.close());
   const ws = { refVersion: 1, endpoint: { kind: "ssh", host: "x" }, root: fixture };
   b.send({ type: "hello", v: PROTOCOL_VERSION, clientId: "onws", capabilities: ["project.read"], workspaces: [ws] });
   const hello = await b.awaitMsg((m) => m.type === "hello_ok", "hello_ok");
@@ -389,21 +390,21 @@ test("onWorkspace: hello root builds providers; invalid/relative roots refuse th
   const r = await b.request("r1", "project.tasks", {});
   assert.equal(r.ok, true, JSON.stringify(r).slice(0, 140));
   assert.ok(Array.isArray(r.result.tasks));
-  await b.close();
 
   // invalid root (exists but no .trellis) -> hello refused with structured reason
   const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), "maw-no-trellis-"));
+  t.after(() => fs.rmSync(emptyDir, { recursive: true, force: true }));
   const c = startServe(["--lazy"]);
+  t.after(() => c.close());
   c.send({ type: "hello", v: PROTOCOL_VERSION, clientId: "onws2", capabilities: [], workspaces: [{ refVersion: 1, endpoint: { kind: "ssh", host: "x" }, root: emptyDir }] });
   const refused = await c.awaitMsg((m) => m.type === "hello_ok", "refused hello");
   assert.equal(refused.accepted, false);
   assert.match(refused.error?.message ?? "", /workspace rejected/);
-  await c.close();
 
   // relative root -> refused without touching the filesystem
   const d = startServe(["--lazy"]);
+  t.after(() => d.close());
   d.send({ type: "hello", v: PROTOCOL_VERSION, clientId: "onws3", capabilities: [], workspaces: [{ refVersion: 1, endpoint: { kind: "ssh", host: "x" }, root: "relative/path" }] });
   const refused2 = await d.awaitMsg((m) => m.type === "hello_ok", "refused hello (relative)");
   assert.equal(refused2.accepted, false);
-  await d.close();
 });
