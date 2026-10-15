@@ -96,6 +96,29 @@ export function validateEvidence(run, candidate, record, ledger) {
   if (record.modelBasis && record.modelBasis !== modelBasis) throw stateError('MODEL_PROVENANCE_MISMATCH', 'Evidence model basis conflicts with backend observation');
   return { ...structuredClone(record), modelBasis, requestedModel: task.selection?.modelId || null, observedModel: task.adapterState?.actualModel || null, observedModelReason: task.adapterState?.actualModel ? null : task.adapter === 'local-process' ? 'non_model_process' : 'backend_did_not_expose_actual_model', rawOutputs: outputs, evidenceId: digest(record), recordedAt: new Date().toISOString(), validationLevel: 'identity_and_reference_consistency_not_semantic_truth' };
 }
+// A native Hacker declares each final evidence file in its own return text, which
+// the host records in the Core-captured receipt. Registration accepts only those
+// exact bytes, so a coordinator cannot repair or rewrite independent evidence.
+const DECLARED = /MAWF_EVIDENCE\s+([a-f0-9]{64})\s+([^\s`'"]+)/g;
+function receiptText(bytes) {
+  const strings = [];
+  const walk = value => { if (typeof value === 'string') strings.push(value); else if (value && typeof value === 'object') Object.values(value).forEach(walk); };
+  for (const line of bytes.toString('utf8').split('\n')) { try { walk(JSON.parse(line)); } catch { strings.push(line); } }
+  return strings.join('\n');
+}
+export function bindDeclaredEvidence(run, record, ledger, inputFile) {
+  const task = run.tasks[record?.hackerTaskId], lease = task && ledger.leases[task.currentLeaseId];
+  if (task?.adapter !== 'host-managed') return null;
+  if (!inputFile || !lease?.hostCompletion?.receiptPath) throw stateError('HACKER_EVIDENCE_UNDECLARED', 'Native Hacker evidence must come from a file declared in its completed host receipt');
+  const receipt = fs.readFileSync(lease.hostCompletion.receiptPath);
+  if (digest(receipt) !== lease.hostCompletion.sha256) throw stateError('HOST_RECEIPT_DRIFT', 'The bound native tool-return receipt changed');
+  const absolute = path.resolve(inputFile);
+  const declared = [...receiptText(receipt).matchAll(DECLARED)].filter(match => path.resolve(match[2]) === absolute);
+  if (!declared.length) throw stateError('HACKER_EVIDENCE_UNDECLARED', 'The Hacker did not declare this evidence file as MAWF_EVIDENCE <sha256> <path> in its return');
+  const sha256 = digest(fs.readFileSync(absolute));
+  if (!declared.some(match => match[1] === sha256)) throw stateError('HACKER_EVIDENCE_MODIFIED', 'Evidence bytes differ from the hash the Hacker declared; register its original file or dispatch a new Hacker');
+  return { path: absolute, sha256, source: 'native_receipt_declaration', receiptSha256: lease.hostCompletion.sha256 };
+}
 export function acceptanceDecision(run, candidate, ledger) {
   try { checkCandidateCurrent(run, candidate); } catch (error) { return { allowed: false, reasonCode: error.code, reason: error.message }; }
   const policy = run.snapshot.acceptancePolicy || { ...run.snapshot.settings.verification, requiredCapabilities: [] };

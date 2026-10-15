@@ -90,7 +90,11 @@ environment. Do not use an unrelated global mawf executable.
    `${CLAUDE_PLUGIN_ROOT}/../docs/V1_VERIFICATION.md`; Hackers write evidence
    and return paths, never register it while their job is still active. After
    their task result is produced and host-complete confirms release, register it with
-   `task evidence --run-id R --input FILE --project P`. An author's result, exit 0,
+   `task evidence --run-id R --input FILE --project P`, passing each file the
+   Hacker declared as `MAWF_EVIDENCE <sha256> <path>` in its own return. Never
+   edit, regenerate, copy or "fix" a Hacker's evidence: Core rejects bytes that
+   differ from the declaration. If registration fails, report the reason code
+   and queue a new Hacker task. An author's result, exit 0,
    directory existence, source match, or HTTP 200 is not independent acceptance.
    If there is no registered outer native controller, call `task accept`; otherwise
    show `task acceptance` and return so the outer controller can release its own

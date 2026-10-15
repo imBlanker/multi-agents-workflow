@@ -1,6 +1,6 @@
 import { fixedVerificationHandoff } from './run-queue-policy.js';
 import { captureNativeReceipt } from './native-receipt.js';
-import { candidateIdentity, candidateAuthors, checkCandidateCurrent, validateEvidence, acceptanceDecision } from './verification.js';
+import { candidateIdentity, candidateAuthors, checkCandidateCurrent, validateEvidence, acceptanceDecision, bindDeclaredEvidence } from './verification.js';
 import { ChildProcess } from 'node:child_process';
 // Shared, fenced runtime ledger. A reservation is permission to start once,
 // never evidence that an unbound backend did not start.
@@ -585,20 +585,27 @@ export function freezeCandidate(opts) {
     return { candidate, acceptancePolicy: run.snapshot.acceptancePolicy, status: run.status, ...fixedVerificationHandoff(run) };
   });
 }
-// A native Hacker starts before its agentId is bound, so it cannot name its own job.
-// An omitted sessionId is filled from the Core-bound lease; a supplied one must still match.
-function withBoundSession(run, record, ledger) {
-  if (!record || typeof record !== 'object' || record.sessionId !== undefined) return record;
+// A native Hacker starts before its agentId is bound and cannot see its executor
+// labels, so omitted (or null/blank) job identity fields are filled from the
+// Core-bound lease. Supplied values must still match.
+const BOUND_FIELDS = ['sessionId', 'adapter', 'model'];
+function withBoundJob(run, record, ledger) {
+  if (!record || typeof record !== 'object') return record;
   const task = run.tasks[record.hackerTaskId], lease = task && ledger.leases[task.currentLeaseId];
-  const bound = lease?.sessionId || lease?.jobId;
-  return bound ? { ...record, sessionId: bound, sessionIdSource: 'core_bound_lease' } : record;
+  if (!lease) return record;
+  const bound = { sessionId: lease.sessionId || lease.jobId, adapter: task.adapter, model: task.adapterState?.actualModel || task.selection?.modelId || 'not_applicable' };
+  const filled = BOUND_FIELDS.filter(field => (record[field] === undefined || record[field] === null || record[field] === '') && bound[field]);
+  if (!filled.length) return record;
+  return { ...record, ...Object.fromEntries(filled.map(field => [field, bound[field]])), boundFields: filled, boundFieldsSource: 'core_bound_lease' };
 }
 export function submitEvidence(opts, record) {
   return transaction(opts, ledger => {
     const run = ledger.runs[identifier(opts.runId, 'runId')];
     if (!run?.candidate) throw stateError('CANDIDATE_REQUIRED', 'Freeze a candidate before recording evidence');
     checkCandidateCurrent(run, run.candidate);
-    const evidence = validateEvidence(run, run.candidate, withBoundSession(run, record, ledger), ledger);
+    const declaredFile = bindDeclaredEvidence(run, record, ledger, opts.inputFile);
+    const bound = withBoundJob(run, record, ledger);
+    const evidence = validateEvidence(run, run.candidate, declaredFile ? { ...bound, declaredFile } : bound, ledger);
     run.evidence ||= [];
     if (!run.evidence.some(item => item.evidenceId === evidence.evidenceId)) run.evidence.push(evidence);
     if (evidence.verdict !== 'passed') run.status = 'blocked';

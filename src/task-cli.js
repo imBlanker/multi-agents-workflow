@@ -35,7 +35,7 @@ export async function runTask(args, flags) {
   else if (command === 'release') result = releaseLease(opts);
   else if (command === 'resume') result = resumeRun(opts);
   else if (command === 'candidate') result = freezeCandidate({ ...opts, workspace: flags.workspace, scope: flags['scope-json'] ? JSON.parse(flags['scope-json']) : undefined, artifacts: flags['artifacts-json'] ? JSON.parse(flags['artifacts-json']) : undefined });
-  else if (command === 'evidence') { if (!flags.input) throw stateError('EVIDENCE_INPUT_REQUIRED', 'Use --input FILE'); result = submitEvidence(opts, JSON.parse(fs.readFileSync(flags.input, 'utf8'))); }
+  else if (command === 'evidence') { if (!flags.input) throw stateError('EVIDENCE_INPUT_REQUIRED', 'Use --input FILE'); result = submitEvidence({ ...opts, inputFile: flags.input }, JSON.parse(fs.readFileSync(flags.input, 'utf8'))); }
   else if (command === 'accept') result = acceptCandidate(opts);
   else if (command === 'acceptance') result = acceptanceStatus(opts);
   else if (command === 'guard') result = queryAdmission(opts);

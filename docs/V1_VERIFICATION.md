@@ -51,9 +51,11 @@ independent child session. Reusing an author or another task's session is reject
 - modeId, modeVersion, configRevision;
 - candidateId, commitSha (nullable for a non-Git project), diffHash,
   effectiveConfigHash, scope, implementerActorIds copied from the frozen candidate;
-- hackerActorId, sessionId (native Hackers omit it; `task evidence` fills it from
-  the Core-bound lease and records sessionIdSource; a supplied value must match), model (actual if observed; otherwise the recorded
-  request, or `not_applicable` for a local non-model job), adapter. Stored records
+- hackerActorId, sessionId, model (actual if observed; otherwise the recorded
+  request, or `not_applicable` for a local non-model job), adapter. Native Hackers
+  omit sessionId, adapter and model; `task evidence` fills omitted, null or blank
+  values from the Core-bound job and lists them in boundFields with
+  boundFieldsSource `core_bound_lease`; a supplied value must match. Stored records
   explicitly label modelBasis observed/requested/not_applicable and retain
   requestedModel separately from observedModel (null plus a reason when unknown);
 - kind: `counterexamples` or `real_user_path`; verdict: `passed`, `failed`,
@@ -64,8 +66,18 @@ independent child session. Reusing an author or another task's session is reject
 - entrypoint, exactSteps (nonempty string array), controlledInputs, environment
   (real paths cannot set simulated:true), counterexamples (nonempty for that kind);
 - rawOutputs: [{path, sha256}], each nonempty file outside the product scope;
-- timestamps: {startedAt, finishedAt}, after candidate freeze;
+- timestamps: {startedAt, finishedAt}, after candidate freeze, copied from real
+  `date -u` output; placeholders are rejected or misstate the run;
 - scopeLimitations, degradations (arrays), costCoverage, enforcementLevel.
+
+A native Hacker ends its return with one line per final evidence JSON file:
+`MAWF_EVIDENCE <sha256> <absolute path>`. The host records that return in the
+Core-captured receipt. `task evidence --input FILE` accepts a host-managed
+Hacker's evidence only when FILE is declared there and its bytes still hash to
+the declared value (`HACKER_EVIDENCE_UNDECLARED` / `HACKER_EVIDENCE_MODIFIED`
+otherwise). The coordinator never edits Hacker evidence; a rejected record goes
+to a new Hacker task. For a `--receipt-file` host the binding is only as strong
+as that saved return.
 
 A Hacker may submit both evidence kinds. The minimum counts distinct actors,
 not records; actual session reuse is rejected. Existence probes, exit code,
