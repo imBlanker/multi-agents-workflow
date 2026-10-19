@@ -57,6 +57,10 @@ const mustContain = [
 for (const need of mustContain) {
   if (!files.includes(need)) fail(`tarball lacks required file: ${need}`);
 }
+for (const file of files) {
+  if (/(^|\/)(\.trellis|\.mawf|\.codex|\.claude|backups?|migration-backups)(\/|$)/.test(file)
+      || /^package\/docs\/history\//.test(file)) fail(`private workspace asset in tarball: ${file}`);
+}
 step(`${files.length} files audited, all required entries present`);
 
 // 3. isolated install (source tree is NOT on the resolution path)

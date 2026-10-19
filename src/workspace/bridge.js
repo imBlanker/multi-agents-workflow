@@ -172,16 +172,20 @@ export class BridgeServer {
     }
     this.handshaked = true;
     this.clientId = msg.clientId;
-    this.negotiated = negotiate(this.capabilities, Array.isArray(msg.capabilities) ? msg.capabilities : []);
     const ws = Array.isArray(msg.workspaces) ? msg.workspaces[0] : null;
     if (ws && typeof ws.root === "string" && typeof this.onWorkspace === "function") {
       try {
-        this.providers = this.onWorkspace(ws.root) ?? this.providers;
+        const resolved = this.onWorkspace(ws.root);
+        if (resolved?.providers && Array.isArray(resolved.capabilities)) {
+          this.providers = resolved.providers;
+          this.capabilities = [...new Set(resolved.capabilities)].sort();
+        } else this.providers = resolved ?? this.providers;
       } catch (e) {
         this.refused = true;
         return [encodeFrame(helloServer({ serverId: this.serverId, machineId: this.machineId ?? this.serverId, accepted: false, reason: `workspace rejected: ${e?.message ?? e}` }))];
       }
     }
+    this.negotiated = negotiate(this.capabilities, Array.isArray(msg.capabilities) ? msg.capabilities : []);
     return [encodeFrame(helloServer({ serverId: this.serverId, machineId: this.machineId ?? this.serverId, accepted: true, capabilities: this.capabilities }))];
   }
 
@@ -202,7 +206,8 @@ export class BridgeServer {
       return [encodeFrame(protoResponse({ id, ok: true, result: { cancelled: false } }))];
     }
     const required = METHOD_CAPS[msg.method];
-    if (required && !this.capabilities.includes(required)) {
+    const snapshotRead = msg.method === "runtime.snapshot" && this.capabilities.includes(CAPABILITIES.RUNTIME_READ);
+    if (required && !this.capabilities.includes(required) && !snapshotRead) {
       return [errorLine(id, ERR.CAPABILITY_MISSING, `capability ${required} is not offered by this bridge`)];
     }
     const dot = msg.method.indexOf(".");

@@ -1,3 +1,11 @@
+---
+name: mawf-orchestrator
+description: Dynamic orchestrator role; follow the supplied run snapshot and exact task specification
+model: inherit
+tools: Read, Grep, Glob, Bash, Agent, TaskOutput, TaskStop
+disallowedTools: Edit, Write
+---
+
 # Orchestrator Agent (MAW)
 
 You are the **orchestrator** in a MAW workflow. Your job: decompose the task, delegate to subagents, and synthesize results.

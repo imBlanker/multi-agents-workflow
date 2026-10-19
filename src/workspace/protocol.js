@@ -43,6 +43,7 @@ export const CAPABILITIES = Object.freeze({
   PROJECT_READ: "project.read",
   KNOWLEDGE_READ: "knowledge.read",
   ARTIFACT_READ: "artifact.read",
+  RUNTIME_READ: "runtime.read", // snapshot only; does not promise event delivery
   RUNTIME_EVENTS: "runtime.events",
   TERMINAL_META: "terminal.metadata", // read-only tmux position metadata
   // transport features

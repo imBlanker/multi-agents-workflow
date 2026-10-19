@@ -1,3 +1,5 @@
+import { deriveTaskProfile } from './task-profile.js';
+export { deriveTaskProfile } from './task-profile.js';
 // @ts-check
 // Deterministic cross-host advising: score every installed host against a
 // task profile (requirements text, domain, difficulty) and recommend
@@ -14,8 +16,6 @@ import path from "node:path";
 import { portOwner, dshLaunch } from "./platform/index.js";
 import { exists, isFile, readJson, writeJson, ensureDir, readText } from "./util.js";
 import { parseYamlSubset } from "./util.js";
-import { scanInventory } from "./inventory.js";
-import { detectHost } from "./host.js";
 
 const DEFAULTS = {
   weights: { capabilityFit: 30, skillMatch: 30, modelFit: 25, costFit: 15 },
@@ -64,7 +64,7 @@ function utc8Stamp(clock) {
 function defaultCurrentHost() {
   const env = (process.env.MAW_HOST || "").toLowerCase();
   if (HOST_ALIASES[env]) return HOST_ALIASES[env];
-  return detectHost().app;
+  return "unknown";
 }
 
 /**
@@ -79,27 +79,6 @@ function readAdviseConfig(projectDir) {
     const a = parsed?.advise;
     return a && typeof a === "object" ? a : {};
   } catch { return {}; }
-}
-
-/**
- * Derive a task profile from project artifacts when --task was not given.
- * @param {string} projectDir
- * @returns {{ text: string, difficulty: number }}
- */
-export function deriveTaskProfile(projectDir) {
-  let text = "";
-  let difficulty = 3;
-  const wf = readJson(path.join(projectDir, ".mawf", "workflow.json"), null);
-  if (wf) {
-    const parts = [wf.name, wf.primary, ...(Array.isArray(wf.rationale) ? wf.rationale : [])].filter(Boolean);
-    text = parts.join(". ");
-    const primary = String(wf.primary || "");
-    if (/multi-agent|orchestrator-workers/.test(primary)) difficulty = 4;
-    else if (/loop|dynamic/.test(primary)) difficulty = 3;
-    else difficulty = 2;
-  }
-  if (!text) text = "project work (no plan artifacts)";
-  return { text, difficulty };
 }
 
 /**
@@ -252,7 +231,7 @@ export function adviseTask(opts = {}) {
   const stayBonus = Number(cfg.stayBonus ?? DEFAULTS.stayBonus);
   const marginNeeded = Number(cfg.margin ?? DEFAULTS.margin);
 
-  const inventory = opts.inventory ?? scanInventory({ projectDir });
+  const inventory = opts.inventory ?? { hosts: [] };
   const profile = opts.task
     ? { text: opts.task, difficulty: Number(opts.difficulty) || 3, domain: opts.domain || "" }
     : (() => {

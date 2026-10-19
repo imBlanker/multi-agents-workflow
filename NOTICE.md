@@ -10,11 +10,11 @@ attribution is recorded in this file.
 
 MAW is an **independent implementation**. While designing the system we
 studied a number of open-source projects and engineering articles and adopted
-their *ideas* and *architectural structures* — never their source code. This
+their ideas and architectural structures. Vendored assets and exported data
+have the specific provenance recorded below and in their own notices. This
 file records, for each referenced source: its name, its license, what we
-borrowed, why it fit MAW's needs, and whether any code was copied. In every
-case the answer is the same: **no verbatim code was copied; only structures
-and concepts were adopted.** A summary of the same list appears in the
+borrowed, why it fit MAW's needs, and whether any code was copied. The individual entries distinguish concept references, adapted assets and data
+exports; no blanket claim overrides a vendored asset’s own license. A summary of the same list appears in the
 *Referenced Projects & Acknowledgements* section of [`README.md`](./README.md);
 this file is the detailed, license-focused record.
 
@@ -138,3 +138,28 @@ grilling SKILL.md carries two mawf format amendments (non-empty recommendation
 line; lettered choices one per line) — see skills/vendor/LICENSE. mawf installs
 them into workspaces alongside the trellis-brainstorm grill-edition wrapper
 (`skills/mawf-grill/`), preserving the full Trellis planning contract.
+
+
+## v1 adapters and normalized price data
+
+- Kagandi/pi-plugin-cc, https://github.com/Kagandi/pi-plugin-cc, inspected at
+  a8c4db32fbd5b3b3a028b1dcb95cbba60c4cc07e. MAWF implements a client for its
+  companion protocol; the upstream plugin is separately installed, not copied
+  into this package.
+- imBlanker/codex-plugin-cc, https://github.com/imBlanker/codex-plugin-cc,
+  inspected at d6a979b35741f3654c6f0f64cea0642104e9105b. Its openai-codex
+  marketplace name is preserved in provenance without claiming official source.
+  The upstream plugin is not redistributed here.
+- davebcn87/pi-autoresearch, https://github.com/davebcn87/pi-autoresearch,
+  separately selected extension 1.9.0. MAWF implements a persistent RPC lifecycle
+  around its documented experiment tools; the extension is not vendored.
+- farion1231/cc-switch, https://github.com/farion1231/cc-switch. The bundled
+  defaults/pricing.cc-switch-upstream.json is normalized factual pricing data
+  exported from schema blob 939d4594e64ce23bf250f42b6cec9f22c4caa913 with source
+  URL/hash/byte length in the file. It is not a copy of the Rust schema program,
+  a provider authorization, or evidence of actual charges.
+- models.dev, https://models.dev/api.json. Optional user-selected public pricing
+  refreshes retain source metadata; responses are runtime cache data rather than
+  a bundled external service or credential dependency.
+
+Existing vendored component and skill license/notice files remain intact.

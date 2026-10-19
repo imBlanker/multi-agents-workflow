@@ -1,3 +1,5 @@
+import { readSettings } from './settings.js';
+import { isEnabled } from './integrations.js';
 // @ts-check
 // Observer (A15): session-event observation hooks that NEVER interfere.
 // Contract §7.4: fail-open, time-bounded, does not affect host command or
@@ -20,7 +22,7 @@ export const OBSERVER_MARKER = "mawf-observer-v1";
 export const SPOOL_MAX_LINES = 500;
 export const SPOOL_MAX_BYTES = 2 * 1024 * 1024;
 
-const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Absolute observer emit entry for the installed host command. */
 export function observerCommand() {
@@ -89,6 +91,7 @@ export function uninstallObserver({ hostApp = "claude", home: homeDir } = {}) {
  */
 export function emitEvent(raw, { projectDir, now = () => new Date().toISOString() } = {}) {
   try {
+    if (!isEnabled(readSettings(projectDir || process.cwd()), "observer")) return { ok: true, written: false, reason: "disabled" };
     let event = null;
     try {
       event = JSON.parse(raw);

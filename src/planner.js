@@ -54,7 +54,7 @@ import { isoNow, round, slug } from "./util.js";
 import { selectModelForRole, baseRole, classifyModel, capabilityScore, ROLE_REQUIREMENTS } from "./modelcap.js";
 import { resolvePrice } from "./pricing.js";
 import { checkPriceGate, PRICE_GATE_THRESHOLDS } from "./pricegate.js";
-import { reviewerPlanOverride } from "./codexplan.js";
+import { reviewerPlanOverride } from "./subscription-policy.js";
 
 const DEFAULT_PER_AGENT = 5.0;   // USD/min (real inference spend from cc-switch logs)
 const DEFAULT_TOTAL = 10.0;      // USD/min
@@ -211,8 +211,9 @@ export function planWorkflow(signals, ctx = {}) {
         const req = ROLE_REQUIREMENTS.reviewer ?? { require: ["agentic"], prefer: [], why: "independent review" };
         const cap = capabilityScore(cls.caps, req);
         const ovPrice = resolvePrice(planOv.model, {
+          ...cc.pricingContext, providerId: sel?.providerId ?? null,
           modelPricing: cc.modelPricing,
-          costMultiplier: Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
+          costMultiplier: sel?.costMultiplier ?? Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
         });
         sel = {
           role, appType,
@@ -248,10 +249,13 @@ export function planWorkflow(signals, ctx = {}) {
       // reported as covered:true instead of blocked — flat rate, no per-token
       // spend to gate.
       const price = resolvePrice(sel.model, {
+        ...cc.pricingContext, providerId: sel.providerId ?? null,
         modelPricing: cc.modelPricing,
-        costMultiplier: Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
+        costMultiplier: sel?.costMultiplier ?? Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
       });
-      sel.priceGate = checkPriceGate(sel.model, price, planOv ? { coveredByPlan: planOv.planType } : undefined);
+      sel.price = price;
+      sel.billingMode = (cc.pricingContext?.settings?.models ?? []).find(model => model.providerId === sel.providerId && model.modelId === sel.model)?.billingMode ?? "unknown";
+      sel.priceGate = checkPriceGate(sel.model, price, { role, providerId: sel.providerId, billingMode: sel.billingMode, settings: cc.pricingContext?.settings });
       selCache[key] = sel;
     }
     return selCache[key];
