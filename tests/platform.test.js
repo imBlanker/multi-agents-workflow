@@ -77,7 +77,9 @@ test("Windows generic batch arguments preserve literal metacharacters", { skip: 
   const script = path.join(dir, "echo.cjs");
   const shim = path.join(dir, "echo.cmd");
   fs.writeFileSync(script, "process.stdout.write(JSON.stringify(process.argv.slice(2)))");
-  fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+  // cmd.exe decodes a batch file with the console code page (GBK under 936),
+  // so keep the file ASCII: name the script by %~dp0, not by its path.
+  fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" "%~dp0echo.cjs" %*\r\n`);
   const args = ["a b", "中文", "a&b", "!keep!", "%PATH%", "", "x^y", "trailing\\"];
   const r = windows.run(shim, args, { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr || r.error?.message);
