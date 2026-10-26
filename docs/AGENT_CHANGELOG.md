@@ -6,6 +6,23 @@ coding agents operating this repo). Human narrative: [`../CHANGELOG.md`](../CHAN
 
 Package: `multi-agents-workflow` · CLI: `mawf` · Node ≥ 20.17 · zero runtime deps.
 
+## 1.0.1 (2026-10-26; local candidate, unpublished)
+
+```yaml
+version: 1.0.1
+semver_impact: patch
+status: local_candidate_not_published
+issue: https://github.com/imBlanker/multi-agents-workflow/issues/43
+fixed:
+  - "windows archive operations (components install, cc-switch backup, cc-switch snapshot restore) use the system bsdtar (System32 tar.exe) via platform tarCommand regardless of PATH order; under git bash MSYS GNU tar made installs and restores fail and backups silently become copies"
+  - "windows extraction never falls back to GNU tar: MSYS GNU tar writes a symlink to an existing file as a copy of it, bypassing the symlink-escape scan"
+  - "A20 packed-install gate on windows: CRLF tar listing, --prefix install inside its temp dir, tarball and npm/compile caches kept in temp, cleanup on failure, smoke runs with an isolated HOME"
+  - "generic batch test fixture is ASCII-only, so code page 936 cannot garble it"
+added:
+  - "tests: existing-target symlink escape rejected with nothing copied; .tar.gz backup->restore round trip; per-adapter tar selection"
+publication: not_authorized
+```
+
 ## 1.0.0 (2026-10-14; local candidate, unpublished)
 
 ```yaml

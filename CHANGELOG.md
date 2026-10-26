@@ -4,6 +4,17 @@ All notable changes to **multi-agents-workflow (MAW)** are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/). Agent-oriented summary: [`docs/AGENT_CHANGELOG.md`](docs/AGENT_CHANGELOG.md).
 
+## [1.0.1] — 2026-10-26 (local candidate; unpublished)
+
+### Fixed
+
+- Windows archive operations use the system bsdtar (`%SystemRoot%\System32\tar.exe`) whatever the PATH order. Under Git Bash, MSYS GNU tar came first: `mawf components install --from-file` failed, cc-switch backups silently fell back to a plain copy, and `.tar.gz` snapshot restores failed. Extraction never falls back to GNU tar on Windows, because it writes a symlink to an existing file as a copy of that file and so bypasses the symlink-escape check. The choice lives in the platform facade (`tarCommand`). ([#43](https://github.com/imBlanker/multi-agents-workflow/issues/43))
+- Windows release checks: the A20 packed-install gate reads bsdtar's CRLF listing, installs with `--prefix` inside its own temp dir instead of walking up to an ancestor `package.json`, keeps the tarball and npm cache there, and cleans up on failure. The generic batch test fixture no longer breaks under code page 936.
+
+### Added
+
+- Regression tests: an archive symlink to an existing file outside the destination is rejected with nothing copied; a `.tar.gz` cc-switch snapshot round-trips through backup and restore; tar selection per platform adapter.
+
 ## [1.0.0] — 2026-10-14 (local candidate; unpublished)
 
 - Default all optional integrations off; explicit settings, mode registry and reversible legacy import.
