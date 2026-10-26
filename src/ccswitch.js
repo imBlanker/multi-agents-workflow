@@ -15,6 +15,7 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import { exists, round, isoNow } from "./util.js";
+import { tarCommand } from "./platform/index.js";
 
 // Resolve the optional node:sqlite binding once at module load (top-level await
 // is allowed in ESM). If absent, we use the sqlite3 CLI.
@@ -676,7 +677,7 @@ export function restoreRoutingFromSnapshot(opts = {}) {
       const latest = path.join(backupsDir, entries[entries.length - 1]);
       if (latest.endsWith(".tar.gz")) {
         tmp = fs.mkdtempSync(path.join(os.tmpdir(), "maw-restore-"));
-        execFileSync("tar", ["-xzf", latest, "-C", tmp], { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 });
+        execFileSync(tarCommand({ extract: true }), ["-xzf", latest, "-C", tmp], { stdio: ["ignore", "pipe", "pipe"], timeout: 30000 });
         snapDir = tmp;
       } else {
         snapDir = latest;

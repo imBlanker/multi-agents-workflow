@@ -27,7 +27,7 @@ separate on every platform. Role prompts/worktrees are not an OS sandbox.
 | `src/` | Shared planning, configuration, policy, host integration, and upgrade logic |
 | `src/platform/index.js` | Select the native adapter and expose platform operations |
 | `src/platform/linux.js` | POSIX command lookup, execution, and process/port inspection |
-| `src/platform/windows.js` | Windows executable lookup, command shims, and native process/port inspection |
+| `src/platform/windows.js` | Windows executable lookup, command shims, archive tool choice, and native process/port inspection |
 | `tests/` | Shared regressions and platform contract fixtures |
 
 Shared consumers use the platform facade. Platform-specific fixes belong in their adapter; fixes to planning or policy apply to both environments. `win32` selects Windows; Linux uses the POSIX adapter. Other POSIX environments retain a fallback but are outside the Linux/Windows validation matrix.
@@ -49,6 +49,10 @@ No dependency installation or mawf installation is needed to develop from source
 ### Windows command wrappers
 
 Recognized npm Node command shims run their JavaScript entry point directly with the current Node executable, preserving argument values including embedded quotes and multiline prompts. Generic `.cmd`/`.bat` wrappers use the Windows command processor and reject arguments containing embedded double quotes or newlines with `EINVAL`; use a native executable or a recognized npm Node shim for such arguments. This restriction prevents shell reinterpretation and is material when using custom batch wrappers for hosts.
+
+### Windows archive tool
+
+Archive work (component installs, cc-switch backups and snapshot restores) runs the tar returned by the facade's `tarCommand()`. On Windows that is the system bsdtar, `%SystemRoot%\System32\tar.exe`, regardless of PATH order: Git Bash puts MSYS GNU tar first, which cannot read zip and treats the `C:` of an archive path as a remote host. Without the system tar, the first `tar` on PATH is used, except that extraction refuses GNU tar, which writes a symlink to an existing file as a copy of that file and would bypass the symlink-escape check. Linux keeps `tar` from PATH.
 
 ## Adding an environment
 

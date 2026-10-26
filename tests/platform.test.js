@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import * as windows from "../src/platform/windows.js";
 import * as linux from "../src/platform/linux.js";
-import { platformFor, run, execFile, findExecutable } from "../src/platform/index.js";
+import { platformFor, run, execFile, findExecutable, tarCommand } from "../src/platform/index.js";
 import { buildTrellisCommandSpec, buildTrellisLaunchSpec } from "../src/trellis.js";
 
 test("facade selects explicit adapters and retains POSIX fallback", () => {
@@ -42,6 +42,39 @@ test("Windows discovery honors PATH/PATHEXT case-insensitively", (t) => {
   fs.writeFileSync(exe, "@echo off\r\n");
   assert.equal(windows.findExecutable("probe", { env: { Path: dir, PathExt: ".EXE;.CMD" } }), exe);
   assert.equal(windows.findExecutable("missing", { env: { Path: dir } }), null);
+});
+
+test("tar selection prefers the Windows system bsdtar and never extracts with GNU tar", (t) => {
+  const bsdtar = "C:\\Win\\System32\\tar.exe";
+  const system = { env: { SystemRoot: "C:\\Win" }, exists: (p) => p === bsdtar };
+  assert.equal(windows.tarCommand(system), bsdtar);
+  assert.equal(windows.tarCommand({ ...system, extract: true }), bsdtar);
+
+  // Without the system tar: the PATH tar, resolved to a full path, except GNU tar for extraction.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mawf tar-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const pathTar = path.join(dir, "tar.EXE");
+  fs.writeFileSync(pathTar, "");
+  const calls = [];
+  const fallback = (stdout) => ({
+    env: { SystemRoot: "C:\\Missing", Path: dir, PathExt: ".EXE" },
+    exists: () => false,
+    runner: (command, args) => { calls.push([command, ...args]); return { status: 0, stdout }; },
+  });
+  assert.equal(windows.tarCommand(fallback("tar (GNU tar) 1.35\n")), pathTar);
+  assert.throws(() => windows.tarCommand({ ...fallback("tar (GNU tar) 1.35\n"), extract: true }), /GNU tar/);
+  assert.equal(windows.tarCommand({ ...fallback("bsdtar 3.8.9 - libarchive 3.8.9\n"), extract: true }), pathTar);
+  assert.deepEqual(calls, [[pathTar, "--version"], [pathTar, "--version"]]);
+  assert.equal(windows.tarCommand({ env: { SystemRoot: "C:\\Missing", Path: path.join(dir, "none") }, exists: () => false }), "tar");
+  assert.equal(linux.tarCommand(), "tar");
+  assert.equal(linux.tarCommand({ extract: true }), "tar");
+});
+
+test("the facade uses the Windows system bsdtar regardless of PATH order", { skip: process.platform !== "win32" }, () => {
+  const bsdtar = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+  assert.ok(fs.existsSync(bsdtar), `${bsdtar} ships with Windows 10 1803 and later`);
+  assert.equal(tarCommand(), bsdtar);
+  assert.equal(tarCommand({ extract: true }), bsdtar);
 });
 
 test("Linux lookup respects executable permissions", { skip: process.platform === "win32" }, (t) => {

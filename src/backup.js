@@ -6,7 +6,8 @@
 // `<cc-switch dir>/maw-backups/` — it never modifies any existing cc-switch
 // config file.
 //
-// Preferred format: a `.tar.gz` via the system `tar` (present on macOS/Linux).
+// Preferred format: a `.tar.gz` via the system `tar` (present on macOS/Linux,
+// and as bsdtar on Windows, which the platform facade picks over PATH order).
 // Fallback: a recursive directory copy + a manifest.json (sha256 + sizes) so
 // the snapshot is still a verifiable package on systems without tar.
 import { execFileSync } from "node:child_process";
@@ -15,6 +16,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { exists, ensureDir } from "./util.js";
 import { findDb } from "./ccswitch.js";
+import { tarCommand } from "./platform/index.js";
 
 /** @param {number} [d] */
 function stamp(d = Date.now()) {
@@ -61,7 +63,7 @@ export function snapshotCcSwitch(opts = {}) {
   // Preferred: tar.gz package (exclude the backups dir itself to avoid recursion)
   try {
     const archive = path.join(destDir, `${name}.tar.gz`);
-    execFileSync("tar", ["-czf", archive, "--exclude", `./${path.basename(destDir)}`, "-C", srcDir, "."], {
+    execFileSync(tarCommand(), ["-czf", archive, "--exclude", `./${path.basename(destDir)}`, "-C", srcDir, "."], {
       stdio: ["ignore", "pipe", "pipe"], timeout: 30000,
     });
     if (exists(archive)) {

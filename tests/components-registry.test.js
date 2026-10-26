@@ -155,6 +155,31 @@ test("symlink escape inside an archive is rejected and cleaned up (§14, §12.1)
   assert.ok(!fs.existsSync(path.join(home, ".mawf", "components", "archify")), "no component dir left behind");
 });
 
+test("symlink escape to an EXISTING outside file is rejected and nothing is copied (§14)", () => {
+  // MSYS GNU tar extracts such a link as a copy of its target, which the
+  // symlink scan cannot see; the system tar must keep it a link.
+  const lock = loadLock();
+  const home = fakeHome();
+  const archify = lock.components.find((c) => c.name === "archify");
+  const secret = path.join(home, "outside-secret");
+  fs.writeFileSync(secret, "SECRET-CONTENT");
+  const src = path.join(home, "evil-src");
+  fs.mkdirSync(path.join(src, "archify", "bin"), { recursive: true });
+  fs.mkdirSync(path.join(src, "archify", "renderers", "shared"), { recursive: true });
+  fs.mkdirSync(path.join(src, "archify", "assets"), { recursive: true });
+  fs.mkdirSync(path.join(src, "archify", "scripts"), { recursive: true });
+  for (const f of ["archify/bin/archify.mjs", "archify/renderers/x.mjs", "archify/renderers/shared/geometry.mjs", "archify/assets/template.html", "archify/assets/JetBrainsMono-OFL.txt", "archify/scripts/check-render-output.mjs", "archify/LICENSE", "archify/THIRD_PARTY_NOTICES.md"]) {
+    fs.writeFileSync(path.join(src, f), "// x\n");
+  }
+  fs.symlinkSync(secret, path.join(src, "archify", "assets", "escape.lnk"));
+  const tgz = path.join(home, "evil.tgz");
+  packTgz(tgz, src);
+  const r = installComponent(archify, tgz, { home });
+  assert.equal(r.ok, false, "symlink escape must fail the install");
+  assert.ok((r.violations ?? []).some((v) => v.includes("symlink escape")), JSON.stringify(r));
+  assert.ok(!fs.existsSync(path.join(home, ".mawf", "components", "archify")), "nothing from the archive is kept");
+});
+
 test("verifyComponent promotes only after a real doctor pass; rollback restores (§14)", () => {
   const lock = loadLock();
   const home = fakeHome();
