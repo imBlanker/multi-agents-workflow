@@ -176,12 +176,25 @@ function safeExtract(archivePath, destDir) {
   const isZip = /\.zip$/i.test(archivePath);
   const isTgz = /\.(tgz|tar\.gz)$/i.test(archivePath);
   if (!isZip && !isTgz) return { ok: false, error: `unsupported archive type: ${path.basename(archivePath)}` };
+  const tar = systemTar();
   let result;
-  if (isZip) result = spawnSync("tar", ["-xf", archivePath, "-C", destDir], { encoding: "utf8" });
-  else result = spawnSync("tar", ["-xzf", archivePath, "-C", destDir], { encoding: "utf8" });
+  if (isZip) result = spawnSync(tar, ["-xf", archivePath, "-C", destDir], { encoding: "utf8" });
+  else result = spawnSync(tar, ["-xzf", archivePath, "-C", destDir], { encoding: "utf8" });
   if (result.error) return { ok: false, error: `tar unavailable: ${result.error.message}` };
   if (result.status !== 0) return { ok: false, error: `tar exited ${result.status}: ${(result.stderr ?? "").slice(0, 400)}` };
   return { ok: true, tool: isZip ? "tar(zip)" : "tar(tgz)" };
+}
+
+/**
+ * The Windows system tar is bsdtar. Prefer it to whatever "tar" comes first on
+ * PATH: Git Bash puts MSYS GNU tar there, which cannot read zip, takes the "C:"
+ * of an archive path for a remote host, and extracts a symlink to an existing
+ * file as a copy of that file, which scanExtractedTree cannot see.
+ */
+function systemTar() {
+  if (process.platform !== "win32") return "tar";
+  const bsdtar = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+  return fs.existsSync(bsdtar) ? bsdtar : "tar";
 }
 
 /** Post-extract scan: reject symlink escapes and path-traversal artifacts. */
