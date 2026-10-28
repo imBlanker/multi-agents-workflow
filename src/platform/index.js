@@ -15,3 +15,6 @@ export function execFile(command, args = [], options = {}) {
   }
   return result.stdout;
 }
+
+// Checkout, path-spelling and file-sharing conventions that differ on Windows.
+export const { checkoutVariants, realpath, comparablePath, retryTransient } = platformFor();
