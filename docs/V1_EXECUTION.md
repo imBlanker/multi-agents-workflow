@@ -28,13 +28,40 @@ background Agent notification starts a new main turn. Native launches therefore
 pass the same list (read from plugin/commands/run.md) as session-level
 --allowedTools, so post-notification turns keep the first turn's permissions
 instead of auto-denying Core calls, spec-file writes or evidence reads. This
-does not widen what the first turn already had; existing deny rules and
-protected paths still apply, and Bash remains policy_only, not a sandbox.
-Managed/user/project deny rules and protected paths still apply. This does not
-grant arbitrary external directory writes or enforce each task's owned scope.
-Bash can still write files: orchestration-only
-and file scope are policy_only. This follows the Claude Code CLI and subagent
-tool contracts: https://code.claude.com/docs/en/cli-reference and
+does not widen what the first turn already had; managed/user/project deny rules
+and protected paths still apply. It does not enforce each task's owned scope:
+orchestration-only and file scope stay policy_only.
+
+Native launches enforce Claude Code's Bash sandbox. On Linux it needs bubblewrap
+and socat on PATH; without them the run is refused with NATIVE_SANDBOX_UNAVAILABLE
+before any reservation. `--settings` turns the sandbox on with failIfUnavailable,
+forbids the unsandboxed retry (allowUnsandboxedCommands:false), keeps the regular
+permission flow (autoAllowBashIfSandboxed:false) and pins the weakening switches
+off. Every Bash command, subagents' included, then runs without network and can
+write only the working directory and the per-user temp directory, minus the MAWF
+state root and package (filesystem.denyWrite). `--disallowedTools` adds
+`Edit(//STATE_ROOT/**)` and `Edit(//PACKAGE/**)`, which keep Edit, Write and
+NotebookEdit out of both. The only excludedCommands are plain calls of this
+package's Core entry with `run` or `task`, so Core alone writes the ledger,
+receipts and events, and a session cannot rewrite the Core it runs. A workspace
+inside the package is refused (NATIVE_WORKSPACE_INSIDE_PACKAGE). Sessions write
+queue specs under the prepare response's inputDirectory (`.mawf/inputs/RUN/`);
+Hackers write evidence under `.mawf/evidence/RUN/TASK/ATTEMPT/`, which run next
+creates and names in the dispatch. Both are in the run workspace, outside the
+state root and product scope.
+
+Limits of that boundary: adapter starts and anything that needs network fail
+inside a native session. Sandbox arrays and directories from user or managed
+settings (excludedCommands, allowWrite, allowedDomains, additionalDirectories)
+still merge in and can widen it; repository settings cannot, because
+allowUnsandboxedCommands:false from `--settings` makes the sandbox
+admin-required. `node` in a Core call resolves through the session PATH, which
+must not contain a session-writable directory. The stream does not report
+sandbox status, so enforcement rests on failIfUnavailable. Hooks, MCP servers
+and other processes Claude Code itself starts run outside the sandbox. This
+follows https://code.claude.com/docs/en/sandboxing,
+https://code.claude.com/docs/en/permissions,
+https://code.claude.com/docs/en/cli-reference and
 https://code.claude.com/docs/en/sub-agents.
 
 A registered native launch writes a private schemaVersion 1 request under its

@@ -31,8 +31,11 @@ product writes, a different target, missing candidate and author identities.
 Explicit verificationOf queues in other modes get the same verification policy;
 dynamic custom role names alone do not. Normalized values remain visible in the
 queued task's dispatchSpec. The target does not follow future candidate changes.
-Hacker prompts supply the concrete independent oracle and evidence directory;
-Core adds actual lease identity at dispatch. Never include invented lease tokens.
+Hacker prompts supply the concrete independent oracle; Core adds actual lease
+identity at dispatch and names the evidence directory
+`<run workspace>/.mawf/evidence/RUN/TASK/ATTEMPT/`, which it creates. A native
+session's sandbox can write there but not into the state root. Never include
+invented lease tokens.
 The Hacker returns evidence file paths; only after produced and released does
 the coordinator call task evidence. Acceptance policy remains unchanged.
 
@@ -66,7 +69,8 @@ independent child session. Reusing an author or another task's session is reject
 - entrypoint, exactSteps (nonempty string array), controlledInputs, environment
   (real paths cannot set simulated:true), counterexamples (array, nonempty for
   kind counterexamples; a real_user_path record may omit it and Core treats it as empty);
-- rawOutputs: [{path, sha256}], each nonempty file outside the product scope;
+- rawOutputs: [{path, sha256}], each nonempty file outside the product scope
+  (`.mawf/evidence` and `.mawf/runtime` in the candidate workspace are outside it);
 - timestamps: {startedAt, finishedAt}, after candidate freeze, copied from real
   `date -u` output; placeholders are rejected or misstate the run;
 - scopeLimitations, degradations (arrays), costCoverage, enforcementLevel.

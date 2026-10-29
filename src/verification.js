@@ -89,7 +89,8 @@ export function validateEvidence(run, candidate, record, ledger) {
     if (!item?.path || !/^[a-f0-9]{64}$/.test(item.sha256 || '')) throw stateError('RAW_EVIDENCE_REQUIRED', 'Each raw output needs its file path and SHA256');
     const absolute = path.resolve(item.path); assertSafePath(absolute);
     const spelled = comparablePath(absolute);
-    if (spelled.startsWith(comparablePath(candidate.workspace) + path.sep) && !spelled.startsWith(comparablePath(path.join(candidate.workspace, '.mawf', 'runtime')) + path.sep)) throw stateError('EVIDENCE_PRODUCT_OVERLAP', 'Independent evidence must be stored outside product scope');
+    const mawfData = ['runtime', 'evidence'].some(name => spelled.startsWith(comparablePath(path.join(candidate.workspace, '.mawf', name)) + path.sep));
+    if (spelled.startsWith(comparablePath(candidate.workspace) + path.sep) && !mawfData) throw stateError('EVIDENCE_PRODUCT_OVERLAP', 'Independent evidence must be stored outside product scope');
     const bytes = fs.readFileSync(absolute);
     if (!bytes.length || digest(bytes) !== item.sha256) throw stateError('RAW_EVIDENCE_DRIFT', 'Raw output is missing, empty or changed');
     return { path: absolute, sha256: item.sha256 };
