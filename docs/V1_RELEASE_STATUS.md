@@ -86,7 +86,7 @@ propagation, overlay error target/code, and accurate planner coverage wording.
 Profile sync keeps its environment-plus-selection double gate. Pre-0.6 `.maw`
 automatic renaming remains removed.
 
-At `304ae89` the final local suite contains 66 test files / 593 tests:
+At `db7e4cc` the final local suite contains 66 test files / 593 tests:
 
 | Native environment | Pass | Fail | Skip | TODO |
 | --- | ---: | ---: | ---: | ---: |
@@ -110,7 +110,7 @@ are not Ubuntu Node22/24 CI evidence. The final four GitHub CI jobs remain pendi
 
 The A20 packed-install gate was migrated to assert rejection of unselected
 knowledge, then explicitly select knowledge and archify before exercising them.
-At `304ae89` the Windows Node24 and Linux Node25 gates both passed, each auditing
+At `db7e4cc` the Windows Node24 and Linux Node25 gates both passed, each auditing
 249 files and completing isolated installation and selected-feature checks;
 the earlier failure under the old implicit-selection assumption remains historical.
 

@@ -300,4 +300,5 @@ Hacker record and was rejected with INVALID_EVIDENCE; the session then
 registered both Hacker files unchanged. Claude Code created an empty
 `.claude/.cc-writes` directory in the workspace. The temporary project had no
 commit, so live capture took the no-commit path; the committed-object path is
-covered by the fixtures above, not by this run.
+covered by the fixtures above, not by this run. So is the later `db7e4cc`
+change that dropped the tree listing from the diff hash.
