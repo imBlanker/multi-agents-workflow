@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readJson, ensureDir, isoNow } from "../util.js";
+import { tarCommand } from "../platform/index.js";
 
 /** @returns {object} the locked component registry bundled with MAWF */
 export function loadLock() {
@@ -168,17 +169,19 @@ function cleanupFailedInstall(versionDir) {
 
 /**
  * Extract with the system tar (bsdtar on Windows/macOS reads zip natively;
- * GNU tar handles .tgz). Post-scan enforces the safety rules so we do not
- * hand-write a fragile zip parser (contract §2.2-5).
+ * GNU tar handles .tgz), as chosen by the platform facade. Post-scan enforces
+ * the safety rules so we do not hand-write a fragile zip parser (contract §2.2-5).
  */
 function safeExtract(archivePath, destDir) {
   ensureDir(destDir);
   const isZip = /\.zip$/i.test(archivePath);
   const isTgz = /\.(tgz|tar\.gz)$/i.test(archivePath);
   if (!isZip && !isTgz) return { ok: false, error: `unsupported archive type: ${path.basename(archivePath)}` };
+  let tar;
+  try { tar = tarCommand({ extract: true }); } catch (e) { return { ok: false, error: `tar unavailable: ${e.message}` }; }
   let result;
-  if (isZip) result = spawnSync("tar", ["-xf", archivePath, "-C", destDir], { encoding: "utf8" });
-  else result = spawnSync("tar", ["-xzf", archivePath, "-C", destDir], { encoding: "utf8" });
+  if (isZip) result = spawnSync(tar, ["-xf", archivePath, "-C", destDir], { encoding: "utf8" });
+  else result = spawnSync(tar, ["-xzf", archivePath, "-C", destDir], { encoding: "utf8" });
   if (result.error) return { ok: false, error: `tar unavailable: ${result.error.message}` };
   if (result.status !== 0) return { ok: false, error: `tar exited ${result.status}: ${(result.stderr ?? "").slice(0, 400)}` };
   return { ok: true, tool: isZip ? "tar(zip)" : "tar(tgz)" };

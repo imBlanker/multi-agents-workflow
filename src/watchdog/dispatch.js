@@ -1,3 +1,4 @@
+import { workspaceLayout } from "../workspace/backend.js";
 // @ts-check
 // Watchdog rescue dispatch (PRD R4/R5): host selection (fixed order
 // claude→pi→dsh→codex, skip stalled/unavailable/tried), price-valve model
@@ -18,7 +19,6 @@ import { checkPriceGate } from "../pricegate.js";
 import { applyEvent, saveIncident } from "./incidents.js";
 import { ensureSnapshot, isGitProject, reconcileSnapshot } from "./snapshot.js";
 import { signature, findCase, appendCase, precedentText } from "./knowledge.js";
-import { spendSince } from "../ccswitch.js";
 
 // Default per-phase window. Claude Code >= 2.1.292 makes headless `claude -p`
 // wait for background commands to finish before exiting, so phases that spawn
@@ -47,25 +47,32 @@ export function selectRescueHosts(args) {
 
 /**
  * mawf-recommended model for a rescue host, not exceeding the price valve.
- * First candidate (current provider first) within the gate wins; unknown
- * price is allowed (gate policy: not blocked) but tagged.
+ * First candidate (current provider first) within the gate wins. The v1 cost
+ * policy is identity-bound, so the candidate's provider identity and the
+ * project's own pricing policy must both reach the gate: without a providerId
+ * EVERY candidate is refused UNKNOWN_PROVIDER, and without the settings the
+ * project's thresholds, bounded unknown-price policy and recorded approvals
+ * are ignored. Unknown price is a pause by default and stays a gate-passing
+ * fallback only under an explicitly bounded policy.
  * @param {any} cc cc-switch ctx (readCcSwitch result)
  * @param {string} host rescue host
+ * @param {any} [settings] project settings (pricing policy + approvals)
  * @returns {{ model: string, providerName: string, estimated: boolean } | null}
  */
-export function pickRescueModel(cc, host) {
+export function pickRescueModel(cc, host, settings) {
   const appType = APP_TYPE[host];
   if (!appType) return null;
   const cands = candidatesForAppType(cc, appType);
+  const policy = settings ?? cc?.pricingContext?.settings;
   /** @type {any} */
   let unknownPriceFallback = null;
   for (const c of cands) {
     const price = resolvePrice(c.model, { modelPricing: cc.modelPricing });
-    const gate = checkPriceGate(c.model, price);
+    const gate = checkPriceGate(c.model, price, { providerId: c.providerId, settings: policy });
     if (gate.blocked) continue;
     const pick = { model: c.model, providerName: c.providerName || c.providerId || "", estimated: !!(price && price.estimated) };
     if (gate.priceKnown) return pick; // known + within gate wins immediately
-    if (!unknownPriceFallback) unknownPriceFallback = pick; // unknown price = gate-passing fallback only
+    if (!unknownPriceFallback) unknownPriceFallback = pick; // unknown price: only under a bounded policy
   }
   return unknownPriceFallback;
 }
@@ -115,7 +122,9 @@ export function buildPhaseBPrompt(args) {
     `Its transcript is at ${inc.file} — read it, summarize the recent state, and CONTINUE the unfinished task from there.`,
     `Work from ${workspaceDefault()} via absolute paths into the target project.`,
   ];
-  if (args.trellis) {
+  if (workspaceLayout(inc.projectDir).native) {
+    lines.push("", "Native MAWF workspace: read docs/plans for active PRDs/designs and docs/engineering/specs for engineering contracts. Continue the identified task and record progress in its plan; do not initialize another workflow.");
+  } else if (args.trellis) {
     lines.push(
       ``,
       `This is a mawf+trellis workspace. Respect the trellis discipline:`,
@@ -280,7 +289,7 @@ export function dispatchIncident(args) {
     return { dispatched: false, reason: "hosts-exhausted" };
   }
   const host = hosts[0];
-  const modelPick = pickRescueModel(args.cc, host);
+  const modelPick = pickRescueModel(args.cc, host, args.selection);
   if (!modelPick && (host === "claude" || host === "codex")) {
     // claude/codex support per-run models — no candidate within the valve is
     // a real stop for them; pi/dsh run their configured defaults regardless
@@ -318,7 +327,7 @@ export function dispatchIncident(args) {
   // spend attribution (R6 layer 2): window-attribution over the rescue window
   // on that host's app_type — conservative (may include concurrent user
   // requests, never misses rescue spend that went through cc-switch)
-  phaseRec.spendUsd = spendSince({ dbPath: args.dbPath ?? args.cc?.dbPath, sinceSec: phaseRec.startedAt, untilSec: phaseRec.endedAt, appTypes: [APP_TYPE[host]] });
+  phaseRec.spendUsd = args.usageProvider ? args.usageProvider.spendSince({ dbPath: args.dbPath ?? args.cc?.dbPath, sinceSec: phaseRec.startedAt, untilSec: phaseRec.endedAt, appTypes: [APP_TYPE[host]] }) : null;
   inc.budgetUsd = Math.round((Number(inc.budgetUsd || 0) + Number(phaseRec.spendUsd || 0)) * 1e6) / 1e6;
 
   const verdict = res.timedOut ? { outcome: "failed" } : parseVerdict(res.stdout);
@@ -366,7 +375,7 @@ function tryNativeCodex(inc, workspace, run, args, now, log) {
     const cmd = hostCommand({ host: "codex", prompt: buildPhaseBPrompt({ incident: inc, trellis: exists(path.join(inc.projectDir, ".trellis", "scripts", "task.py")) }), workspace, native: mode, sessionId: String(inc.sessionId) });
     const res = run(cmd.bin, cmd.args, cmd.cwd, PHASE_WINDOW_SEC);
     phaseRec.endedAt = nowSec();
-    phaseRec.spendUsd = spendSince({ dbPath: args.dbPath ?? args.cc?.dbPath, sinceSec: phaseRec.startedAt, untilSec: phaseRec.endedAt, appTypes: ["codex"] });
+    phaseRec.spendUsd = args.usageProvider ? args.usageProvider.spendSince({ dbPath: args.dbPath ?? args.cc?.dbPath, sinceSec: phaseRec.startedAt, untilSec: phaseRec.endedAt, appTypes: ["codex"] }) : null;
     inc.budgetUsd = Math.round((Number(inc.budgetUsd || 0) + Number(phaseRec.spendUsd || 0)) * 1e6) / 1e6;
     const verdict = res.timedOut ? { outcome: "failed" } : parseVerdict(res.stdout);
     const sig0 = inc.signature || signature({ host: inc.host, finding: inc.finding });

@@ -10,6 +10,14 @@ export function findExecutable(name, { env = process.env, paths = (env.PATH || "
 }
 
 export const run = (command, args = [], options = {}) => spawnSync(command, args, options);
+export const nativeInvocation = (command, args = []) => [command, ...args];
+
+// POSIX checkouts keep the committed bytes, paths compare byte for byte, and file
+// operations report no transient sharing violations.
+export const checkoutVariants = (bytes) => [bytes];
+export const realpath = (file) => fs.realpathSync(file);
+export const comparablePath = (file) => file;
+export const retryTransient = (operation) => operation();
 
 export function projectProcessAlive(dir, runner = run) {
   // pgrep accepts a regex; escape project paths so punctuation stays literal.
@@ -43,3 +51,6 @@ export function pythonCommand(args, find = findExecutable) {
   const interpreter = find("python3") || find("python") || "python3";
   return commandText(interpreter, args);
 }
+
+// POSIX keeps the plain PATH lookup; only the Windows adapter chooses a tar.
+export const tarCommand = () => "tar";

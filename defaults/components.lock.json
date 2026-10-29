@@ -89,7 +89,7 @@
       "upstream": {
         "repo": "https://github.com/imBlanker/trellis-card",
         "authorRepo": "https://github.com/czm15053/trellis-card",
-        "commit": "4e24d423141d796f4e5e47e45e447f82f7fd1b40",
+        "commit": "35b72707bb0ae96fefacdc862c78ab3eaedb84b7",
         "version": "0.2.5",
         "license": "UNLICENSED-UPSTREAM (no LICENSE file in entire history)",
         "licenseStatus": "user-authorized-pending-upstream-license",
@@ -116,7 +116,7 @@
           "status": "no-release-yet",
           "note": "release.yml exists upstream; fork has not run it"
         },
-        "sourceBuild": "trellis-card repo: npm ci && npm run build -- --target <triple>; helper target added by integration branch"
+        "sourceBuild": "trellis-card repo: npm ci && npm run build -- --target <triple>; helper target added by integration branch; native MAWF workspaces require this locked revision or newer compatible source"
       }
     },
     {

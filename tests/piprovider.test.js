@@ -78,7 +78,11 @@ function piFixture() {
 
 test("readPiConfig reads settings/models/mcp (Pi-owned + adapter face) + auth presence", () => {
   const dir = piFixture();
-  const cfg = readPiConfig(dir);
+  // v1 reads no optional surface implicitly: the pi-mcp-adapter face is only
+  // consulted when the caller asks for it (commit 188298f, selection-first
+  // lazy integration). Without the opt-in the MCP view stays empty.
+  assert.deepEqual(readPiConfig(dir).mcp, { mcpServers: {} });
+  const cfg = readPiConfig(dir, { readMcp: true });
   assert.equal(cfg.settings.defaultProvider, "deep-worker");
   assert.equal(cfg.settings.defaultModel, "deepseek-v4-flash");
   assert.ok(cfg.models.providers["deep-worker"]);
@@ -107,16 +111,25 @@ test("readPiAsCc produces cc-switch-shaped object with app_type:pi providers", (
     ["deep-worker", "openai-codex", "zai-coding-cn"],
   );
   assert.ok(cc.allProviders.every((p) => p.app_type === "pi"));
-  // pricing merged from models.json cost (per-M USD, same scale as cc-switch)
+  // pricing merged from models.json cost (per-M USD, same scale as cc-switch).
+  // v1 records carry the provider identity and every token channel, with
+  // unconfigured channels explicitly null rather than absent
+  // (docs/V1_PRICING.md "Missing fields stay null"; commit b7bf698).
   assert.deepEqual(cc.modelPricing["deepseek-v4-flash"], {
     input_per_m: 0.14,
     output_per_m: 0.28,
+    cache_read_per_m: null,
+    cache_creation_per_m: null,
+    providerId: "deep-worker",
     source: "pi-models.json",
     estimated: false,
   });
   assert.deepEqual(cc.modelPricing["gpt-5.5"], {
     input_per_m: 5,
     output_per_m: 30,
+    cache_read_per_m: null,
+    cache_creation_per_m: null,
+    providerId: "openai-codex",
     source: "pi-models.json",
     estimated: false,
   });
@@ -212,8 +225,13 @@ test("readPiAsCc falls back to first provider when defaultProvider unknown", () 
 });
 
 test("piCostRateNote explains concurrency-only enforcement", () => {
-  assert.match(piCostRateNote(), /concurrency-only/);
-  assert.match(piCostRateNote(), /not.*measured/i);
+  // v1 wording states the missing observation first: a Pi host supplies no
+  // payment telemetry, so the configured limits bind registered concurrency
+  // only (commit b7bf698; docs/V1_PRICING.md "A subscription or local-free
+  // label is not proof of billing coverage").
+  assert.match(piCostRateNote(), /payment telemetry unavailable/i);
+  assert.match(piCostRateNote(), /only registered concurrency/i);
+  assert.doesNotMatch(piCostRateNote(), /measured|verified/i);
 });
 
 test("readPiAsCc returns null when pi home is absent", () => {

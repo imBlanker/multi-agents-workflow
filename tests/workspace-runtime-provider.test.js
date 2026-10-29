@@ -27,9 +27,25 @@ import { CAPABILITIES, PROTOCOL_VERSION } from "../src/workspace/protocol.js";
 import { createProviders, RUNTIME_POLL_MS, RUNTIME_MAX_SUBSCRIBERS } from "../src/workspace/providers.js";
 import { BridgeServer } from "../src/workspace/bridge.js";
 import { machineIdPath } from "../src/workspace/cli.js";
+import { defaultSettings } from "../src/settings.js";
 
 const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "bin", "mawf.js");
 const MACHINE_ID = "feed0001-cafe-4bef-9d0f-fixture-machine";
+
+/**
+ * v1 is selection-first: integrations default disabled and are selected per
+ * project (docs/V1_CORE.md "All integrations default disabled"; commit
+ * 339d6df). `bridge serve` refuses to start for a project that has not
+ * selected workspace-bridge, and advertises only the selected capabilities.
+ * @param {string} projectDir @param {string[]} ids
+ */
+function selectIntegrations(projectDir, ids) {
+  const settings = defaultSettings();
+  for (const id of ids) settings.integrations[id] = { enabled: true, options: {} };
+  fs.mkdirSync(path.join(projectDir, ".mawf"), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, ".mawf", "settings.json"), JSON.stringify(settings, null, 2) + "\n");
+  return projectDir;
+}
 
 // ----------------------------------------------------------------- fixture
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "maw-runtime-"));
@@ -70,6 +86,11 @@ fs.writeFileSync(path.join(fixture, ".trellis", "tasks", "09-17-rt", "task.json"
 
 fs.mkdirSync(path.dirname(machineIdPath(homeDir)), { recursive: true });
 fs.writeFileSync(machineIdPath(homeDir), MACHINE_ID + "\n", { mode: 0o600 });
+
+// The served workspace selects the transport plus knowledge (the
+// provider-failure test asserts a knowledge.* provider rejection, which
+// requires the knowledge capability to be offered at all).
+selectIntegrations(fixture, ["workspace-bridge", "knowledge"]);
 
 // ------------------------------------------------------------- stdio client
 // Same harness shape as tests/workspace-bridge-serve.test.js: spawn the REAL

@@ -24,9 +24,25 @@ import { KnowledgeStore, contentHash } from "../src/knowledge/store.js";
 import { CAPABILITIES, PROTOCOL_VERSION } from "../src/workspace/protocol.js";
 import { createProviders, KNOWLEDGE_BODY_MAX_BYTES } from "../src/workspace/providers.js";
 import { machineIdPath } from "../src/workspace/cli.js";
+import { defaultSettings } from "../src/settings.js";
 
 const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "bin", "mawf.js");
 const MACHINE_ID = "0123456789abcdef-fixture-machine";
+
+/**
+ * v1 is selection-first: every integration defaults disabled and must be
+ * selected explicitly per project (docs/V1_CORE.md "All integrations default
+ * disabled, including detected hosts"; commit 339d6df). Select exactly the
+ * integrations whose capabilities a fixture exercises.
+ * @param {string} projectDir @param {string[]} ids
+ */
+function selectIntegrations(projectDir, ids) {
+  const settings = defaultSettings();
+  for (const id of ids) settings.integrations[id] = { enabled: true, options: {} };
+  fs.mkdirSync(path.join(projectDir, ".mawf"), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, ".mawf", "settings.json"), JSON.stringify(settings, null, 2) + "\n");
+  return projectDir;
+}
 
 // ----------------------------------------------------------------- fixture
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "maw-bridge-serve-"));
@@ -91,6 +107,12 @@ fs.symlinkSync(outsideSecret, path.join(fixture, "docs", "architecture", "evil.h
 // Pre-provision the stable machine id so the handshake assertion is exact.
 fs.mkdirSync(path.dirname(machineIdPath(homeDir)), { recursive: true });
 fs.writeFileSync(machineIdPath(homeDir), MACHINE_ID + "\n", { mode: 0o600 });
+
+// The served workspace selects the transport plus the knowledge/terminal
+// capabilities these tests assert on. `bridge serve` rechecks this selection
+// both at startup (--project) and at handshake time (lazy hello, V1_CORE.md:
+// "A bridge workspace chosen at handshake rechecks its own selection").
+selectIntegrations(fixture, ["workspace-bridge", "knowledge", "workspace-runtime-tmux"]);
 
 // ------------------------------------------------------------- stdio client
 
@@ -314,7 +336,10 @@ test("serve: escapes are rejected with workspace_unauthorized and NO content", a
 
 test("bridge machine-id subcommand: stable across calls, provisions the file", () => {
   const freshHome = fs.mkdtempSync(path.join(os.tmpdir(), "maw-bridge-id-"));
-  const run = () => execFileSync(process.execPath, [BIN, "bridge", "machine-id"], {
+  // `bridge` is an optional integration, so every subcommand resolves the
+  // project selection first; machine-id itself still writes only to <home>.
+  const idProject = selectIntegrations(path.join(freshHome, "proj"), ["workspace-bridge"]);
+  const run = () => execFileSync(process.execPath, [BIN, "bridge", "machine-id", "--project", idProject], {
     env: fixtureEnv(freshHome), encoding: "utf8",
   });
   const first = run().trim();
@@ -379,9 +404,10 @@ test("providers: authorization rejects empty/NUL/escaping rels at the source", a
   assert.equal(e1.epoch, 1);
 });
 
-test("onWorkspace: hello root builds providers; invalid/relative roots refuse the hello (§8.1)", async () => {
+test("onWorkspace: hello root builds providers; invalid/relative roots refuse the hello (§8.1)", async (t) => {
   // lazy mode: no --project; the root arrives via the hello (stdin, §8.1)
   const b = startServe(["--lazy"]);
+  t.after(() => b.close());
   const ws = { refVersion: 1, endpoint: { kind: "ssh", host: "x" }, root: fixture };
   b.send({ type: "hello", v: PROTOCOL_VERSION, clientId: "onws", capabilities: ["project.read"], workspaces: [ws] });
   const hello = await b.awaitMsg((m) => m.type === "hello_ok", "hello_ok");
@@ -389,21 +415,21 @@ test("onWorkspace: hello root builds providers; invalid/relative roots refuse th
   const r = await b.request("r1", "project.tasks", {});
   assert.equal(r.ok, true, JSON.stringify(r).slice(0, 140));
   assert.ok(Array.isArray(r.result.tasks));
-  await b.close();
 
   // invalid root (exists but no .trellis) -> hello refused with structured reason
   const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), "maw-no-trellis-"));
+  t.after(() => fs.rmSync(emptyDir, { recursive: true, force: true }));
   const c = startServe(["--lazy"]);
+  t.after(() => c.close());
   c.send({ type: "hello", v: PROTOCOL_VERSION, clientId: "onws2", capabilities: [], workspaces: [{ refVersion: 1, endpoint: { kind: "ssh", host: "x" }, root: emptyDir }] });
   const refused = await c.awaitMsg((m) => m.type === "hello_ok", "refused hello");
   assert.equal(refused.accepted, false);
   assert.match(refused.error?.message ?? "", /workspace rejected/);
-  await c.close();
 
   // relative root -> refused without touching the filesystem
   const d = startServe(["--lazy"]);
+  t.after(() => d.close());
   d.send({ type: "hello", v: PROTOCOL_VERSION, clientId: "onws3", capabilities: [], workspaces: [{ refVersion: 1, endpoint: { kind: "ssh", host: "x" }, root: "relative/path" }] });
   const refused2 = await d.awaitMsg((m) => m.type === "hello_ok", "refused hello (relative)");
   assert.equal(refused2.accepted, false);
-  await d.close();
 });

@@ -20,7 +20,16 @@ test("detectTrellis honors an isolated fixture executable", () => {
   const previous = process.env.TRELLIS_BIN;
   try {
     process.env.TRELLIS_BIN = fixture;
-    assert.deepEqual(detectTrellis(), { via: "env", bin: fixture, args: [] });
+    // v1 probes the local executable against the pinned 0.6.17 compatibility
+    // contract (docs/V1_CORE.md), so the fixture reports its version.
+    assert.deepEqual(detectTrellis({ runner: () => ({ status: 0, stdout: "trellis 0.6.17\n" }) }),
+      { via: "env", bin: fixture, args: [], installed: true, version: "0.6.17", compatible: true });
+    // an executable outside the pinned contract is never silently adopted
+    const outside = detectTrellis({ runner: () => ({ status: 0, stdout: "trellis 0.7.0\n" }) });
+    assert.equal(outside.bin, null);
+    assert.equal(outside.compatible, false);
+    assert.equal(outside.discoveredPath, fixture);
+    assert.match(outside.reason, /outside the verified 0\.6\.17 contract/);
   } finally {
     if (previous === undefined) delete process.env.TRELLIS_BIN;
     else process.env.TRELLIS_BIN = previous;

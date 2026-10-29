@@ -9,12 +9,23 @@ import os from "node:os";
 import { transition, applyEvent, openIncident, loadIncident, listIncidents, reconcilePhaseTimeout, appendAlert, alertsFile, watchdogDir, saveIncident } from "../src/watchdog/incidents.js";
 import { scanOnce, readWatchdogConfig } from "../src/watchdog/scan.js";
 import { writeRegistry } from "../src/watchdog/registry.js";
+import { setIntegration } from "../src/integrations.js";
 
 const now = 1787300000;
 
 function tmpProject() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "maw-inc-"));
   fs.mkdirSync(path.join(dir, ".mawf"), { recursive: true });
+  return dir;
+}
+
+// v1 is selection-first: scanOnce skips any watched project that has not
+// selected `watchdog`, and discovers transcripts only for the hosts it selected
+// (src/watchdog/scan.js:107-131; CHANGELOG 1.0.0 "Default all optional
+// integrations off"). A watched project now says so explicitly.
+function watchedProject(ids = ["watchdog", "host.claude-code"]) {
+  const dir = tmpProject();
+  for (const id of ids) setIntegration(dir, id, true);
   return dir;
 }
 
@@ -82,7 +93,7 @@ test("readWatchdogConfig: defaults + YAML subset parse", () => {
 });
 
 test("scanOnce: blocked session opens an incident; recovery closes it (fixture tree)", async () => {
-  const dir = tmpProject();
+  const dir = watchedProject();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-home-"));
   // claude transcript with 3 consecutive errors
   const claudeSlug = process.platform === "win32" ? dir.replace(/[^a-zA-Z0-9]/g, "-") : "-" + dir.replace(/\//g, "-").replace(/^-+/, "");
@@ -126,7 +137,7 @@ test("scanOnce: blocked session opens an incident; recovery closes it (fixture t
 });
 
 test("scanOnce: clean project → zero blocked, exit-safe", async () => {
-  const dir = tmpProject();
+  const dir = watchedProject();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-home2-"));
   const r = await scanOnce({ projectDir: dir, nowSec: now, home, isProcessAlive: () => true, dbPath: "/nonexistent.db" });
   assert.equal(r.blockedTotal, 0);

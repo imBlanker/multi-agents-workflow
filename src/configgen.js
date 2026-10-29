@@ -1,3 +1,6 @@
+import { fileURLToPath } from 'node:url';
+import { publishGeneration } from './generated.js';
+import { checkPriceGate } from './pricegate.js';
 // @ts-check
 // Generate per-agent / per-role, independently-editable config files from a
 // plan + cc-switch data. Output layout under `.mawf/`:
@@ -26,6 +29,10 @@ import { graphFromPlan, WorkflowGraph } from "./graph.js";
  * @returns {{ dir: string, files: string[], warnings: string[] }}
  */
 export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
+  const piViews = opts.materializePi && !opts.outDir ? plan.agents.filter(a => a.appType === "pi" || a.agent === "pi").map(a => ({ path: `.pi/agents/maw-${slug(a.role)}.md`, content: piAgentFileMd(a, plan) })) : [];
+  return publishGeneration(projectRoot, plan, ccSwitch, { ...opts, piViews }, renderConfigs);
+}
+function renderConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
   const maw = opts.outDir ? path.resolve(opts.outDir) : path.join(projectRoot, ".mawf");
   const agentsDir = path.join(maw, "agents");
   const files = [];
@@ -58,7 +65,7 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
     },
     codex: { enabled: plan.codex.enabled, when: plan.codex.when, review_scopes: plan.codex.reviewScopes },
     models: Object.fromEntries(plan.agents.map((a) => [a.role, { model: a.model, app_type: a.appType }])),
-    editable: "Every field above is user-editable. Re-run `mawf plan` to regenerate from signals.",
+    editable: "Generated compatibility view; edit .mawf/settings.json roleOverrides/scheduler instead.",
   });
   files.push(writeText(path.join(maw, "config.yaml"), configYaml));
 
@@ -68,31 +75,30 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
   // per-agent files
   for (const a of plan.agents) {
     const base = path.join(agentsDir, slug(a.role));
+    const providerId = a.modelChoice?.providerId ?? ccSwitch.currentProviders?.[a.appType]?.id ?? null;
+    const billingMode = a.modelChoice?.billingMode ?? "unknown";
     const price = resolvePrice(a.model, {
+      ...ccSwitch.pricingContext, providerId,
       modelPricing: ccSwitch.modelPricing,
-      costMultiplier: Number(ccSwitch.currentProviders?.[a.appType]?.cost_multiplier ?? 1),
+      costMultiplier: a.modelChoice?.costMultiplier ?? Number(ccSwitch.currentProviders?.[a.appType]?.cost_multiplier ?? 1),
     });
     if (!price) warnings.push(`No price found for ${a.role} model ${a.model}; tagged as unknown. Verify on Artificial Analysis/OpenRouter.`);
 
     // machine config
-    const gate = a.modelChoice?.priceGate ?? null;
-    // sticky human approval: keep `approved:true` across `mawf plan` re-runs
-    let stickyApproved = false;
-    try {
-      const prev = JSON.parse(fs.readFileSync(`${base}.json`, "utf8"));
-      stickyApproved = !!prev?.price_gate?.approved;
-    } catch {}
+    const gate = checkPriceGate(a.model, price, { role: a.role, providerId, billingMode, settings: ccSwitch.pricingContext?.settings });
+    const stickyApproved = gate.approved === true;
     const priceGateBlock = gate && (gate.blocked || gate.covered || stickyApproved)
       ? { blocked: !!gate.blocked, approved: stickyApproved, covered: !!gate.covered, plan: gate.plan ?? null, thresholds: { input_per_m: gate.thresholdIn, output_per_m: gate.thresholdOut }, price: { input_per_m: gate.inputPerM, output_per_m: gate.outputPerM }, estimated: !!gate.estimated, model: a.model, reason: gate.reason }
       : null;
     if (gate?.blocked) {
-      warnings.push(`PRICE GATE: role ${a.role} model ${a.model} is expensive (${gate.reason}) — PAUSED until a human approves (mawf approve-model --role ${a.role} --yes) or a cheaper model is configured.`);
+      warnings.push(`PRICE GATE: role ${a.role} model ${a.model} is blocked by price policy (${gate.reason}) — PAUSED until the policy prerequisites are satisfied; known expensive selections may be approved (mawf approve-model --role ${a.role} --yes) or a cheaper model is configured.`);
     }
     files.push(writeJson(`${base}.json`, {
       role: a.role,
       agent: a.agent,
       app_type: a.appType,
       model: a.model,
+      providerId, billingMode,
       ...(a.modelReasoningEffort ? { model_reasoning_effort: a.modelReasoningEffort } : {}),
       model_selection: a.modelChoice ?? null,
       price_gate: priceGateBlock,
@@ -102,16 +108,16 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
       review_required: a.reviewRequired,
       task: a.task,
       price: price || { model_id: a.model, source: "unknown", estimated: true, notes: ["Price not found in cc-switch or fallback."] },
-      editable: "All fields are independently editable. The runner reads this file at execute time.",
+      editable: "Generated view; edit settings.roleOverrides or use add-agent/remove-agent. Runs use frozen snapshots.",
     }));
 
     // agent definition (portable)
-    files.push(writeText(`${base}.md`, agentMarkdown(a, price, plan)));
+    files.push(writeText(`${base}.md`, plan.mode?.id === "fixed-1" ? fixedAgentMarkdown(a, plan) : agentMarkdown(a, price, plan)));
 
     // When the host is pi (or this specific agent is pi-native), also
     // materialize the native pi agent file so pi-subagents can spawn it
     // directly. Non-destructive: only `maw-*` files are managed (pruned below).
-    if (a.appType === "pi" || a.agent === "pi") {
+    if (opts.materializePi === true && (a.appType === "pi" || a.agent === "pi")) {
       const piAgentsDir = path.join(projectRoot, ".pi", "agents");
       files.push(writeText(path.join(piAgentsDir, `maw-${slug(a.role)}.md`), piAgentFileMd(a, plan)));
     }
@@ -133,7 +139,7 @@ export function generateConfigs(projectRoot, plan, ccSwitch = {}, opts = {}) {
   // NEVER touch trellis-* or other non-maw pi agent files.
   try {
     const piAgentsDir = path.join(projectRoot, ".pi", "agents");
-    if (exists(piAgentsDir)) {
+    if (opts.materializePi === true && exists(piAgentsDir)) {
       const keepPi = new Set(plan.agents.filter((a) => a.appType === "pi" || a.agent === "pi").map((a) => `maw-${slug(a.role)}`));
       for (const f of fs.readdirSync(piAgentsDir)) {
         if (f.startsWith("maw-") && f.endsWith(".md") && !keepPi.has(f.slice(0, -3))) {
@@ -171,7 +177,7 @@ released until a human acts. Thresholds: Input > $${gate.thresholdIn}/1M Tokens 
     : "";
   return `# Agent: ${a.role}
 ${gateBlock}${coveredNote}
-> Part of workflow \`${plan.name}\` (primary: ${plan.primary}). Edit freely; the runner re-reads this file at execute time.
+> Part of workflow \`${plan.name}\` (primary: ${plan.primary}). Generated view. Edit .mawf/settings.json roleOverrides; running tasks keep their frozen snapshot.
 
 ## Identity
 
@@ -191,7 +197,7 @@ ${a.tools.map((t) => `- \`${t}\``).join("\n")}
 
 ## Cost control
 
-- **Per-agent cost-rate limit**: $${a.costRateLimitUsdPerMin}/min (USD, real inference spend measured from cc-switch logs)
+- **Per-agent cost-rate limit**: $${a.costRateLimitUsdPerMin}/min (USD, best-effort estimate where selected telemetry applies)
 - **Concurrency**: ${a.concurrency}
 - **Review required at this agent's output**: ${a.reviewRequired ? "yes" : "no"}
 
@@ -211,7 +217,7 @@ or use the slash command \`/codex:review\` (review-only). For adversarial review
 - Project resources require Pi project trust; do not bypass the user's trust settings.
 - This runner does not allow child agents to spawn more agents; delegation stays with the orchestrator.
 - Pass the task verbatim (see the Task section above) and require it to return a compressed summary + file diffs.
-- Pi spend is measured when cc-switch Pi (Session) import rows are available; cache-write accounting may be incomplete. Without that telemetry, cost-rate enforcement is **concurrency-only**. Wrap spawns with \`mawf acquire --role ${a.role}\` / \`mawf release --role ${a.role}\` to enforce concurrency.` : (plan.hostApp === "dsh" || a.agent === "dsh") ? `This agent runs via **dsh's prompt-driven subagent tool**. Spawn it from the orchestrator session (\`dsh web\`, or \`dsh --profile headless "<task>"\` for one-shot runs) — dsh has no named agent-definition files, so the portable spec IS the payload:
+- Pi cost is estimated from token-price logs when cc-switch Pi (Session) import rows are available; cache-write accounting may be incomplete. Without that telemetry, cost-rate enforcement is **concurrency-only**. Wrap spawns with \`mawf acquire --role ${a.role}\` / \`mawf release --role ${a.role}\` to enforce concurrency.` : (plan.hostApp === "dsh" || a.agent === "dsh") ? `This agent runs via **dsh's prompt-driven subagent tool**. Spawn it from the orchestrator session (\`dsh web\`, or \`dsh --profile headless "<task>"\` for one-shot runs) — dsh has no named agent-definition files, so the portable spec IS the payload:
 
 - Point the spawn at \`.mawf/agents/${slug(a.role)}.md\`: pass the Task section verbatim plus the tool list, and require it to return a compressed summary + file diffs.
 - Cost control for dsh is **concurrency-only** (rate): dsh is not routed via the cc-switch proxy, so real-spend rate is not measured. Wrap spawns with \`mawf acquire --role ${a.role}\` / \`mawf release --role ${a.role}\`. Model prices come from cc-switch's synced \`~/.cc-switch/model-pricing.json\` where model ids match; unmatched ids price as unknown.` : `Spawn this agent from the orchestrator as a subagent with the tool list above. Pass the task verbatim and require it to return a compressed summary + file diffs.`}
@@ -306,7 +312,7 @@ function planMarkdown(plan, ccSwitch) {
     lines.push("");
     lines.push("- **Orchestration**: one orchestrator session (`dsh web` or `dsh --profile headless`); workers spawn via the prompt-driven `subagent` tool with `.mawf/agents/<role>.md` as the payload — dsh has no named agent files.");
     lines.push("- **Headless output** (dsh ≥0.1.2-rc.1): progress streams to stderr; stdout carries only the final result.");
-    lines.push("- **Skills**: trellis skills live in the shared `.agents/skills/` and dsh-private `.dsh/skills/` roots (rank 100–600 discovery).");
+    lines.push("- **Skills**: workspace skills live in the shared `.agents/skills/` and dsh-private `.dsh/skills/` roots (rank 100–600 discovery).");
     lines.push("- **Context**: AGENTS.md is loaded by dsh from `$DSH_HOME/AGENTS.md` plus the project root down to the session cwd (64 KiB cap).");
     lines.push("- **Cost**: rate limits degrade to concurrency-only (`mawf acquire` / `mawf release`); model prices come from cc-switch's synced `~/.cc-switch/model-pricing.json` where model ids match.");
     lines.push("");
@@ -375,4 +381,11 @@ function planMarkdown(plan, ccSwitch) {
   lines.push("");
   lines.push("Edit any file under `.mawf/agents/` directly; the runner reads them at execute time.");
   return lines.join("\n") + "\n";
+}
+
+function fixedAgentMarkdown(agent, plan) {
+  const role = agent.role.replace(/-\d+$/, '');
+  const name = ['orchestrator', 'implementer', 'researcher', 'advisor', 'autoresearch', 'hacker'].includes(role) ? role : 'implementer';
+  const policy = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'plugin', 'agents', `mawf-fixed-${name}.md`), 'utf8');
+  return `${policy}\n## Effective task\n\n${agent.task}\n\n## Frozen policy inputs\n\n- Mode: fixed-1 / ${plan.mode.version}\n- Configuration revision: ${plan.configRevision}\n- Minimum independent Hackers: ${plan.rolePolicy.minIndependentHackers}\n- Target/max concurrency: ${plan.scheduler.targetConcurrency}/${plan.scheduler.maxConcurrency}\n- Tools requested: ${agent.tools.join(', ')}\n- Model requested: ${agent.model || 'unresolved'}; actual model/actor are not inferred\n- Enforcement: policy_only until adapter evidence establishes more\n\nGenerated view; change settings.roleOverrides for future plans. Actual run/task/attempt/lease/candidate identities must be supplied by the dispatch spec.\n`;
 }

@@ -28,8 +28,21 @@ import { bridgeInstallHelper, bridgeStatus, runBridge } from "../src/workspace/c
 import { FIXED_REMOTE_COMMAND, SshTransport } from "../src/workspace/ssh.js";
 import { CAPABILITIES, helloServer } from "../src/workspace/protocol.js";
 import { makeWorkspaceRef } from "../src/workspace/ref.js";
+import { setIntegration } from "../src/integrations.js";
 
 const tmpHome = () => fs.mkdtempSync(path.join(os.tmpdir(), "mawf-ih-"));
+
+/**
+ * v1 refuses remote helper probing until `workspace-ssh` is selected for the
+ * project (docs/V1_CORE.md: "Workspace transport does not authorize SSH or
+ * tmux: these have separate gates"), so each probing fixture selects it.
+ * @returns {{project: string}} flags carrying that selected project
+ */
+function sshSelected() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mawf-ih-proj-"));
+  setIntegration(dir, "workspace-ssh", true);
+  return { project: dir };
+}
 
 const PROBE_JSON_OK = JSON.stringify({
   node: "/remote/opt/node/bin/node",
@@ -97,7 +110,7 @@ test("install-helper CLI: probe success writes the record; status reads it back 
     return fakeChild({ stdout: `${PROBE_JSON_OK}\n` });
   };
   const outs = [];
-  const code = await runBridge(["install-helper", "devbox"], {}, { spawnFn, home, out: (s) => outs.push(s) });
+  const code = await runBridge(["install-helper", "devbox"], sshSelected(), { spawnFn, home, out: (s) => outs.push(s) });
   assert.equal(code, 0);
   assert.equal(calls.length, 1, "ONE ssh invocation — no retries, no extra connections");
 
@@ -139,7 +152,7 @@ test("auth failure is classified, actionable, and writes NO record", async () =>
   const home = tmpHome();
   const spawnFn = () => fakeChild({ stderr: "devbox: Permission denied (publickey,password).\n", code: 255 });
   const errs = [];
-  const code = await runBridge(["install-helper", "devbox"], {}, { spawnFn, home, err: (s) => errs.push(s) });
+  const code = await runBridge(["install-helper", "devbox"], sshSelected(), { spawnFn, home, err: (s) => errs.push(s) });
   assert.equal(code, 1);
   const text = errs.join("");
   assert.match(text, /auth_failed/);
@@ -175,7 +188,7 @@ test("node-missing is distinguished from mawf-missing, with distinct remediation
   const errs = [];
   const code = await bridgeInstallHelper(
     ["devbox"],
-    {},
+    sshSelected(),
     { home: home2, spawnFn: () => fakeChild({ stderr: "bash: node: command not found\n", code: 127 }), err: (s) => errs.push(s) },
   );
   assert.equal(code, 1);
@@ -315,10 +328,11 @@ test("install-helper CLI usage errors: missing alias and unsafe alias exit 2 wit
     return fakeChild({});
   };
   const errs = [];
-  assert.equal(await bridgeInstallHelper([], {}, { spawnFn, home, err: (s) => errs.push(s) }), 2);
+  const flags = sshSelected();
+  assert.equal(await bridgeInstallHelper([], flags, { spawnFn, home, err: (s) => errs.push(s) }), 2);
   assert.match(errs.join(""), /usage/);
   errs.length = 0;
-  assert.equal(await bridgeInstallHelper(["../../evil"], {}, { spawnFn, home, err: (s) => errs.push(s) }), 2);
+  assert.equal(await bridgeInstallHelper(["../../evil"], flags, { spawnFn, home, err: (s) => errs.push(s) }), 2);
   assert.match(errs.join(""), /alias/);
   assert.equal(spawned, 0, "no ssh spawn for usage errors");
   assert.equal(listInstallRecords({ home }).length, 0);

@@ -11,6 +11,8 @@ import { selectRescueHosts, pickRescueModel, buildPhaseAPrompt, buildPhaseBPromp
 import { ensureSnapshot, isGitProject } from "../src/watchdog/snapshot.js";
 import { openIncident, loadIncident } from "../src/watchdog/incidents.js";
 import { scanOnce } from "../src/watchdog/scan.js";
+import { candidatesForAppType } from "../src/modelcap.js";
+import { setIntegration } from "../src/integrations.js";
 import { makeFixtureDb } from "./fixtures/make-db.mjs";
 
 const now = 1787300000;
@@ -19,6 +21,30 @@ function tmpProject() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "maw-dis-"));
   fs.mkdirSync(path.join(dir, ".mawf"), { recursive: true });
   return dir;
+}
+
+// v1 scans only projects that selected the watchdog, and only the hosts whose
+// transcripts they selected (src/watchdog/scan.js:107-116; CHANGELOG 1.0.0
+// "Default all optional integrations off").
+function watchedProject(ids) {
+  const dir = tmpProject();
+  for (const id of ids) setIntegration(dir, id, true);
+  return dir;
+}
+
+// v1's price valve is identity-bound and pauses on unknown prices, so a
+// dispatch fixture must offer at least one claude candidate with a KNOWN price
+// inside the $2/$10-per-1M gate. Same adjustment the rotation test below makes
+// for gpt-5.2-codex; without it v1 correctly refuses the fixture's claude
+// candidates (opus-5 is $5/$25, openmodel-x has no price row) and dispatch
+// rotates past claude instead of exercising the phase under test.
+function claudeInValve(cc) {
+  cc.modelPricing["claude-sonnet-5"] = { ...cc.modelPricing["claude-sonnet-5"], input_per_m: 2, output_per_m: 10 };
+  cc.allProviders = cc.allProviders.map((p) =>
+    p.app_type === "claude" && p.settingsConfig?.env
+      ? { ...p, settingsConfig: { ...p.settingsConfig, env: { ...p.settingsConfig.env, ANTHROPIC_MODEL: "claude-sonnet-5" } } }
+      : p);
+  return cc;
 }
 
 // --- pure: rotation ----------------------------------------------------------
@@ -38,30 +64,32 @@ const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "maw-dis-db-"));
 const dbPath = path.join(dbDir, "cc-switch.db");
 makeFixtureDb(dbPath, { v17: true });
 
-test("pickRescueModel: blocked model skipped; unknown-price fallback only when nothing known-within-gate", async () => {
+test("pickRescueModel: expensive model skipped; unknown price pauses; known within-gate price wins", async () => {
   const { readCcSwitch } = await import("../src/ccswitch.js");
   const cc = readCcSwitch({ dbPath });
-  // claude candidates: opus-5 (5/25 — BLOCKED) then openmodel-x (price unknown —
-  // gate policy: not blocked, but only a FALLBACK). Fixture's claude provider
-  // carries no sonnet-5 candidate, so the fallback legitimately wins here.
-  const pick = pickRescueModel(cc, "claude");
-  assert.ok(pick);
-  assert.notEqual(pick.model, "claude-opus-5", "blocked model never picked");
-  assert.equal(pick.model, "openmodel-x");
-  // a known within-gate price must beat the unknown-price fallback:
+  // v1 made the cost policy identity-bound and turned an unknown price into a
+  // PAUSE rather than a gate-passing fallback (CHANGELOG 1.0.0 "Identity-bound
+  // price approvals, unknown coverage rather than invented zero/measured
+  // costs"; src/cost-policy.js UNKNOWN_PRICE, commit b7bf698). The fixture's
+  // claude candidates are opus-5 ($5/$25 — over the $2/$10 threshold) and
+  // openmodel-x (no price row), so under v1 NOTHING is pickable.
+  assert.equal(pickRescueModel(cc, "claude"), null, "expensive model refused; unknown price pauses instead of falling back");
+  // a known within-gate price IS picked — this also proves the gate receives
+  // the candidate's provider identity; without it every candidate, priced or
+  // not, is refused UNKNOWN_PROVIDER and the valve can never pick anything.
   const cc2 = readCcSwitch({ dbPath });
   // (fixture db still carries pre-refresh sonnet 3/15 — put it inside the gate
   // for this check, as the real cc-switch v3.20 catalog now does: 2/10)
-  cc2.modelPricing["claude-sonnet-5"] = { ...cc2.modelPricing["claude-sonnet-5"], input_per_m: 2, output_per_m: 10 };
-  cc2.allProviders = cc2.allProviders.map((p) =>
-    p.app_type === "claude" && p.settingsConfig?.env
-      ? { ...p, settingsConfig: { ...p.settingsConfig, env: { ...p.settingsConfig.env, ANTHROPIC_MODEL: "claude-sonnet-5" } } }
-      : p);
-  const pick2 = pickRescueModel(cc2, "claude");
+  const pick2 = pickRescueModel(claudeInValve(cc2), "claude");
+  assert.ok(pick2, "a known within-gate candidate is pickable");
+  assert.notEqual(pick2.model, "claude-opus-5", "blocked model never picked");
   assert.equal(pick2.model, "claude-sonnet-5");
-  // pi (fixture db row 'Pi Official' gpt-5.5): candidates exist
-  const piPick = pickRescueModel(cc, "pi");
-  assert.ok(piPick);
+  // pi (fixture db row 'Pi Official' gpt-5.5): the candidate still exists, but
+  // the fixture carries no price row for it, so the valve pauses on it too.
+  // pi/dsh rescues run their configured default model anyway, so dispatch does
+  // not require a pick for them (src/watchdog/dispatch.js phase selection).
+  assert.ok(candidatesForAppType(cc, "pi").some((c) => c.model === "gpt-5.5"), "pi candidate exists");
+  assert.equal(pickRescueModel(cc, "pi"), null, "unknown-price pi candidate pauses");
   // unknown host → null
   assert.equal(pickRescueModel(cc, "nope"), null);
 });
@@ -176,7 +204,7 @@ test("dispatchIncident: Phase A resolved → incident resolved, host not stalled
   const dir = tmpProject();
   const inc = mkIncident(dir, "pi");
   const { readCcSwitch } = await import("../src/ccswitch.js");
-  const cc = readCcSwitch({ dbPath });
+  const cc = claudeInValve(readCcSwitch({ dbPath }));
   const run = runner({ claude: "resolved" });
   const r = dispatchIncident({ incident: inc, cc, run, workspace: path.join(dir, "ws"), nowSec: now, available: ["claude", "pi", "dsh", "codex"] });
   assert.equal(r.dispatched, true);
@@ -194,7 +222,7 @@ test("dispatchIncident: Phase A fail → open; next cycle Phase B requires snaps
   const dir = tmpProject();
   const inc = mkIncident(dir, "pi");
   const { readCcSwitch } = await import("../src/ccswitch.js");
-  const cc = readCcSwitch({ dbPath });
+  const cc = claudeInValve(readCcSwitch({ dbPath }));
   const run = runner({}); // everything fails
   const r1 = dispatchIncident({ incident: inc, cc, run, workspace: path.join(dir, "ws"), nowSec: now, available: ["claude"] });
   assert.equal(r1.phase, "a");
@@ -212,7 +240,7 @@ test("dispatchIncident: rotation across cycles; exhaustion → human-alert", asy
   const dir = tmpProject();
   const inc = mkIncident(dir, "pi");
   const { readCcSwitch } = await import("../src/ccswitch.js");
-  const cc = readCcSwitch({ dbPath });
+  const cc = claudeInValve(readCcSwitch({ dbPath }));
   const run = runner({});
   const snap = () => ({ ok: true, ref: "refs/rescue/x" });
   const avail = ["claude", "dsh", "codex"]; // pi stalled, pi unavailable anyway
@@ -252,7 +280,7 @@ test("dispatchIncident: dry-run prints prompt, spawns nothing", async () => {
   const dir = tmpProject();
   const inc = mkIncident(dir, "pi");
   const { readCcSwitch } = await import("../src/ccswitch.js");
-  const cc = readCcSwitch({ dbPath });
+  const cc = claudeInValve(readCcSwitch({ dbPath }));
   const run = runner({ claude: "resolved" });
   const logs = [];
   const r = dispatchIncident({ incident: inc, cc, run, dryRun: true, workspace: path.join(dir, "ws"), nowSec: now, log: (l) => logs.push(l) });
@@ -266,7 +294,9 @@ test("dispatchIncident: dry-run prints prompt, spawns nothing", async () => {
 // --- scan wiring ----------------------------------------------------------------
 
 test("scanOnce dispatch:true resolves an incident end-to-end (fixture tree, fake runner)", async () => {
-  const dir = tmpProject();
+  // the project selects the watchdog, all four rescue hosts and cc-switch
+  // model/price discovery — the surfaces this end-to-end path reads.
+  const dir = watchedProject(["watchdog", "host.claude-code", "host.pi", "host.dsh", "host.codex", "cc-switch.models", "cc-switch.pricing"]);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-home3-"));
   // home must expose available hosts (dirs) + claude blocked transcript
   fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
@@ -290,7 +320,7 @@ test("scanOnce dispatch:true resolves an incident end-to-end (fixture tree, fake
 });
 
 test("scanOnce dispatch default OFF (classify+record only; library-safe)", async () => {
-  const dir = tmpProject();
+  const dir = watchedProject(["watchdog", "host.claude-code"]);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-home4-"));
   const r = await scanOnce({ projectDir: dir, nowSec: now, home, isProcessAlive: () => true, dbPath: "/nonexistent.db" });
   assert.deepEqual(r.projects[0].dispatched, []); // field present, nothing dispatched

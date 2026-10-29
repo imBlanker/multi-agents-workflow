@@ -54,7 +54,7 @@ import { isoNow, round, slug } from "./util.js";
 import { selectModelForRole, baseRole, classifyModel, capabilityScore, ROLE_REQUIREMENTS } from "./modelcap.js";
 import { resolvePrice } from "./pricing.js";
 import { checkPriceGate, PRICE_GATE_THRESHOLDS } from "./pricegate.js";
-import { reviewerPlanOverride } from "./codexplan.js";
+import { reviewerPlanOverride } from "./subscription-policy.js";
 
 const DEFAULT_PER_AGENT = 5.0;   // USD/min (real inference spend from cc-switch logs)
 const DEFAULT_TOTAL = 10.0;      // USD/min
@@ -200,10 +200,10 @@ export function planWorkflow(signals, ctx = {}) {
       let sel = selectModelForRole({ role, appType, cc, quota: cc.quota, preferCheap });
       // Machine policy (2026-08-24): reviewer on codex defaults to gpt-5.6-sol
       // @ reasoning low IFF the local codex login carries a Pro / Pro-Lite
-      // ChatGPT plan (flat-rate subscription; codex usage is not billed per
-      // token). The assignment is then subscription-covered — the price gate
-      // reports `covered:true` instead of blocking. Every other login state
-      // keeps the normal capability-aware selection + gate.
+      // ChatGPT plan. v1 note: the login only selects the model. It is NOT a
+      // coverage exemption — a subscription label is not proof of billing
+      // coverage (docs/V1_PRICING.md), so the price gate below still decides,
+      // and only an identity-bound approval can admit an expensive selection.
       const planOv = baseRole(role) === "reviewer" && appType === "codex" ? reviewerPlanOverride(codexPlan) : null;
       const normal = sel;
       if (planOv) {
@@ -211,8 +211,9 @@ export function planWorkflow(signals, ctx = {}) {
         const req = ROLE_REQUIREMENTS.reviewer ?? { require: ["agentic"], prefer: [], why: "independent review" };
         const cap = capabilityScore(cls.caps, req);
         const ovPrice = resolvePrice(planOv.model, {
+          ...cc.pricingContext, providerId: sel?.providerId ?? null,
           modelPricing: cc.modelPricing,
-          costMultiplier: Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
+          costMultiplier: sel?.costMultiplier ?? Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
         });
         sel = {
           role, appType,
@@ -222,7 +223,7 @@ export function planWorkflow(signals, ctx = {}) {
           price: ovPrice ? { input_per_m: ovPrice.input_per_m, output_per_m: ovPrice.output_per_m, source: ovPrice.source, estimated: !!ovPrice.estimated } : null,
           reasons: [
             `machine policy: local codex is logged in via ChatGPT ${planOv.planLabel} (pro-covered plan) — reviewer defaults to \`${planOv.model}\` @ reasoning ${planOv.reasoningEffort}`,
-            `price gate: subscription-covered by ChatGPT plan "${planOv.planType}" (flat rate; listed per-token price does not apply to codex usage)`,
+            `billing: a ChatGPT "${planOv.planType}" login is configuration evidence only, not proof of payment coverage; the price gate verdict below is authoritative`,
             `capability fit ${cap}/100 for role "${role}" (${req.why})`,
             `model class: ${cls.notes[0] ?? cls.family}`,
             "runs on the local ChatGPT login (codex OAuth direct, not the cc-switch proxy)",
@@ -244,14 +245,17 @@ export function planWorkflow(signals, ctx = {}) {
       // + provider cost_multiplier + vendored fallback — the same chain
       // configgen writes into .mawf/agents/*.json) and check the thresholds.
       // A blocked assignment pauses the related work and is reported to a human.
-      // A subscription-covered assignment (ChatGPT Pro/Pro-Lite login) is
-      // reported as covered:true instead of blocked — flat rate, no per-token
-      // spend to gate.
+      // v1: `covered:true` requires a verified current adapter payment
+      // observation (cost-policy.js subscriptionCovered). A CLI login label
+      // never reaches it, so a Pro/Pro-Lite login is never an exemption.
       const price = resolvePrice(sel.model, {
+        ...cc.pricingContext, providerId: sel.providerId ?? null,
         modelPricing: cc.modelPricing,
-        costMultiplier: Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
+        costMultiplier: sel?.costMultiplier ?? Number(cc.currentProviders?.[appType]?.cost_multiplier ?? 1),
       });
-      sel.priceGate = checkPriceGate(sel.model, price, planOv ? { coveredByPlan: planOv.planType } : undefined);
+      sel.price = price;
+      sel.billingMode = (cc.pricingContext?.settings?.models ?? []).find(model => model.providerId === sel.providerId && model.modelId === sel.model)?.billingMode ?? "unknown";
+      sel.priceGate = checkPriceGate(sel.model, price, { role, providerId: sel.providerId, billingMode: sel.billingMode, settings: cc.pricingContext?.settings });
       selCache[key] = sel;
     }
     return selCache[key];

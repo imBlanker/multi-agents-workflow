@@ -7,7 +7,7 @@
 // SECURITY: auth.json keys and models.json `apiKey` fields are NEVER returned.
 // We only report auth/config presence so downstream can show "configured".
 import path from "node:path";
-import { exists, readJson, home } from "./util.js";
+import { exists, readJson, home, resolvePiAgentRoot } from "./util.js";
 
 /**
  * Resolve the chosen Pi home, even before it exists (installer use).
@@ -15,7 +15,7 @@ import { exists, readJson, home } from "./util.js";
  * @returns {string}
  */
 export function resolvePiAgentDir(piDir) {
-  return piDir ?? (process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || path.join(home(), ".pi", "agent"));
+  return resolvePiAgentRoot(piDir);
 }
 
 /** @param {string} [piDir] @returns {string} chosen Pi home when present, else "" */
@@ -73,14 +73,14 @@ function chatModelIds(entry) {
     .filter(Boolean);
 }
 
-export function readPiConfig(piDir) {
+export function readPiConfig(piDir, opts = {}) {
   const dir = findPiAgentDir(piDir);
   if (!dir || !exists(dir)) return null;
   return {
     settings: readJson(path.join(dir, "settings.json"), {}),
     models: readJson(path.join(dir, "models.json"), { providers: {} }),
     modelsStore: readJson(path.join(dir, "models-store.json"), {}),
-    mcp: readPiMcpFace(dir),
+    mcp: opts.readMcp === true ? readPiMcpFace(dir) : { mcpServers: {} },
     authPresent: exists(path.join(dir, "auth.json")),
     impl: "pi-files",
   };
@@ -93,8 +93,8 @@ export function readPiConfig(piDir) {
  */
 export function piCostRateNote(spendMeasured) {
   return spendMeasured
-    ? "pi spend measured via cc-switch Pi (Session) import — cache-write accounting may be incomplete"
-    : "pi not routed via cc-switch proxy; spend not measured — concurrency-only enforcement";
+    ? "pi cost estimated from cc-switch token-price logs — cache-write accounting may be incomplete"
+    : "Pi payment telemetry unavailable; configured limits cover only registered concurrency";
 }
 
 /**
@@ -118,7 +118,7 @@ export function piCostRateNote(spendMeasured) {
  * @returns {any | null}
  */
 export function readPiAsCc(opts = {}) {
-  const cfg = readPiConfig(opts.piDir);
+  const cfg = readPiConfig(opts.piDir, { readMcp: opts.readMcp === true });
   if (!cfg) return null;
   const settings = cfg.settings || {};
   const providersMap = (cfg.models && cfg.models.providers) || {};
@@ -158,8 +158,11 @@ export function readPiAsCc(opts = {}) {
       if (!m?.id || !m?.cost) continue;
       if (opts.piManaged && modelPricing[m.id]) continue;
       modelPricing[m.id] = {
-        input_per_m: Number(m.cost.input ?? 0),
-        output_per_m: Number(m.cost.output ?? 0),
+        input_per_m: typeof m.cost.input === "number" && Number.isFinite(m.cost.input) && m.cost.input >= 0 ? m.cost.input : null,
+        output_per_m: typeof m.cost.output === "number" && Number.isFinite(m.cost.output) && m.cost.output >= 0 ? m.cost.output : null,
+        cache_read_per_m: typeof m.cost.cacheRead === "number" ? m.cost.cacheRead : null,
+        cache_creation_per_m: typeof m.cost.cacheWrite === "number" ? m.cost.cacheWrite : null,
+        providerId: name,
         source: "pi-models.json",
         estimated: false,
       };

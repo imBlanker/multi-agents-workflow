@@ -2,6 +2,34 @@
 
 Starting with **0.8.0**, mawf maintains Linux and native Windows in one source tree and one coordinated package/plugin version.
 
+
+## v1.0.0 verified scope
+
+Package and plugin metadata are synchronized at 1.0.0. Core remains portable
+JavaScript, but portability is not execution evidence. Linux registered local
+processes have independently exercised PID/start identity, process-group stop,
+concurrency races, recovery, and a real 32-minute heartbeat. Native controlled
+Claude execution and its inherited child bounds use this Linux process boundary.
+The native runner explicitly rejects unsupported process-control platforms. On
+Linux it also needs bubblewrap and socat, because every native session runs its
+Bash commands in Claude Code's sandbox (docs/V1_EXECUTION.md); without them it
+refuses with `NATIVE_SANDBOX_UNAVAILABLE`.
+
+Windows local tasks use native creation identities and non-breakaway Job Objects.
+Native Claude operations use dedicated AppContainer MCP tools rather than the
+unsupported built-in Windows Bash sandbox. Tests cover actual process trees,
+file/network isolation, cancellation, deadlines and ACL recovery. The controller
+integration fixture makes no model calls. External companions and Pi experiment
+transports remain refused on Windows; price policy is unchanged. See V1_WINDOWS.md.
+
+The v1 core reaches Windows conventions only through the platform facade.
+`realpath` and `comparablePath` give one on-disk, case-folded spelling of a path
+(drive-letter and segment case, 8.3 names) for state roots and evidence checks.
+`checkoutVariants` lets a pinned LF file match the CRLF checkout that Git for
+Windows makes by default. `retryTransient` retries the brief EPERM/EACCES/EBUSY
+that Windows reports while another process holds a state file. On POSIX these are
+identity or single-attempt operations.
+
 ## Structure
 
 | Location | Responsibility |
@@ -10,7 +38,7 @@ Starting with **0.8.0**, mawf maintains Linux and native Windows in one source t
 | `src/` | Shared planning, configuration, policy, host integration, and upgrade logic |
 | `src/platform/index.js` | Select the native adapter and expose platform operations |
 | `src/platform/linux.js` | POSIX command lookup, execution, and process/port inspection |
-| `src/platform/windows.js` | Windows executable lookup, command shims, and native process/port inspection |
+| `src/platform/windows.js` | Windows executable lookup, command shims, archive tool choice, and native process/port inspection |
 | `tests/` | Shared regressions and platform contract fixtures |
 
 Shared consumers use the platform facade. Platform-specific fixes belong in their adapter; fixes to planning or policy apply to both environments. `win32` selects Windows; Linux uses the POSIX adapter. Other POSIX environments retain a fallback but are outside the Linux/Windows validation matrix.
@@ -32,6 +60,10 @@ No dependency installation or mawf installation is needed to develop from source
 ### Windows command wrappers
 
 Recognized npm Node command shims run their JavaScript entry point directly with the current Node executable, preserving argument values including embedded quotes and multiline prompts. Generic `.cmd`/`.bat` wrappers use the Windows command processor and reject arguments containing embedded double quotes or newlines with `EINVAL`; use a native executable or a recognized npm Node shim for such arguments. This restriction prevents shell reinterpretation and is material when using custom batch wrappers for hosts.
+
+### Windows archive tool
+
+Archive work (component installs, cc-switch backups and snapshot restores) runs the tar returned by the facade's `tarCommand()`. On Windows that is the system bsdtar, `%SystemRoot%\System32\tar.exe`, regardless of PATH order: Git Bash puts MSYS GNU tar first, which cannot read zip and treats the `C:` of an archive path as a remote host. Without the system tar, the first `tar` on PATH is used, except that extraction refuses GNU tar, which writes a symlink to an existing file as a copy of that file and would bypass the symlink-escape check. Linux keeps `tar` from PATH.
 
 ## Adding an environment
 

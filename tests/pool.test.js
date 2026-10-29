@@ -14,6 +14,7 @@ import {
 } from "../src/pool.js";
 import { tokenize } from "../src/advise.js";
 import { scanInventory } from "../src/inventory.js";
+import { defaultSettings } from "../src/settings.js";
 import { blockText, BLOCK_BEGIN, BLOCK_END } from "../src/injectblock.js";
 
 const CATALOG = fileURLToPath(new URL("../defaults/pool-catalog.json", import.meta.url));
@@ -86,15 +87,19 @@ test("detectPool: mcp + skill + dsh plugin detection with evidence; dsh stays de
   assert.equal(cbm2.detected.dsh.detectOnly, true);
 });
 
-test("inventory: scanInventory embeds a pool section; opts.pool === false disables it", () => {
+test("inventory: scanInventory embeds a pool section; opts.pool === false disables it", async () => {
   const root = tmp();
   const none = path.join(root, "none");
   const piDir = w(path.join(root, "h", ".pi", "agent", "mcp.json"), JSON.stringify({ mcpServers: { codegraph: {} } }));
-  const report = scanInventory({ claudeDir: none, piDir: path.dirname(piDir), dshHome: none, codexDir: none, claudeJson: path.join(root, "n.json"), projectDir: path.join(root, "p"), dbPath: "/nonexistent/ccswitch.db" });
+  // v1 selects every optional integration explicitly (CHANGELOG 1.0.0), so the
+  // inventory scan, the Pi host it reads and the pool section are named here.
+  const settings = defaultSettings();
+  for (const id of ["inventory", "host.pi", "pi-mcp-adapter", "pool"]) settings.integrations[id] = { enabled: true, options: {} };
+  const report = await scanInventory({ claudeDir: none, piDir: path.dirname(piDir), dshHome: none, codexDir: none, claudeJson: path.join(root, "n.json"), projectDir: path.join(root, "p"), dbPath: "/nonexistent/ccswitch.db", settings });
   assert.ok(report.pool, "pool section present");
   const cg = report.pool.components.find((c) => c.id === "codegraph");
   assert.equal(cg.detected.pi.found, true);
-  const bare = scanInventory({ claudeDir: none, piDir: path.dirname(piDir), dshHome: none, codexDir: none, claudeJson: path.join(root, "n.json"), projectDir: path.join(root, "p"), dbPath: "/nonexistent/ccswitch.db", pool: false });
+  const bare = await scanInventory({ claudeDir: none, piDir: path.dirname(piDir), dshHome: none, codexDir: none, claudeJson: path.join(root, "n.json"), projectDir: path.join(root, "p"), dbPath: "/nonexistent/ccswitch.db", settings, pool: false });
   assert.equal(bare.pool, undefined);
 });
 

@@ -5,6 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { snapshotCcSwitch } from "../src/backup.js";
+import { applyRouting, readRouting, restoreRoutingFromSnapshot } from "../src/ccswitch.js";
+import { makeFixtureDb } from "./fixtures/make-db.mjs";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "maw-backup-"));
 const srcDir = path.join(tmp, ".cc-switch");
@@ -37,6 +39,29 @@ test("snapshot inside the cc-switch dir excludes the backups dir itself", () => 
   const r2 = snapshotCcSwitch({ dbPath });
   assert.equal(r2.ok, true, r2.error);
   assert.equal(r2.files, 3);
+});
+
+test("a .tar.gz snapshot round-trips: snapshotCcSwitch then restoreRoutingFromSnapshot", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "maw-roundtrip-"));
+  try {
+    const live = path.join(dir, ".cc-switch", "cc-switch.db");
+    fs.mkdirSync(path.dirname(live), { recursive: true });
+    makeFixtureDb(live, {});
+    const before = readRouting({ dbPath: live }).claude;
+    const snap = snapshotCcSwitch({ dbPath: live });
+    assert.equal(snap.ok, true, snap.error);
+    assert.equal(snap.impl, "tar", "a real .tar.gz, not the copy fallback");
+    assert.ok(String(snap.archive).endsWith(".tar.gz"));
+    applyRouting({ dbPath: live, fix: true });
+    assert.notDeepEqual(readRouting({ dbPath: live }).claude, before, "routing changed after the snapshot");
+    // default source: the latest snapshot under maw-backups, i.e. the archive
+    const r = restoreRoutingFromSnapshot({ dbPath: live });
+    assert.equal(r.ok, true, r.error);
+    assert.match(String(r.snapshot), /extracted/);
+    assert.deepEqual(readRouting({ dbPath: live }).claude, before);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("snapshot with a missing db reports an error, never throws", () => {

@@ -42,6 +42,22 @@ function nodeShimEntry(executable) {
   } catch { return null; }
 }
 
+// Async controlled launches cannot use cmd.exe shell reinterpretation. Native
+// binaries and recognized npm Node shims have an exact executable/argv mapping.
+export function nativeInvocation(command, args = []) {
+  const executable = findExecutable(command) || command;
+  if (!/\.(cmd|bat)$/i.test(executable)) return [executable, ...args];
+  const entry = nodeShimEntry(executable);
+  if (entry) return [process.execPath, entry, ...args];
+  // npm also generates a direct native-binary shim. Match its entire scaffold
+  // so custom wrapper logic is never silently dropped or interpreted as a shell.
+  const source = fs.readFileSync(executable, 'utf8').replace(/^\uFEFF/, '').replaceAll('\r\n', '\n');
+  const native = /^@ECHO off\nGOTO start\n:find_dp0\nSET dp0=%~dp0\nEXIT \/b\n:start\nSETLOCAL\nCALL :find_dp0\n"%dp0%[\\/]([^"%\n]+\.exe)"[ \t]+%\*[ \t]*\n?$/i.exec(source);
+  const target = native && path.resolve(path.dirname(executable), native[1]);
+  if (target && fs.statSync(target).isFile()) return [target, ...args];
+  throw Object.assign(new Error('Controlled Windows launches require a native executable or recognized npm shim'), { code: 'WINDOWS_NATIVE_SHIM_UNSUPPORTED' });
+}
+
 export function run(command, args = [], options = {}) {
   const env = options.env || process.env;
   const executable = findExecutable(command, { env }) || command;
@@ -59,6 +75,45 @@ export function run(command, args = [], options = {}) {
     return `"%${key}%"`;
   });
   return spawnSync(envValue(env, "COMSPEC") || "cmd.exe", ["/d", "/v:off", "/s", "/c", `"${tokens.join(" ")}"`], { ...options, env: childEnv, windowsVerbatimArguments: true });
+}
+
+// Git for Windows checks text out with CRLF by default (core.autocrlf=true), and so
+// do the plugin clones hosts make. A pin of the committed LF bytes must match such a
+// checkout too, so also offer the content with every CRLF turned back into LF.
+export function checkoutVariants(bytes) {
+  const text = bytes.toString("latin1");
+  return text.includes("\r\n") ? [bytes, Buffer.from(text.replaceAll("\r\n", "\n"), "latin1")] : [bytes];
+}
+
+// fs.realpathSync keeps the caller's letter case and 8.3 short names. The native
+// call returns the on-disk spelling, so one directory has one canonical path.
+export function realpath(file) {
+  try { return fs.realpathSync.native(file); } catch { return fs.realpathSync(file); }
+}
+
+// NTFS names are case-insensitive: compare one case-folded on-disk spelling. A
+// missing tail keeps its own spelling below its deepest existing ancestor.
+export function comparablePath(file) {
+  const absolute = path.win32.resolve(file), parent = path.win32.dirname(absolute);
+  let spelled;
+  try { spelled = fs.realpathSync.native(absolute); }
+  catch { spelled = parent === absolute ? absolute : path.win32.join(comparablePath(parent), path.win32.basename(absolute)); }
+  return spelled.toLowerCase();
+}
+
+// Windows refuses to open or replace a file that another process holds at that
+// moment (a reader during an atomic rename, or on Node 20 a file whose delete is
+// still pending) with EPERM, EACCES or EBUSY. Retry those for about a second; a
+// lasting permission error still fails, only that much later.
+const SHARING_VIOLATIONS = new Set(["EPERM", "EACCES", "EBUSY"]);
+export function retryTransient(operation, { attempts = 100, waitMs = 10 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try { return operation(); }
+    catch (error) {
+      if (!SHARING_VIOLATIONS.has(error.code) || attempt >= attempts) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+    }
+  }
 }
 
 export function projectProcessAlive(dir, runner = run) {
@@ -98,4 +153,20 @@ export function pythonCommand(args, find = findExecutable) {
   if (interpreter) return commandText(interpreter, args);
   const launcher = find("py");
   return launcher ? commandText(launcher, ["-3", ...args]) : commandText("python", args);
+}
+
+// Windows ships bsdtar as %SystemRoot%\System32\tar.exe; prefer it to PATH
+// order. Git Bash puts MSYS GNU tar first, which cannot read zip, takes the
+// "C:" of an archive path for a remote host, and extracts a symlink to an
+// existing file as a copy of that file, which a symlink scan of the extracted
+// tree cannot see. Without the system tar, extraction refuses GNU tar.
+export function tarCommand({ extract = false, env = process.env, exists = fs.existsSync, runner = run } = {}) {
+  const bsdtar = path.win32.join(envValue(env, "SystemRoot") || "C:\\Windows", "System32", "tar.exe");
+  if (exists(bsdtar)) return bsdtar;
+  const fallback = findExecutable("tar", { env });
+  if (!fallback) return "tar";
+  if (extract && /GNU tar/.test(runner(fallback, ["--version"], { encoding: "utf8", env }).stdout ?? "")) {
+    throw new Error(`${bsdtar} not found, and ${fallback} is GNU tar, which is not used to extract on Windows`);
+  }
+  return fallback;
 }

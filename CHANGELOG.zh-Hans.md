@@ -4,7 +4,52 @@
 格式：[Keep a Changelog](https://keepachangelog.com/)；版本遵循
 [SemVer](https://semver.org/)。
 
-## [Unreleased]
+## [1.0.0] — 2026-10-29
+
+- 新增纯原生 Windows Job Object 进程控制和 AppContainer MCP 工具，无需 WSL；前置条件和验证范围见 docs/V1_WINDOWS.md。
+- Trellis runner 使用显式参数白名单，不再接收 MAWF 专属参数。
+- 候选清单使用固定 UTF-16 字符顺序；旧候选可能漂移，需重新冻结并生成证据。
+- advise/archify 夹具逐项清理；标准套件拥有并回收整棵临时目录，失败时也清理。
+
+- 全部可选集成默认关闭，增加显式设置、模式注册与可回滚旧配置迁移。
+- 分离 dynamic/fixed-1 计划，保护用户覆盖与生成文件所有权，冻结主任务政策快照。
+- 价格审批绑定实际身份；未知覆盖不伪装成零费用或实付；原生受管任务支持用户明确选择的有界订阅风险。
+- 统一原子租约与 fencing、Linux 真实进程身份/取消、无按年龄清槽；原生就绪队列与 Agent 完成回执。
+- 固定来源 Pi/Codex companion、无 prompt 身份核对、持久有界 Pi 实验、独立候选证据验收。
+- 修正 `/mawf:mode`、`/mawf:run` 与原生模型继承，包内包含执行/证据合同，安装状态目录可完全隔离。
+- 已验证范围和未解决检查见 docs/V1_RELEASE_STATUS.md；保留既有测试及 prepublishOnly 发布门禁。
+
+### 新增
+
+- 原生工作区存储和持久 Trellis 退出标记，保留旧工作区兼容能力。
+- 原生任务、规范、产物读取，以及具备跨进程串行保护的独立会话记录和不依赖任务框架的脑暴技能。
+- 迁移边界回归测试及打包私有资产排除检查。
+- 回归测试：指向目标目录外已有文件的归档符号链接会被拒绝，且不复制任何内容；`.tar.gz` cc-switch 快照可完成备份到恢复的往返；各平台适配器的 tar 选择。
+- v1 核心的 Windows 兼容测试：路径写法、固定版本 companion 的 CRLF 检出、npm 与自定义 `claude.cmd` 启动器、原子写入期间的文件共享，以及 junction 逃逸。（[#45](https://github.com/imBlanker/multi-agents-workflow/pull/45)）
+
+### 变更
+
+- 保留的测试套件改为遵循 v1 契约：测试夹具显式选择所用的集成与宿主；断言改为 v1 的 JSON 输出与原因码；价格闸门在准入阶段检查。v1 已移除的行为（按实测 USD/分钟的 guard、`mawf run` 的分批指引、`mawf help` 中的路由说明）改为断言 v1 的替代行为。A20 打包安装门禁先确认未选择时 `knowledge` 会被拒绝，再显式选择 `knowledge` 与 `archify` 后使用。
+- Linux 原生 Claude 运行中的每条 Bash 命令（含子代理的命令）现在都在 Claude Code 沙箱内执行：无网络，且不能写入 MAWF 状态根目录与 MAWF 包；Edit 拒绝规则同样禁止文件工具写入这两处。只有明确列出的 Core 管理子命令在沙箱外运行；直接 `run` 与 `task dispatch` 不在例外中。用户或管理员的额外授权仍属于受信宿主配置。沙箱必须能够启动：Linux 上的原生运行需要 bubblewrap 与 socat，否则会被拒绝（`NATIVE_SANDBOX_UNAVAILABLE`）；工作区位于 MAWF 包内时同样会被拒绝（`NATIVE_WORKSPACE_INSIDE_PACKAGE`）。队列规范写入 `run prepare` 返回的 `inputDirectory`（`.mawf/inputs/<run>/`）；Hacker 证据写入 `run next` 指定的目录（`.mawf/evidence/<run>/<task>/<attempt>/`），该目录视为产品范围之外。
+
+### 修复
+
+- Linux 原生 Core 管理命令固定使用解析后的 Node 绝对路径并保护其目录；豁免规则就是这个不带引号的绝对前缀，因此需要 shell 引号的 Node 或包路径会被拒绝（`NATIVE_SANDBOX_PATH_UNSUPPORTED`）。候选捕获只向 Git 读取 HEAD 提交（不读索引、不列树、不经工作区 diff），因此仓库配置的 diff、filter 与 fsmonitor 回调都不会在沙箱外运行；经 PATH 找到的 Git 与 `claude` CLI 仍属可信宿主工具。
+
+- 原生沙箱审查：例外收紧到管理子命令，阻止本地进程派发继承 Core 权限。受管原生子任务必须使用 Core 捕获的完成事件，拒绝手工回执（`NATIVE_RECEIPT_REQUIRED`），保留 Hacker 证据来源约束。
+- hook 测试夹具改走 Node 的 JavaScript 目录复制路径，避开 Windows Node 22.18 在 Unicode 路径上的原生复制崩溃；保留全部 hook 断言。
+
+- Windows 上的归档操作改用系统自带的 bsdtar（`%SystemRoot%\System32\tar.exe`），不再取决于 PATH 顺序。此前在 Git Bash 中会先找到 MSYS GNU tar，导致 `mawf components install --from-file` 失败、cc-switch 备份静默退化为普通复制、`.tar.gz` 快照无法恢复。Windows 上解压绝不回退到 GNU tar：它会把指向已有文件的符号链接写成该文件的副本，从而绕过符号链接逃逸检查。选择逻辑位于平台门面（`tarCommand`）。（[#43](https://github.com/imBlanker/multi-agents-workflow/issues/43)）
+- Windows 发布检查：A20 打包安装门禁可正确读取 bsdtar 的 CRLF 列表，在自身临时目录内用 `--prefix` 安装，不再向上落到祖先目录的 `package.json`；压缩包与 npm 缓存都留在该目录，失败时也会清理。通用批处理测试夹具在代码页 936 下不再出错。
+- Windows：v1 核心按磁盘上的实际写法比较路径（含盘符与路径段大小写、8.3 短名）。同一项目不再把自己的运行时账本误判为损坏；放在产品目录内的 evidence 无论路径如何书写都会被拒绝。由 Git for Windows 以 CRLF 检出的固定版本 Codex/Pi companion 可以通过校验；Claude 宿主探测可以启动 npm 的 `claude.cmd`；锁声明与账本写入会对 Windows 报告的短暂共享冲突进行重试。（[#45](https://github.com/imBlanker/multi-agents-workflow/pull/45)）
+- 修复延迟桥接握手对 Windows 绝对路径的误判，并保证握手测试断言失败后回收子进程。
+- watchdog 救援的价格阀门现在会把候选模型的 provider 身份与项目的定价策略传给价格闸门。此前缺少这两项，所有候选都被以 `UNKNOWN_PROVIDER` 拒绝，救援从未派发。
+- `mawf update` 与 `mawf upgrade` 的覆盖层修复错误记录重新包含失败的 `target` 与错误 `code`。
+- 当 codex 角色的价格闸门处于拦截状态时，planner 不再写出「已被 ChatGPT 订阅覆盖」；登录只是配置证据。
+
+### 移除
+
+- 0.6–0.8 版本中把 0.6 以前的 `.maw` 项目目录自动改名为 `.mawf` 的逻辑。升级前请手动改名，或先用 0.8.x 打开一次该项目。
 
 ## [0.8.4] - 2026-10-10
 
