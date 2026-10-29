@@ -33,8 +33,11 @@ export function validateCoreArgs(args, policy) {
 }
 export function shellEnvironment(policy) {
   const env = {};
-  for (const key of ['SystemRoot', 'SystemDrive', 'WINDIR', 'COMSPEC', 'PATHEXT', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA']) if (process.env[key]) env[key] = process.env[key];
-  return { ...env, HOME: policy.workspace, TEMP: policy.temp, TMP: policy.temp, PATH: policy.commandPaths.join(path.delimiter), NODE_OPTIONS: '--preserve-symlinks --preserve-symlinks-main' };
+  const onDisk = value => path.isAbsolute(value) && fs.existsSync(value) ? fs.realpathSync.native(value) : value;
+  for (const key of ['SystemRoot', 'SystemDrive', 'WINDIR', 'COMSPEC', 'PATHEXT', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA']) if (process.env[key]) env[key] = onDisk(process.env[key]);
+  // PowerShell inside AppContainer cannot expand 8.3 aliases through ancestors
+  // it cannot read. Resolve all paths in the trusted parent before launch.
+  return { ...env, HOME: onDisk(policy.workspace), TEMP: onDisk(policy.temp), TMP: onDisk(policy.temp), PATH: policy.commandPaths.map(onDisk).join(path.delimiter), NODE_OPTIONS: '--preserve-symlinks --preserve-symlinks-main' };
 }
 function collect(child) {
   return new Promise((resolve, reject) => {
@@ -56,7 +59,7 @@ export async function runWindowsTool(name, input, policy) {
     return collect(spawn(policy.nodePath, [policy.entry, ...args], { cwd: policy.workspace, env: { ...process.env, MAWF_NATIVE_RUN_CONTEXT: JSON.stringify(policy.context) }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 }));
   }
   if (name !== 'shell' || typeof input.command !== 'string' || !input.command || input.command.length > 65536 || input.command.includes('\0')) throw new Error('Invalid Windows shell input');
-  const cwd = path.resolve(policy.workspace, input.cwd || '.');
+  const cwd = fs.realpathSync.native(path.resolve(policy.workspace, input.cwd || '.'));
   if (!within(policy.workspace, cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Shell cwd must remain inside the run workspace');
   const maxDurationMs = Math.min(120000, policy.deadlineAt - Date.now());
   if (maxDurationMs <= 0) throw new Error('Native run deadline expired');

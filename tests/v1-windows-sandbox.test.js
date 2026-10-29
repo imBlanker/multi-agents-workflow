@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
-import { spawnSync } from 'node:child_process';
+import { sameAclPermissions, describeWindowsAcl } from './fixtures/windows-acl.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { spawnWindowsJob, recoverWindowsSandbox, windowsStartIdentity } from '../src/platform/windows-process.js';
 
@@ -44,10 +44,7 @@ test('interrupted AppContainer helper leaves a recoverable ACL journal and no ch
   const node = path.join(bin, 'node.exe'); fs.copyFileSync(process.execPath, node);
   const policy = { read: [bin], write: [workspace], denyWrite: [sealed, bin], journalDirectory: control };
   const recovery = path.join(control, 'recovery.json'); fs.writeFileSync(recovery, JSON.stringify(policy));
-  const sddl = dir => {
-    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[IO.Directory]::GetAccessControl($env:MAWF_ACL_PATH).GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access)'], { encoding: 'utf8', windowsHide: true, env: { ...process.env, MAWF_ACL_PATH: dir } });
-    assert.equal(result.status, 0, result.stderr); return result.stdout.trim();
-  };
+  const sddl = file => describeWindowsAcl({ file });
   const before = [sddl(workspace), sddl(sealed), sddl(bin)];
   const env = Object.fromEntries(['SystemRoot', 'SystemDrive', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA'].map(key => [key, process.env[key]]));
   const child = spawnWindowsJob([node, '-e', 'console.log(process.pid);setInterval(()=>{},1000)'], { cwd: workspace, directory: control, maxDurationMs: 10000, sandbox: policy, env });
@@ -56,7 +53,21 @@ test('interrupted AppContainer helper leaves a recoverable ACL journal and no ch
   assert.match(output.trim(), /^\d+$/);
   child.kill('SIGKILL'); await closed;
   recoverWindowsSandbox(recovery);
-  assert.deepEqual([sddl(workspace), sddl(sealed), sddl(bin)], before);
+  const after = [sddl(workspace), sddl(sealed), sddl(bin)];
+  for (let i=0;i<before.length;i++) assert.equal(sameAclPermissions(before[i], after[i]), true, JSON.stringify({ before: before[i], after: after[i] }));
   assert.equal(windowsStartIdentity(Number(output.trim())), null);
   assert.deepEqual(fs.readdirSync(control).filter(name => name.endsWith('.acl.json')), []);
+});
+
+test('ACL comparison allows only setting AUTO_INHERITED and rejects permission changes', { skip: process.platform !== 'win32' }, () => {
+  const parse = sddl => describeWindowsAcl({ sddl });
+  const aces = '(A;OICI;FA;;;SY)(A;OICI;FR;;;BU)';
+  const before = parse('D:' + aces), normalized = parse('D:AI' + aces);
+  assert.equal(sameAclPermissions(before, normalized), true);
+  assert.equal(sameAclPermissions(normalized, before), false);
+  for (const changed of ['D:P' + aces, 'D:(A;OICI;FA;;;SY)(A;OICI;FW;;;BU)', 'D:(A;OICI;FR;;;BU)(A;OICI;FA;;;SY)', 'D:(A;CI;FA;;;SY)(A;OICI;FR;;;BU)']) {
+    assert.equal(sameAclPermissions(before, parse(changed)), false, changed);
+  }
+  assert.equal(sameAclPermissions(parse('D:NO_ACCESS_CONTROL'), parse('D:')), false);
+  assert.equal(sameAclPermissions(parse('O:SY'), parse('D:NO_ACCESS_CONTROL')), false);
 });

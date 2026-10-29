@@ -62,7 +62,7 @@ A failed canary records a failed, never-started launch and releases the reservat
 
 Real Windows tests exercise argument fidelity, fast exits, detached grandchildren,
 deadlines, local task completion/release, protected and outside writes, denied TCP,
-PowerShell file operations, and exact ACL restoration after killing the helper.
+PowerShell file operations, and restoration of access rules/inheritance protection after killing the helper.
 The controller/MCP integration test uses a fake Claude CLI and real Windows jobs;
 it makes no model call and is not a Windows model-generated acceptance claim.
 A separate real Claude Code 2.1.295 control-protocol probe loaded this plugin and
@@ -75,3 +75,9 @@ Windows Job Object transport and refuse before launching. Their pricing and
 billing policy is unchanged. OAuth is not evidence of quota or payment.
 
 Windows API references: [AppContainer](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer), [atomic job assignment](https://devblogs.microsoft.com/oldnewthing/20230209-00/?p=107812).
+
+Windows may set the AUTO_INHERITED bookkeeping bit while restoring inherited
+ACLs. Recovery preserves permission entries, ACE order/masks/inheritance flags
+and protection; it does not promise byte-identical descriptor serialization.
+Tests allow only AUTO_INHERITED unset-to-set normalization, and reject every
+other control change as well as NULL/empty/absent DACL substitutions.
