@@ -9,13 +9,24 @@ import { generateConfigs } from "../src/configgen.js";
 import { readJson, exists } from "../src/util.js";
 
 const host = { app: "claude-code", hasSubagents: true, hasMultiAgent: true, hasDynamicWorkflow: true, codexPluginInstalled: true, codexBinary: "/x/codex" };
+// v1 pricing is provider-aware: a record whose providerId does not match the
+// resolved provider is an unverified estimate, never an exact supplier price
+// (docs/V1_PRICING.md "they never become verified supplier prices"; commit
+// b7bf698). The fixture gives each current provider its identity and each price
+// record the matching providerId.
 const cc = {
   currentProviders: {
-    claude: { name: "Deep Worker", cost_multiplier: 1, settings_config: { env: { ANTHROPIC_MODEL: "claude-opus-5" } } },
-    codex: { name: "Codex", cost_multiplier: 1, settings_config: { model: "gpt-5.2-codex" } },
+    claude: { id: "anthropic", name: "Deep Worker", cost_multiplier: 1, settings_config: { env: { ANTHROPIC_MODEL: "claude-opus-5" } } },
+    codex: { id: "openai", name: "Codex", cost_multiplier: 1, settings_config: { model: "gpt-5.2-codex" } },
   },
-  modelPricing: { "claude-opus-5": { input_per_m: 5, output_per_m: 25, cache_read_per_m: 0.5, cache_creation_per_m: 6.25, source: "cc-switch" }, "gpt-5.2-codex": { input_per_m: 1.75, output_per_m: 14, cache_read_per_m: 0.175, cache_creation_per_m: 0, source: "cc-switch" } },
+  modelPricing: { "claude-opus-5": { providerId: "anthropic", input_per_m: 5, output_per_m: 25, cache_read_per_m: 0.5, cache_creation_per_m: 6.25, source: "cc-switch" }, "gpt-5.2-codex": { providerId: "openai", input_per_m: 1.75, output_per_m: 14, cache_read_per_m: 0.175, cache_creation_per_m: 0, source: "cc-switch" } },
 };
+
+// v1 materializes nothing for an unselected host: `mawf plan` passes
+// `materializePi` only when the `pi-subagents-lite` integration is selected
+// (src/core-cli.js:157; commits 188298f / af0dc64), so Pi-host tests state the
+// selection explicitly instead of relying on implicit Pi activation.
+const PI_SELECTED = { materializePi: true };
 
 function mkTmpProject() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "maw-cfg-"));
@@ -95,9 +106,19 @@ test("pi host materializes .pi/agents/maw-*.md and advertises pi-subagents invoc
   const proj = mkTmpProject();
   const piHost = { ...host, app: "pi" };
   const plan = planWorkflow({ files: 30, parallelizableSubtasks: 4, risk: "high", contextNeed: "large", valuePerRun: "high", taskType: "coding" }, { host: piHost, ccSwitch: cc });
-  const gen = generateConfigs(proj, plan, cc);
+  // without the pi-subagents-lite selection nothing is written under .pi/
+  const unselected = generateConfigs(proj, plan, cc);
+  assert.ok(!unselected.files.some((f) => f.includes(path.join(".pi", "agents"))), "no implicit Pi activation");
+  assert.ok(!exists(path.join(proj, ".pi", "agents")));
+  generateConfigs(proj, plan, cc, PI_SELECTED);
   assert.equal(plan.hostApp, "pi");
-  assert.ok(gen.files.some((f) => f.includes(path.join(".pi", "agents"))), "pi agent files must be in the generated list");
+  // v1 publishes the Pi files as an OWNED PROJECTION recorded in the
+  // generation manifest, separately from the generated artifacts themselves
+  // (src/generated.js piViews / manifest.piFiles; commit af0dc64), so the
+  // generated-file list no longer carries them.
+  const manifest = readJson(path.join(proj, ".mawf", "generated", "current.json"));
+  assert.ok(manifest.piFiles.length > 0, "pi agent files must be recorded as an owned projection");
+  assert.ok(manifest.piFiles.every((f) => f.path.startsWith(".pi/agents/maw-") && f.sha256));
   for (const a of plan.agents.filter((a) => a.appType === "pi" || a.agent === "pi")) {
     const f = path.join(proj, ".pi", "agents", `maw-${a.role}.md`);
     assert.ok(exists(f), `missing pi agent file ${f}`);
@@ -117,12 +138,12 @@ test("pi materialization prunes stale maw-* pi files but never trellis-*", () =>
   const proj = mkTmpProject();
   const piHost = { ...host, app: "pi" };
   const big = planWorkflow({ files: 40, parallelizableSubtasks: 5, risk: "medium", contextNeed: "medium", taskType: "coding" }, { host: piHost, ccSwitch: cc });
-  generateConfigs(proj, big, cc);
+  generateConfigs(proj, big, cc, PI_SELECTED);
   const piAgents = path.join(proj, ".pi", "agents");
   // a user/trellis pi agent file must survive pruning
   fs.writeFileSync(path.join(piAgents, "trellis-implement.md"), "# keep me\n");
   const small = planWorkflow({ files: 5, parallelizableSubtasks: 1, risk: "low", contextNeed: "small", taskType: "coding" }, { host: piHost, ccSwitch: cc });
-  generateConfigs(proj, small, cc);
+  generateConfigs(proj, small, cc, PI_SELECTED);
   const files = fs.readdirSync(piAgents).filter((f) => f.endsWith(".md"));
   assert.ok(files.includes("trellis-implement.md"), "trellis-* must be preserved");
   for (const a of small.agents.filter((a) => a.appType === "pi" || a.agent === "pi")) assert.ok(files.includes(`maw-${a.role}.md`), `expected maw-${a.role}.md`);
@@ -164,7 +185,7 @@ test("Pi generated Agent frontmatter preserves tools/model selection and externa
   plan.name = 'workflow: "quoted"';
   fs.mkdirSync(path.join(proj, ".pi", "agents"), { recursive: true });
   fs.writeFileSync(path.join(proj, ".pi", "agents", "maw-reviewer.md"), "Stale incorrectly materialized Codex reviewer");
-  generateConfigs(proj, plan, cc);
+  const gen = generateConfigs(proj, plan, cc, PI_SELECTED);
   const native = fs.readFileSync(path.join(proj, ".pi", "agents", "maw-implementer.md"), "utf8");
   const field = (name) => JSON.parse(native.match(new RegExp(`^${name}: (.+)$`, "m"))[1]);
   // The installed lite runner splits commas, strips brackets and trims;
@@ -184,7 +205,18 @@ test("Pi generated Agent frontmatter preserves tools/model selection and externa
   assert.doesNotMatch(portable, /real-spend is not measured/);
   const reviewer = plan.agents.find((a) => a.agent === "codex");
   assert.ok(reviewer);
-  assert.ok(!exists(path.join(proj, ".pi", "agents", `maw-${reviewer.role}.md`)));
+  // the codex reviewer is never materialized as a Pi agent
+  const stale = path.join(proj, ".pi", "agents", `maw-${reviewer.role}.md`);
+  const manifest = readJson(path.join(proj, ".mawf", "generated", "current.json"));
+  assert.ok(!manifest.piFiles.some((f) => f.path.endsWith(`maw-${reviewer.role}.md`)), "no Pi projection for a codex role");
+  // v1 writes and prunes only the exact paths its manifest owns, instead of
+  // scanning the maw-* prefix (docs/V1_CORE.md: "legacy manifests without an
+  // ownership list are reported for migration rather than guessed with a
+  // prefix scan"), so this pre-existing UNOWNED file is left byte-identical
+  // rather than clobbered or deleted.
+  assert.equal(fs.readFileSync(stale, "utf8"), "Stale incorrectly materialized Codex reviewer");
+  // the generator never silently overwrote an owned projection either
+  assert.ok(gen.warnings.every((w) => !/Preserved unowned Pi agent/.test(w)), gen.warnings.join(" | "));
   assert.match(fs.readFileSync(path.join(proj, ".mawf", "agents", `${reviewer.role}.md`), "utf8"), /codex-plugin-cc/);
 });
 
@@ -194,5 +226,5 @@ test("Pi agent generation rejects tool names its runner cannot represent faithfu
   t.after(() => fs.rmSync(proj, { recursive: true, force: true }));
   const plan = planWorkflow({ files: 5, parallelizableSubtasks: 1, risk: "low", taskType: "coding" }, { host: { ...host, app: "pi" }, ccSwitch: cc });
   plan.agents.find((a) => a.appType === "pi").tools = ["read, bash"];
-  assert.throws(() => generateConfigs(proj, plan, cc), /tool identifier unsupported/);
+  assert.throws(() => generateConfigs(proj, plan, cc, PI_SELECTED), /tool identifier unsupported/);
 });

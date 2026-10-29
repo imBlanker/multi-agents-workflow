@@ -10,6 +10,7 @@ import { makeFixtureDb } from "./fixtures/make-db.mjs";
 import { readCodexPlan, reviewerPlanOverride, PLAN_REVIEWER_DEFAULTS, PRO_COVERED_PLANS } from "../src/codexplan.js";
 import { checkPriceGate } from "../src/pricegate.js";
 import { planWorkflow } from "../src/planner.js";
+import { defaultSettings } from "../src/settings.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "maw-codexplan-"));
 const project = path.join(tmp, "proj");
@@ -95,15 +96,33 @@ test("machine default policy constants are frozen and as mandated", () => {
 
 // --- price gate: subscription coverage ---
 
-test("checkPriceGate: a covered expensive model is NOT blocked, is reported as covered", () => {
-  const c = checkPriceGate("gpt-5.6-sol", { input_per_m: 5, output_per_m: 30, source: "cc-switch" }, { coveredByPlan: "prolite" });
-  assert.equal(c.blocked, false);
-  assert.equal(c.covered, true);
-  assert.equal(c.plan, "prolite");
-  assert.match(c.reason, /subscription-covered/);
-  assert.match(c.reason, /prolite/);
-  // without coverage the same price must still block (no silent bypass)
-  assert.equal(checkPriceGate("gpt-5.6-sol", { input_per_m: 5, output_per_m: 30 }).blocked, true);
+test("checkPriceGate: a ChatGPT plan login does NOT exempt an expensive model", () => {
+  // v0.8 treated `coveredByPlan` as a flat-rate exemption. v1 removed that
+  // route: docs/V1_PRICING.md "A subscription or local-free label is not proof
+  // of billing coverage. No current adapter in this slice supplies a verified
+  // live payment/subscription/quota observation, so those claims are not
+  // exempted." `covered` now needs a current adapter payment observation
+  // (src/cost-policy.js subscriptionCovered via isCurrentPaymentTelemetry).
+  const price = { input_per_m: 5, output_per_m: 30, source: "cc-switch" };
+  const c = checkPriceGate("gpt-5.6-sol", price, { coveredByPlan: "prolite", providerId: "openai" });
+  assert.equal(c.blocked, true, "a plan label can never silently bypass the gate");
+  assert.equal(c.covered, false);
+  assert.equal(c.plan, null);
+  assert.equal(c.reasonCode, "EXPENSIVE_MODEL");
+
+  // declaring the billing mode as a subscription does not help either: a
+  // self-stamped record is not a current adapter observation
+  const declared = checkPriceGate("gpt-5.6-sol", price, {
+    providerId: "openai", billingMode: "subscription",
+    subscription: { verified: true, sourceId: "codex-login", reference: "prolite", providerId: "openai", modelId: "gpt-5.6-sol", validUntil: new Date(Date.now() + 864e5).toISOString(), quota: { remaining: 100 } },
+  });
+  assert.equal(declared.blocked, true);
+  assert.equal(declared.covered, false);
+  assert.equal(declared.reasonCode, "SUBSCRIPTION_UNVERIFIED");
+  assert.equal(declared.quota, "unknown");
+
+  // and without any provider identity the gate pauses even earlier
+  assert.equal(checkPriceGate("gpt-5.6-sol", price).blocked, true);
 });
 
 // --- planner integration ---
@@ -123,19 +142,23 @@ const cc = {
 };
 const signals = { files: 60, parallelizableSubtasks: 6, risk: "high", contextNeed: "large", valuePerRun: "high", taskType: "research" };
 
-test("planner: reviewer on codex with a Pro-Lite login → gpt-5.6-sol @ low, covered, NOT blocked", () => {
+test("planner: reviewer on codex with a Pro-Lite login → gpt-5.6-sol @ low, selected but still gated", () => {
   const p = planWorkflow(signals, { host, ccSwitch: cc, codexPlan: readCodexPlan({ codexDir: writeCodexAuth(path.join(tmp, "codex-plan-yes"), "prolite") }) });
   const rev = p.agents.find((a) => a.role === "reviewer");
   assert.ok(rev, "reviewer agent present (codex plugin installed)");
+  // the login still drives model SELECTION (machine policy is unchanged)
   assert.equal(rev.model, "gpt-5.6-sol");
   assert.equal(rev.modelReasoningEffort, "low");
-  assert.equal(rev.priceGateBlocked, undefined);
-  assert.equal(rev.modelChoice.priceGate.blocked, false);
-  assert.equal(rev.modelChoice.priceGate.covered, true);
-  assert.match(rev.modelChoice.priceGate.reason, /subscription-covered/);
   assert.ok(rev.modelChoice.reasons.some((r) => /machine policy/.test(r)));
-  // reviewer must NOT appear in the plan's blocked roles
-  assert.ok(!(p.priceGate.blockedRoles ?? []).some((b) => b.role === "reviewer"));
+  // but v1 no longer turns the login into a price-gate exemption, so the
+  // expensive selection pauses and is reported to the human
+  assert.equal(rev.priceGateBlocked, true);
+  assert.equal(rev.modelChoice.priceGate.blocked, true);
+  assert.equal(rev.modelChoice.priceGate.covered, false);
+  assert.ok((p.priceGate.blockedRoles ?? []).some((b) => b.role === "reviewer"));
+  // the plan must not claim coverage it cannot prove
+  assert.ok(!rev.modelChoice.reasons.some((r) => /subscription-covered/.test(r)));
+  assert.ok(rev.modelChoice.reasons.some((r) => /not proof of payment coverage/.test(r)));
 });
 
 test("planner: no codexPlan (or non-pro plan) → normal selection + gate still applies to reviewer", () => {
@@ -151,18 +174,81 @@ test("planner: no codexPlan (or non-pro plan) → normal selection + gate still 
 });
 
 // --- CLI ---
+// v1 split the v0.8 `models --app A --role R` human line (which rendered the
+// role's selection AND its gate verdict, with a "price gate exempt" note for a
+// pro login) into two structured commands: `models --json` exposes identifiers
+// and configuration status only, and `pricing gate --role R` returns the
+// verdict (docs/V1_PRICING.md "`models --json` exposes only model/provider
+// identifiers, adapter, billing mode, configuration status and capability
+// evidence ... they do not prove the actual backend, authentication,
+// subscription coverage or an actual executed model", plus the documented
+// `mawf pricing gate --project P --provider A --model M --role implementer
+// --billing api --json` invocation).
 
-test("mawf models --app codex --role reviewer shows the machine default under a Pro-Lite login", () => {
-  const out = run(["models", "--app", "codex", "--role", "reviewer"], { env: { CODEX_HOME: writeCodexAuth(path.join(tmp, "codex-cli-yes"), "prolite") } });
-  assert.match(out, /reviewer → ChatGPT Pro-Lite login \(local codex\) \/ gpt-5\.6-sol/);
-  assert.match(out, /machine default, reasoning low/);
-  assert.match(out, /subscription-covered — price gate exempt/);
+/**
+ * Run a CLI command that may legitimately exit nonzero and return its parsed
+ * stdout frame plus the exit code. v1 exits nonzero on a denial
+ * (docs/V1_RUNTIME.md "Admission denials exit nonzero").
+ */
+function runJson(args, opts = {}) {
+  try {
+    return { code: 0, frame: JSON.parse(run(args, opts)) };
+  } catch (error) {
+    if (typeof error.stdout !== "string" || !error.stdout.trim()) throw error;
+    return { code: error.status, frame: JSON.parse(error.stdout) };
+  }
+}
+
+/** A project whose settings declare an exact price for one provider/model. */
+function pricedProject(name, overrides) {
+  const dir = path.join(tmp, name);
+  fs.mkdirSync(path.join(dir, ".mawf"), { recursive: true });
+  const settings = defaultSettings();
+  settings.pricing.overrides = overrides;
+  fs.writeFileSync(path.join(dir, ".mawf", "settings.json"), JSON.stringify(settings, null, 2) + "\n");
+  return dir;
+}
+
+test("mawf models reports identifiers only and never claims authentication", () => {
+  const out = JSON.parse(run(["models", "--json"], { env: { CODEX_HOME: writeCodexAuth(path.join(tmp, "codex-cli-yes"), "prolite") } }));
+  assert.equal(out.ok, true);
+  // nothing is inferred from an unselected host: a Pro-Lite codex login on
+  // this machine is not a model list and not an authentication result
+  assert.deepEqual(out.models, []);
+  assert.equal(out.providerCount, 0);
+  assert.equal(out.host, "unknown");
+  assert.equal(out.authenticated, "unknown");
 });
 
-test("mawf models --app codex --role reviewer keeps normal selection (with gate) without a pro plan", () => {
-  const out = run(["models", "--app", "codex", "--role", "reviewer"], { env: { CODEX_HOME: writeCodexAuth(path.join(tmp, "codex-cli-plus"), "plus") } });
-  assert.match(out, /reviewer → Test Codex \/ gpt-5\.2-codex/);
-  assert.match(out, /PRICE GATE/);
+test("mawf pricing gate pauses the reviewer's expensive model under a Pro-Lite login", () => {
+  const dir = pricedProject("gate-prolite", { "openai/gpt-5.6-sol": { inputPerMillion: 5, outputPerMillion: 30 } });
+  const { code, frame: out } = runJson(["pricing", "gate", "--project", dir, "--provider", "openai", "--model", "gpt-5.6-sol", "--role", "reviewer", "--billing", "api", "--json"], {
+    cwd: dir, env: { CODEX_HOME: writeCodexAuth(path.join(tmp, "codex-cli-yes2"), "prolite") },
+  });
+  assert.notEqual(code, 0, "a paused selection exits nonzero");
+  assert.equal(out.allowed, false);
+  assert.equal(out.reasonCode, "EXPENSIVE_MODEL");
+  assert.equal(out.covered, false, "a ChatGPT plan login is not payment coverage");
+  assert.equal(out.identity.role, "reviewer");
+  assert.equal(out.identity.providerId, "openai");
+  assert.equal(out.thresholdIn, 2);
+  assert.equal(out.thresholdOut, 10);
+});
+
+test("mawf pricing gate allows the reviewer's normal cheap selection", () => {
+  const dir = pricedProject("gate-plus", { "openai/gpt-5.2-codex": { inputPerMillion: 1.75, outputPerMillion: 9 } });
+  const out = JSON.parse(run(["pricing", "gate", "--project", dir, "--provider", "openai", "--model", "gpt-5.2-codex", "--role", "reviewer", "--billing", "api", "--json"], {
+    cwd: dir, env: { CODEX_HOME: writeCodexAuth(path.join(tmp, "codex-cli-plus"), "plus") },
+  }));
+  assert.equal(out.allowed, true);
+  assert.equal(out.reasonCode, "ALLOWED");
+  assert.equal(out.priceKnown, true);
+  // and the mandated thresholds still bite one cent over the output limit
+  const over = pricedProject("gate-over", { "openai/gpt-5.2-codex": { inputPerMillion: 1.75, outputPerMillion: 10.01 } });
+  const blocked = runJson(["pricing", "gate", "--project", over, "--provider", "openai", "--model", "gpt-5.2-codex", "--role", "reviewer", "--billing", "api", "--json"], { cwd: over });
+  assert.notEqual(blocked.code, 0);
+  assert.equal(blocked.frame.allowed, false);
+  assert.equal(blocked.frame.reasonCode, "EXPENSIVE_MODEL");
 });
 
 test.after(() => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {} });

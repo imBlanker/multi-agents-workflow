@@ -27,6 +27,7 @@ import { spawn } from "node:child_process";
 import { fixtureEnv } from "./fixtures/test-env.mjs";
 import { KnowledgeStore } from "../src/knowledge/store.js";
 import { BOOTSTRAP_MARKER } from "../src/companion/serve.js";
+import { defaultSettings } from "../src/settings.js";
 
 const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "bin", "mawf.js");
 const BOARD_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "vendor", "notes-board", "board.html");
@@ -74,6 +75,24 @@ mawf companion serve 以 header 携带令牌，经 /rpc 提供类型化只读数
 `;
 const store = KnowledgeStore.open(fixture);
 store.create("decision", "implemented/architecture/2026-09-22-companion.md", DECISION_TEXT, { sourceTask: "09-17-demo" });
+
+/**
+ * v1 is selection-first: integrations default disabled and are selected per
+ * project (docs/V1_CORE.md "All integrations default disabled"; commit
+ * 339d6df). `companion serve` exits nonzero for a project that has not
+ * selected workspace-companion, serves the disabled-notice page instead of
+ * the vendored board unless notes-board is selected, and offers knowledge.*
+ * only when knowledge is selected.
+ * @param {string} projectDir @param {string[]} ids
+ */
+function selectIntegrations(projectDir, ids) {
+  const settings = defaultSettings();
+  for (const id of ids) settings.integrations[id] = { enabled: true, options: {} };
+  fs.mkdirSync(path.join(projectDir, ".mawf"), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, ".mawf", "settings.json"), JSON.stringify(settings, null, 2) + "\n");
+  return projectDir;
+}
+selectIntegrations(fixture, ["workspace-companion", "knowledge", "notes-board"]);
 
 const BOARD_ON_DISK = fs.readFileSync(BOARD_FILE, "utf8");
 assert.ok(BOARD_ON_DISK.includes("window.__INLINE_DATA__ = null;"), "fixture sanity: vendored board has the injection anchor");

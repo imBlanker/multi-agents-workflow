@@ -6,9 +6,14 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { installObserver, uninstallObserver, emitEvent, spoolPath, SPOOL_MAX_LINES, OBSERVER_MARKER } from "../src/observer.js";
+import { setIntegration } from "../src/integrations.js";
 
 function fakeHome() { return fs.mkdtempSync(path.join(os.tmpdir(), "maw-obs-")); }
 function proj() { return fs.mkdtempSync(path.join(os.tmpdir(), "maw-obs-proj-")); }
+// v1 is selection-first: emitEvent spools nothing for a project that has not
+// selected `observer` (CHANGELOG 1.0.0 "Default all optional integrations off";
+// commit 188298f). A project that wants observation now says so explicitly.
+function observedProj() { const p = proj(); setIntegration(p, "observer", true); return p; }
 
 test("install/uninstall touch ONLY mawf-tagged entries; foreign hooks and unknown fields survive", () => {
   const home = fakeHome();
@@ -41,7 +46,7 @@ test("install/uninstall touch ONLY mawf-tagged entries; foreign hooks and unknow
 });
 
 test("emitEvent: garbage stdin fails open; valid events append; A15 never blocks", () => {
-  const p = proj();
+  const p = observedProj();
   assert.equal(emitEvent("not json at all {{{", { projectDir: p }).ok, true);
   assert.equal(emitEvent(JSON.stringify({ session_id: "s1", tool: "Bash" }), { projectDir: p }).written, true);
   const raw = fs.readFileSync(spoolPath(p), "utf8").trim().split("\n");
@@ -50,7 +55,7 @@ test("emitEvent: garbage stdin fails open; valid events append; A15 never blocks
 });
 
 test("spool is bounded: drops oldest beyond line cap (A15 bounded failure)", () => {
-  const p = proj();
+  const p = observedProj();
   for (let i = 0; i < SPOOL_MAX_LINES + 50; i++) {
     emitEvent(JSON.stringify({ i }), { projectDir: p, now: () => `2026-01-01T00:00:${String(i % 60).padStart(2, "0")}Z` });
   }

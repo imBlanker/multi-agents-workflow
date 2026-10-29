@@ -8,6 +8,27 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { scanInventory, listSkills, renderDigest, writeInventoryArtifacts } from "../src/inventory.js";
+import { defaultSettings } from "../src/settings.js";
+
+// v1 is selection-first: every optional integration defaults to off
+// (CHANGELOG 1.0.0 "Default all optional integrations off"; commit 188298f
+// "wip(optional): checkpoint selection-first lifecycle and lazy CLI
+// integration"). scanInventory therefore (a) returns an empty report unless
+// `inventory` is selected, (b) only scans hosts whose `host.*` id is selected,
+// and (c) is async because it lazily imports the selected host adapters.
+// Fixtures now state the surfaces they exercise instead of relying on the v0.8
+// implicit discovery of whatever happens to be on disk.
+/** @param {string[]} ids */
+function selection(ids) {
+  const settings = defaultSettings();
+  for (const id of ids) settings.integrations[id] = { enabled: true, options: {} };
+  return settings;
+}
+/** Every surface the 4-host fixture asserts on. */
+const ALL_SURFACES = [
+  "inventory", "host.claude-code", "host.codex", "host.pi", "host.dsh",
+  "pi-mcp-adapter", "pi-subagents-lite", "dsh.mcp", "dsh.presets", "dsh.plugin-inventory",
+];
 
 function tmpHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "maw-inv-"));
@@ -92,17 +113,17 @@ function fullFixture() {
   return { root, claudeDir, codexDir, piDir, dshHome, claudeJson, projectDir, agentsSkillsDir: path.join(root, "h", ".agents", "skills") };
 }
 
-function scanOf(fx) {
+function scanOf(fx, ids = ALL_SURFACES) {
   return scanInventory({
     claudeDir: fx.claudeDir, codexDir: fx.codexDir, piDir: fx.piDir, dshHome: fx.dshHome,
     claudeJson: fx.claudeJson, projectDir: fx.projectDir, agentsSkillsDir: fx.agentsSkillsDir,
-    dbPath: "/nonexistent/ccswitch.db",
+    dbPath: "/nonexistent/ccswitch.db", settings: selection(ids),
   });
 }
 
-test("scanInventory: full 4-host fixture — all hosts present with expected surfaces", () => {
+test("scanInventory: full 4-host fixture — all hosts present with expected surfaces", async () => {
   const fx = fullFixture();
-  const r = scanOf(fx);
+  const r = await scanOf(fx);
   assert.equal(r.hosts.length, 4);
   const by = Object.fromEntries(r.hosts.map((h) => [h.app, h]));
 
@@ -163,7 +184,7 @@ test("scanInventory: full 4-host fixture — all hosts present with expected sur
   assert.ok(String(dsh.harnessNote).includes("dsh web UI"));
 });
 
-test("scanInventory probe (verify mode): CLI statuses attached + CLI-only servers added", () => {
+test("scanInventory probe (verify mode): CLI statuses attached + CLI-only servers added", async () => {
   const fx = fullFixture();
   const runCli = (cmd) => {
     if (cmd === "claude mcp list") {
@@ -180,10 +201,10 @@ test("scanInventory probe (verify mode): CLI statuses attached + CLI-only server
     }
     return "";
   };
-  const r = scanInventory({
+  const r = await scanInventory({
     claudeDir: fx.claudeDir, codexDir: fx.codexDir, piDir: fx.piDir, dshHome: fx.dshHome,
     claudeJson: fx.claudeJson, projectDir: fx.projectDir, agentsSkillsDir: fx.agentsSkillsDir,
-    dbPath: "/nonexistent/ccswitch.db", probe: true, runCli,
+    dbPath: "/nonexistent/ccswitch.db", probe: true, runCli, settings: selection(ALL_SURFACES),
   });
   const claude = r.hosts.find((h) => h.app === "claude-code");
   assert.equal(claude.mcps.find((m) => m.name === "zai-cn-web-search").status, "connected");
@@ -202,18 +223,18 @@ test("scanInventory probe (verify mode): CLI statuses attached + CLI-only server
   assert.ok(String(dsh.harnessNote).includes("everything-as-a-plugin"));
 });
 
-test("scanInventory: missing dsh → 3 hosts, no error exit, others unaffected", () => {
+test("scanInventory: missing dsh → 3 hosts, no error exit, others unaffected", async () => {
   const fx = fullFixture();
   fs.rmSync(fx.dshHome, { recursive: true, force: true });
-  const r = scanOf(fx);
+  const r = await scanOf(fx);
   assert.equal(r.hosts.length, 3);
   assert.deepEqual(r.hosts.map((h) => h.app).sort(), ["claude-code", "codex", "pi"]);
 });
 
-test("scanInventory: broken installed_plugins.json tolerated (no crash, empty plugins)", () => {
+test("scanInventory: broken installed_plugins.json tolerated (no crash, empty plugins)", async () => {
   const fx = fullFixture();
   fs.writeFileSync(path.join(fx.claudeDir, "plugins", "installed_plugins.json"), "{not json");
-  const r = scanOf(fx);
+  const r = await scanOf(fx);
   const claude = r.hosts.find((h) => h.app === "claude-code");
   assert.ok(!claude.error);
   assert.equal(claude.plugins.filter((p) => p.source === "installed").length, 0);
@@ -229,11 +250,11 @@ test("listSkills: description fallback = first non-heading line, clipped", () =>
   assert.ok(s.description.startsWith("This is the first body line"));
 });
 
-test("renderDigest: structure + hard cap 200 lines with truncation marker", () => {
+test("renderDigest: structure + hard cap 200 lines with truncation marker", async () => {
   const fx = fullFixture();
   // blow the budget: 200 skills on claude
   for (let i = 0; i < 300; i++) w(path.join(fx.claudeDir, "skills", `sk-${i}`, "SKILL.md"), `---\ndescription: s${i}\n---\nx\n`);
-  const r = scanOf(fx);
+  const r = await scanOf(fx);
   const digest = renderDigest(r);
   const lineCount = digest.split("\n").length;
   assert.ok(lineCount <= 202, `digest lines ${lineCount}`); // cap + final truncation marker line(s)
@@ -243,9 +264,9 @@ test("renderDigest: structure + hard cap 200 lines with truncation marker", () =
   assert.ok(digest.includes("- marketplaces ("));
 });
 
-test("renderDigest: per-host sections with capabilities/skills/mcp/models", () => {
+test("renderDigest: per-host sections with capabilities/skills/mcp/models", async () => {
   const fx = fullFixture();
-  const digest = renderDigest(scanOf(fx));
+  const digest = renderDigest(await scanOf(fx));
   for (const app of ["claude-code", "codex", "pi", "dsh"]) {
     assert.ok(digest.includes(`## ${app} — caps:`), app);
   }
@@ -254,9 +275,9 @@ test("renderDigest: per-host sections with capabilities/skills/mcp/models", () =
   assert.ok(digest.includes("glm-4.5-air"));
 });
 
-test("writeInventoryArtifacts: writes .mawf/inventory.json + digest", () => {
+test("writeInventoryArtifacts: writes .mawf/inventory.json + digest", async () => {
   const fx = fullFixture();
-  const r = scanOf(fx);
+  const r = await scanOf(fx);
   const paths = writeInventoryArtifacts(fx.projectDir, r);
   assert.ok(fs.existsSync(paths.jsonPath));
   assert.ok(fs.existsSync(paths.digestPath));
@@ -264,10 +285,12 @@ test("writeInventoryArtifacts: writes .mawf/inventory.json + digest", () => {
   assert.equal(round.hosts.length, 4);
 });
 
-test("scanInventory: cc-switch absent → hosts still scanned, models empty", () => {
+test("scanInventory: cc-switch absent → hosts still scanned, models empty", async () => {
   const fx = fullFixture();
   fs.rmSync(path.join(fx.claudeDir, "skills"), { recursive: true, force: true }); // claude dir still exists
-  const r = scanOf(fx);
+  // cc-switch model discovery is SELECTED here on purpose: the property under
+  // test is "selected but absent database → empty models", not "not selected".
+  const r = await scanOf(fx, [...ALL_SURFACES, "cc-switch.models"]);
   const claude = r.hosts.find((h) => h.app === "claude-code");
   assert.deepEqual(claude.skills.filter((s) => s.origin === "user-global"), []); // user dir emptied
   assert.deepEqual(claude.models, []); // no cc-switch db in fixture (dbPath nonexistent)
@@ -303,7 +326,7 @@ test("pi 0.84.3: grouped .md skills discovered in .agents/skills surfaces; bare 
 
 // --- codex 0.151.0 per-repository plugin catalog adaptation (audit row 4) ---
 
-test("codex 0.151.0: project .codex/config.toml + .codex/skills scanned, deduped against global config", () => {
+test("codex 0.151.0: project .codex/config.toml + .codex/skills scanned, deduped against global config", async () => {
   const root = tmpHome();
   const codexDir = mk(path.join(root, "h", ".codex"));
   w(path.join(codexDir, "config.toml"), `[plugins."global@market"]\nenabled = true\n\n[mcp_servers.global-srv]\ncommand = "npx"\n`);
@@ -312,10 +335,11 @@ test("codex 0.151.0: project .codex/config.toml + .codex/skills scanned, deduped
   w(path.join(projectDir, ".codex", "config.toml"), `[plugins."proj-plug@market"]\nenabled = true\n\n[mcp_servers."proj-srv"]\ncommand = "x"\n\n[mcp_servers.global-srv]\ncommand = "dup"\n`);
   w(path.join(projectDir, ".codex", "skills", "proj-codex-skill", "SKILL.md"), "---\ndescription: p\n---\nx\n");
   const none = path.join(root, "none");
-  const report = scanInventory({
+  const report = await scanInventory({
     claudeDir: none, piDir: none, dshHome: none,
     claudeJson: path.join(root, "none.json"),
     codexDir, projectDir, dbPath: "/nonexistent/ccswitch.db",
+    settings: selection(["inventory", "host.codex"]),
   });
   const codex = report.hosts.find((h) => h.app === "codex");
   assert.ok(codex, "codex host scanned");
@@ -329,7 +353,7 @@ test("codex 0.151.0: project .codex/config.toml + .codex/skills scanned, deduped
 
 // --- codex 0.152.0/0.153.0 adaptations (upstream round 2, audit rows A4/A5) ---
 
-test("codex 0.152.0: MCP names with `:` `@` `/` `.` parse as atomic quoted keys, never dropped as dotted children", () => {
+test("codex 0.152.0: MCP names with `:` `@` `/` `.` parse as atomic quoted keys, never dropped as dotted children", async () => {
   const root = tmpHome();
   const codexDir = mk(path.join(root, "h", ".codex"));
   w(path.join(codexDir, "config.toml"), [
@@ -341,10 +365,11 @@ test("codex 0.152.0: MCP names with `:` `@` `/` `.` parse as atomic quoted keys,
     `[mcp_servers.plain-srv_2.env]`, `TOKEN = "x"`, ``,
   ].join("\n"));
   const none = path.join(root, "none");
-  const report = scanInventory({
+  const report = await scanInventory({
     claudeDir: none, piDir: none, dshHome: none,
     claudeJson: path.join(root, "none.json"),
     codexDir, projectDir: mk(path.join(root, "p")), dbPath: "/nonexistent/ccswitch.db",
+    settings: selection(["inventory", "host.codex"]),
   });
   const codex = report.hosts.find((h) => h.app === "codex");
   const names = codex.mcps.map((m) => m.name);
@@ -356,7 +381,7 @@ test("codex 0.152.0: MCP names with `:` `@` `/` `.` parse as atomic quoted keys,
   assert.ok(!names.includes("plain-srv_2.env"), "genuine TOML sub-section still dropped");
 });
 
-test("codex 0.153.0: remote-marketplace plugin installs keep the [plugins.\"name@market\"] shape; [marketplaces.*] tables ignored", () => {
+test("codex 0.153.0: remote-marketplace plugin installs keep the [plugins.\"name@market\"] shape; [marketplaces.*] tables ignored", async () => {
   const root = tmpHome();
   const codexDir = mk(path.join(root, "h", ".codex"));
   // shape verified against codex-rs config/src/plugin_edit.rs (set_plugin_enabled
@@ -368,10 +393,11 @@ test("codex 0.153.0: remote-marketplace plugin installs keep the [plugins.\"name
     `[plugins."documents@openai-primary-runtime"]`, `enabled = true`, ``,
   ].join("\n"));
   const none = path.join(root, "none");
-  const report = scanInventory({
+  const report = await scanInventory({
     claudeDir: none, piDir: none, dshHome: none,
     claudeJson: path.join(root, "none.json"),
     codexDir, projectDir: mk(path.join(root, "p")), dbPath: "/nonexistent/ccswitch.db",
+    settings: selection(["inventory", "host.codex"]),
   });
   const codex = report.hosts.find((h) => h.app === "codex");
   const pluginNames = codex.plugins.map((p) => p.name);
@@ -392,16 +418,17 @@ test("codex 0.153.0: remote-marketplace plugin installs keep the [plugins.\"name
 //   git, @linxin666/dsh-web-all@0.3.14 namespaced sub-plugins,
 //   dsh-plugin-terminal 0.2.0) — the CURRENT plugin-id shape.
 
-function scanDshFixture(dump) {
+async function scanDshFixture(dump) {
   const root = tmpHome();
   const dshHome = mk(path.join(root, "h", ".dsh"));
   w(path.join(dshHome, "settings.yaml"), "agent-presets:\n  default: x\n");
   const none = path.join(root, "none");
-  const report = scanInventory({
+  const report = await scanInventory({
     claudeDir: none, piDir: none, codexDir: none,
     claudeJson: path.join(root, "none.json"),
     dshHome, projectDir: mk(path.join(root, "p")), dbPath: "/nonexistent/ccswitch.db",
     dshDumpConfig: dump,
+    settings: selection(["inventory", "host.dsh", "dsh.plugin-inventory"]),
   });
   return report.hosts.find((h) => h.app === "dsh");
 }
@@ -410,9 +437,9 @@ for (const [file, label] of [
   ["./fixtures/dsh-dump-0.1.2a2.txt", "dsh 0.1.2-alpha.2 (2026-08-31, legacy plugin names)"],
   ["./fixtures/dsh-dump-0.1.2rc1.txt", "dsh 0.1.2-rc.1 (2026-09-05, rename wave + web-all 0.3.14 namespacing)"],
 ]) {
-  test(`real dump-config fixture ${label}: plugins parse, no duplicate ids`, () => {
+  test(`real dump-config fixture ${label}: plugins parse, no duplicate ids`, async () => {
     const dump = fs.readFileSync(new URL(file, import.meta.url), "utf8");
-    const dsh = scanDshFixture(dump);
+    const dsh = await scanDshFixture(dump);
     assert.ok(dsh, "dsh host scanned");
     assert.ok(dsh.plugins.length >= 170, `real dump yields the full plugin table (got ${dsh.plugins.length})`);
     assert.ok(dsh.plugins.some((p) => /dsh-web-all/.test(p.origin || "")), "@linxin666/dsh-web-all bundle origin present");
@@ -421,9 +448,9 @@ for (const [file, label] of [
   });
 }
 
-test("dsh 0.1.2-rc.1 fixture: plugin-rename wave ids + web-all 0.3.14 namespaced sub-plugins", () => {
+test("dsh 0.1.2-rc.1 fixture: plugin-rename wave ids + web-all 0.3.14 namespaced sub-plugins", async () => {
   const dump = fs.readFileSync(new URL("./fixtures/dsh-dump-0.1.2rc1.txt", import.meta.url), "utf8");
-  const dsh = scanDshFixture(dump);
+  const dsh = await scanDshFixture(dump);
   const names = dsh.plugins.map((p) => p.name);
   const origins = dsh.plugins.map((p) => p.origin || "");
   // rename wave (audit row A2): new registry names present, old git names gone
@@ -441,9 +468,9 @@ test("dsh 0.1.2-rc.1 fixture: plugin-rename wave ids + web-all 0.3.14 namespaced
   assert.ok(names.some((n) => n.includes("dsh-session-turn-outline")), "session-turn-outline present in rc.1");
 });
 
-test("dsh 0.1.2-alpha.2 legacy fixture keeps pre-rename plugin-name shapes parsing", () => {
+test("dsh 0.1.2-alpha.2 legacy fixture keeps pre-rename plugin-name shapes parsing", async () => {
   const dump = fs.readFileSync(new URL("./fixtures/dsh-dump-0.1.2a2.txt", import.meta.url), "utf8");
-  const dsh = scanDshFixture(dump);
+  const dsh = await scanDshFixture(dump);
   const names = dsh.plugins.map((p) => p.name);
   const origins = dsh.plugins.map((p) => p.origin || "");
   assert.ok(origins.some((o) => o.includes("@deepseek-ai/dsh-plugin-console")), "old console git name present (legacy)");
@@ -451,23 +478,23 @@ test("dsh 0.1.2-alpha.2 legacy fixture keeps pre-rename plugin-name shapes parsi
   assert.ok(names.some((n) => n.includes("dsh-tool-subagent-report")), "report tool present pre-rc.1 (legacy)");
 });
 
-test("dsh dump plugin inventory is identical for LF and CRLF", () => {
+test("dsh dump plugin inventory is identical for LF and CRLF", async () => {
   const raw = fs.readFileSync(new URL("./fixtures/dsh-dump-0.1.2rc1.txt", import.meta.url), "utf8");
   const lf = raw.replace(/\r\n/g, "\n");
-  const linux = scanDshFixture(lf).plugins;
-  const windows = scanDshFixture(lf.replace(/\n/g, "\r\n")).plugins;
+  const linux = (await scanDshFixture(lf)).plugins;
+  const windows = (await scanDshFixture(lf.replace(/\n/g, "\r\n"))).plugins;
   assert.ok(linux.length >= 170, "both inputs must retain the full plugin table");
   assert.deepEqual(windows, linux);
 });
 
-test("inventory does not discover skills above a project that is itself the git root", () => {
+test("inventory does not discover skills above a project that is itself the git root", async () => {
   const fx = fullFixture();
   w(path.join(fx.root, ".agents", "skills", "outside-repo", "SKILL.md"), "# outside\n");
-  const pi = scanOf(fx).hosts.find((h) => h.app === "pi");
+  const pi = (await scanOf(fx)).hosts.find((h) => h.app === "pi");
   assert.ok(!pi.skills.some((skill) => skill.name === "outside-repo"));
 });
 
-test("dsh component disabled state belongs to its own top-level row", () => {
+test("dsh component disabled state belongs to its own top-level row", async () => {
   const dump = `# == @example/first
 - id: active-row
   name: '@example/active'
@@ -482,7 +509,7 @@ test("dsh component disabled state belongs to its own top-level row", () => {
   disabled: false
   config: !js/function '() => { throw new Error("must not execute"); }'
 `;
-  const dsh = scanDshFixture(dump);
+  const dsh = await scanDshFixture(dump);
   assert.deepEqual(dsh.plugins.filter(p => p.source === "dump-config").map(p => [p.id,p.name,p.status,p.origin]), [
     ["active-row","@example/active","active","@example/first"],
     ["disabled-row","@example/disabled","disabled","@example/second"],
@@ -490,14 +517,14 @@ test("dsh component disabled state belongs to its own top-level row", () => {
   ]);
 });
 
-test("Pi inventory integrates scoped package filters and project MCP state without secrets", () => {
+test("Pi inventory integrates scoped package filters and project MCP state without secrets", async () => {
   const fx = fullFixture();
   const pkg = path.join(fx.piDir, "npm", "node_modules", "@demo", "tools");
   w(path.join(pkg, "package.json"), JSON.stringify({ name: "@demo/tools", pi: { skills: ["skills"] } }));
   for (const name of ["visible", "hidden"]) w(path.join(pkg, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${name} tool\n---\nbody\n`);
   w(path.join(fx.piDir, "settings.json"), JSON.stringify({ packages: [{ source: "npm:@demo/tools@1.0.0", skills: ["skills/**", "!skills/hidden/**"] }] }));
   w(path.join(fx.projectDir, ".pi", "mcp.json"), JSON.stringify({ mcpServers: { exa: { disabled: true, headers: { Authorization: "SENTINEL_MCP_SECRET" } } } }));
-  const report = scanOf(fx);
+  const report = await scanOf(fx);
   const pi = report.hosts.find(h => h.app === "pi");
   assert.ok(pi.skills.some(s => s.name === "visible"));
   assert.ok(!pi.skills.some(s => s.name === "hidden"));
@@ -510,11 +537,11 @@ test("Pi inventory integrates scoped package filters and project MCP state witho
   assert.ok(!JSON.stringify(report).includes("SENTINEL_MCP_SECRET"));
 });
 
-test("dsh inventory exposes precedence and staged presets without claiming active agents", () => {
+test("dsh inventory exposes precedence and staged presets without claiming active agents", async () => {
   const fx = fullFixture();
   w(path.join(fx.projectDir, ".dsh", "skills", "local", "SKILL.md"), "---\nname: dsh-skill\ndescription: project override\n---\nbody\n");
   mk(path.join(fx.dshHome, "agent-presets", "queued-preset"));
-  const dsh = scanOf(fx).hosts.find(h => h.app === "dsh");
+  const dsh = (await scanOf(fx)).hosts.find(h => h.app === "dsh");
   assert.equal(dsh.skills.filter(s => s.name === "dsh-skill").length, 1);
   assert.equal(dsh.skills.find(s => s.name === "dsh-skill").source, "project-dsh");
   assert.ok(dsh.skillResources.some(s => s.name === "dsh-skill" && s.status === "shadowed"));
@@ -524,13 +551,13 @@ test("dsh inventory exposes precedence and staged presets without claiming activ
 });
 
 for (const settings of [null, "!unsupported tagged settings"]) {
-  test(`dsh profiles-only inventory preserves resources with ${settings === null ? "missing" : "unsupported"} settings`, () => {
+  test(`dsh profiles-only inventory preserves resources with ${settings === null ? "missing" : "unsupported"} settings`, async () => {
     const fx = fullFixture();
     mk(path.join(fx.dshHome, "profiles", "web"));
     mk(path.join(fx.dshHome, "agent-presets", "staged-only"));
     const file = path.join(fx.dshHome, "settings.yaml");
     if (settings === null) fs.unlinkSync(file); else fs.writeFileSync(file, settings);
-    const report = scanOf(fx);
+    const report = await scanOf(fx);
     const dsh = report.hosts.find(h => h.app === "dsh");
     assert.ok(dsh, JSON.stringify(report.hosts.map(h => ({ app: h.app, error: h.error }))));
     assert.equal(dsh.error, undefined);

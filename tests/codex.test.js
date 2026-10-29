@@ -1,9 +1,11 @@
 import "./fixtures/test-env.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { status, findCodexBinary, findCodexCompanion, shouldReview, runReview } from "../src/codex.js";
+import { createRun, addTask, runtimeStatus } from "../src/runtime.js";
 
 // CI runners do not have the codex CLI or codex-plugin-cc installed; skip the
 // environment-dependent tests there so CI stays green. (findCodexBinary/
@@ -41,21 +43,51 @@ test("shouldReview declines when codex not enabled", () => {
   assert.equal(r.review, false);
 });
 
-test("runReview with no companion returns a graceful not-found result", () => {
-  // Empty companion path forces the not-found branch without spawning node.
-  const r = runReview({ companion: "", scope: "auto" });
+// v1 routes every review through the fenced companion adapter
+// (src/adapters/companion.js startCompanion; commit 265463f): a review is a
+// registered run/task with an explicit prompt specification, and the companion
+// path/cwd come from the frozen task instead of caller-supplied options. The
+// v0.8 `companion`/`cwd`/`spawnFn` injection seam no longer exists, so these
+// two cases assert the same degradation and workspace-binding properties
+// through the v1 surface.
+
+test("runReview without a runtime run/task degrades gracefully", async () => {
+  const r = await runReview({ scope: "auto" });
   assert.equal(r.ok, false);
-  assert.match(r.stderr, /companion script not found/);
+  assert.equal(r.reasonCode, "TASK_CONTEXT_REQUIRED");
+  assert.match(r.stderr, /run\/task and promptFile/);
+  // still graceful when only the prompt specification is missing
+  const noPrompt = await runReview({ runId: "r1", taskId: "t1", scope: "auto" });
+  assert.equal(noPrompt.ok, false);
+  assert.equal(noPrompt.reasonCode, "TASK_CONTEXT_REQUIRED");
 });
 
-test("runReview passes the selected project as child cwd", () => {
-  const project = path.join(os.tmpdir(), "mawf review project");
-  let received;
-  const result = runReview({ companion: "C:/tmp/companion.mjs", cwd: project, spawnFn: (bin, args, options) => {
-    received = { bin, args, options };
-    return { status: 0, stdout: "review ok", stderr: "" };
-  } });
-  assert.equal(result.ok, true);
-  assert.equal(received.options.cwd, project);
-  assert.equal(received.args[1], "review");
+test("runReview binds the review to the task's selected workspace and never launches an unselected adapter", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mawf review project "));
+  t.after(() => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 }); } catch { /* windows handle */ } });
+  const project = path.join(dir, "proj");
+  const workspace = path.join(dir, "selected workspace");
+  fs.mkdirSync(project, { recursive: true });
+  fs.mkdirSync(workspace, { recursive: true });
+  const promptFile = path.join(dir, "prompt.txt");
+  fs.writeFileSync(promptFile, "review the working tree\n");
+  const stateRoot = path.join(dir, "runtime");
+
+  await createRun({ project, stateRoot, runId: "r1", workspace });
+  const added = addTask({ project, stateRoot, runId: "r1", taskId: "review-1", adapter: "codex-plugin-cc", role: "reviewer", actorId: "reviewer-1", providerId: "openai", modelId: "gpt-5.2-codex", billingMode: "api" });
+  assert.equal(added.ok, true);
+  // the child cwd is the task's recorded workspace, taken from the run
+  // snapshot rather than a caller-supplied option
+  assert.equal(added.task.workspace, fs.realpathSync(workspace));
+
+  // codex-plugin-cc is not selected in this project, so the review reports the
+  // disabled capability instead of spawning anything
+  const r = await runReview({ project, stateRoot, runId: "r1", taskId: "review-1", promptFile, actorId: "reviewer-1", scope: "auto" });
+  assert.equal(r.ok, false);
+  assert.equal(r.reasonCode, "INTEGRATION_DISABLED");
+  assert.equal(r.capability.id, "codex-plugin-cc");
+  assert.equal(r.capability.selected, false);
+  assert.equal(r.capability.compatible, false);
+  // nothing was reserved: a refused review consumes no capacity
+  assert.equal(runtimeStatus({ project, stateRoot }).activeCount, 0);
 });
