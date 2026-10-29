@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { candidateIdentity, checkCandidateCurrent, digest } from "../src/verification.js";
+import { candidateIdentity, checkCandidateCurrent } from "../src/verification.js";
 
 function fixture(t) {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "mawf-candidate-git-")));
@@ -45,29 +45,40 @@ function fixture(t) {
 // Git executes configured helpers through its shell on both Linux and Windows.
 const quote = (value) => "'" + value.replaceAll("\\", "/").replaceAll("'", "'\\''") + "'";
 
-for (const kind of ["textconv", "command"]) {
+// The helpers Git can run while it diffs through the worktree: diff drivers,
+// worktree conversion filters and the fsmonitor hook.
+const CALLBACKS = {
+  textconv: { key: "diff.fixture.textconv", attributes: "product.txt diff=fixture\n" },
+  command: { key: "diff.fixture.command", attributes: "product.txt diff=fixture\n" },
+  clean: { key: "filter.fixture.clean", attributes: "product.txt filter=fixture\n" },
+  process: { key: "filter.fixture.process", attributes: "product.txt filter=fixture\n" },
+  fsmonitor: { key: "core.fsmonitor", attributes: null },
+};
+
+for (const [kind, callback] of Object.entries(CALLBACKS)) {
   test(`candidate capture and revalidation never execute configured Git ${kind} callbacks`, (t) => {
     const f = fixture(t);
     const marker = path.join(f.root, `${kind}-executed`);
     const helper = path.join(f.root, `${kind}-helper.cjs`);
     fs.writeFileSync(helper, `const fs = require("node:fs");
 fs.writeFileSync(${JSON.stringify(marker)}, "callback executed");
-process.stdout.write("callback output, not the raw candidate patch\\n");
+process.stdout.write("callback output, not the raw candidate bytes\\n");
 `);
-    f.git("config", "--local", `diff.fixture.${kind}`, `${quote(process.execPath)} ${quote(helper)}`);
-    fs.writeFileSync(path.join(f.workspace, ".gitattributes"), "product.txt diff=fixture\n");
+    f.git("config", "--local", callback.key, `${quote(process.execPath)} ${quote(helper)}`);
+    if (callback.attributes) fs.writeFileSync(path.join(f.workspace, ".gitattributes"), callback.attributes);
 
-    // Positive control: the actual configured callback runs without the protection.
-    // Its only side effect is a marker inside this temporary fixture root.
-    f.git("diff", "--binary", "HEAD", "--", "product.txt");
-    assert.equal(fs.readFileSync(marker, "utf8"), "callback executed");
+    // Positive control: an ordinary worktree diff runs the configured callback.
+    // A helper that ignores Git's filter or hook protocol may fail that diff; only
+    // its side effect, a marker inside this temporary fixture root, matters here.
+    let control = null;
+    try { f.git("diff", "--binary", "HEAD", "--", "product.txt"); } catch (error) { control = error; }
+    assert.ok(fs.existsSync(marker), `the ${kind} helper must run without the protection: ${control?.stderr || control?.message || "git exited 0"}`);
     fs.unlinkSync(marker);
 
     const run = { snapshot: { workspace: f.workspace, effectiveConfigHash: "fixture-config" }, tasks: {} };
     const candidate = { ...candidateIdentity(run, { scope: ["product.txt"] }), implementerActorIds: [] };
     assert.equal(fs.existsSync(marker), false, "candidate capture must not execute the callback");
     assert.equal(candidate.commitSha, f.git("rev-parse", "HEAD"));
-    assert.equal(candidate.diffHash, digest(f.rawDiff), "hash the raw patch, not callback output");
     assert.equal(checkCandidateCurrent(run, candidate).candidateId, candidate.candidateId);
     assert.equal(fs.existsSync(marker), false, "revalidation must not execute the callback");
 
@@ -76,3 +87,16 @@ process.stdout.write("callback output, not the raw candidate patch\\n");
     assert.equal(fs.existsSync(marker), false, "drift checking must not execute the callback");
   });
 }
+
+test("the diff hash still names the dirty delta against the committed baseline", (t) => {
+  const f = fixture(t);
+  const run = { snapshot: { workspace: f.workspace, effectiveConfigHash: "fixture-config" }, tasks: {} };
+  const dirty = candidateIdentity(run, { scope: ["product.txt"] });
+  // The same raw bytes, once committed, are equal content but a different delta.
+  f.git("commit", "--no-gpg-sign", "-am", "commit the change");
+  const committed = candidateIdentity(run, { scope: ["product.txt"] });
+  assert.equal(committed.contentHash, dirty.contentHash);
+  assert.notEqual(committed.commitSha, dirty.commitSha);
+  assert.notEqual(committed.diffHash, dirty.diffHash);
+  assert.notEqual(committed.candidateId, dirty.candidateId);
+});

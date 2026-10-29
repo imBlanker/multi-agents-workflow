@@ -20,11 +20,11 @@ runtime: canonical_fenced_ledger_no_age_based_eviction
 acceptance: independent_evidence_bound_to_candidate_and_frozen_policy
 cost: unknown_is_not_zero_or_measured; explicit_bounded_native_subscription_risk_optional
 native_sandbox: claude_code_bash_sandbox_required; failIfUnavailable; allowUnsandboxedCommands_false; deny_write_state_root_package_and_node_directory; edit_deny_rules; excluded_only_named_core_management; no_network_without_additional_host_grants
-limits: [windows_process_control_refused_at_admission, native_controlled_execution_linux_only, native_sandbox_needs_bwrap_and_socat, native_sessions_have_no_network, native_sessions_cannot_start_external_adapters, user_or_managed_sandbox_arrays_merge_in, current_measured_payment_unsupported, codex_companion_pricing_record_missing, trellis_runner_receives_mawf_only_options]
+limits: [windows_process_control_refused_at_admission, native_controlled_execution_linux_only, native_sandbox_needs_bwrap_and_socat, native_sessions_have_no_network, native_sessions_cannot_start_external_adapters, user_or_managed_sandbox_arrays_merge_in, core_git_and_claude_cli_resolve_via_trusted_path, current_measured_payment_unsupported, codex_companion_pricing_record_missing, trellis_runner_receives_mawf_only_options]
 issues: [https://github.com/imBlanker/multi-agents-workflow/issues/43]
 prs: [https://github.com/imBlanker/multi-agents-workflow/pull/44, https://github.com/imBlanker/multi-agents-workflow/pull/45]
 fixed:
-  - "native Core exemptions pin the resolved Node interpreter and protect its directory; candidate diffs disable external diff/textconv callbacks"
+  - "native Core exemptions pin the resolved Node interpreter and protect its directory; candidate capture reads committed git objects only (rev-parse + ls-tree, core.fsmonitor=false, protocol.allow=never, GIT_NO_LAZY_FETCH=1), so no diff/filter/fsmonitor callback runs; diffHash = sha256({ls-tree base, raw files})"
   - "native sandbox exemptions exclude local-process dispatch and recursive native launches; native children reject manual receipts with NATIVE_RECEIPT_REQUIRED"
   - "Node22 Windows hook fixture avoids the crashing native directory-copy path while retaining Unicode coverage and all assertions"
   - "windows archive operations (components install, cc-switch backup, cc-switch snapshot restore) use the system bsdtar (System32 tar.exe) via platform tarCommand regardless of PATH order; under git bash MSYS GNU tar made installs and restores fail and backups silently become copies"

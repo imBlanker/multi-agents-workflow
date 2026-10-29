@@ -49,7 +49,7 @@ and successful Core prepare. A separate 180-second native run reached candidate
 freeze but timed out before an independent Hacker; its controller lease was
 released and CLI returned nonzero. It did not establish sandboxed acceptance.
 
-The subsequent independent review found and repaired four paths:
+The subsequent independent review found and repaired these paths:
 
 - Broad Core exemptions allowed local-process dispatch outside the sandbox.
   Exemptions now name only the management subcommands required by `/mawf:run`.
@@ -57,15 +57,17 @@ The subsequent independent review found and repaired four paths:
   completion events and reject manual/omitted receipts before mutation.
 - A bare `node` exemption depended on PATH. Exemptions and initial/subsequent
   command instructions now pin the resolved interpreter; its directory is sealed.
-- Candidate Git diff could run external diff/textconv callbacks. Both are disabled
-  and actual fixture callbacks verify capture/revalidation do not execute them.
+- Candidate capture diffed through the worktree, where repository-configured Git
+  callbacks (external diff, textconv, clean/process filters, fsmonitor) ran
+  outside the sandbox. Capture now reads committed objects only; fixtures
+  confirm a plain diff runs each callback and capture/revalidation never do.
 
 No-model regressions cover these repairs, including real shell quoting and
-unchanged raw completion bytes. Live host matching of the final command prefix,
-a fresh packed full-chain acceptance run, and the remaining trusted-host
-configuration boundary still need verification. Consult `V1_EXECUTION.md` for
-that boundary; sandboxing does not automatically constrain every process Core,
-Claude hooks or other host extensions can start.
+unchanged raw completion bytes. Live host matching of the final command prefix
+and a fresh packed full-chain acceptance run still need verification. Git and
+the `claude` CLI are found through PATH and remain trusted host tools; consult
+`V1_EXECUTION.md` for that boundary. Sandboxing does not constrain Claude
+hooks or other host extensions.
 
 ## Retained automated checks
 
@@ -110,12 +112,6 @@ the earlier failure under the old implicit-selection assumption remains historic
   Implementer -> candidate -> independent Hacker -> evidence -> acceptance run.
   The Claude session exhausted quota before that run; a prior unsandboxed pass
   does not satisfy this gate.
-- **Unresolved sandbox integrity blocker:** Git `core.fsmonitor` and
-  `filter.<name>.clean/process` callbacks can still execute through candidate
-  capture/revalidation. A helper in a session-writable location can run outside
-  Bash isolation. Caller-selected nested/temporary repositories add an unverified
-  configuration path. Sandbox Git itself or pin a controlled immutable execution
-  environment; preflight alone leaves a race. Do not treat this as accepted.
 - Push/PR/CI actions, PR #42 body refresh and a green Ubuntu/Windows Node22/24
   matrix remain separate maintainer steps. Main merge, tag and npm publish have
   not been performed. Existing oversized modules remain a documented review item.

@@ -63,10 +63,12 @@ inside a native session. Sandbox arrays and directories from user or managed
 settings (excludedCommands, allowWrite, allowedDomains, additionalDirectories)
 still merge in and can widen it; repository settings cannot, because
 allowUnsandboxedCommands:false from `--settings` makes the sandbox
-admin-required. Other external tools that Core invokes, such as Git and the
-Claude authentication probe, still require trusted executable/configuration
-paths. Candidate diffs disable external diff and textconv callbacks; this is
-not a claim that every possible host-side helper is sandboxed. The stream does not report
+admin-required. Candidate capture and revalidation read committed Git objects
+only (`rev-parse` and `ls-tree` with fsmonitor and transports off), never the
+index or a worktree diff, so no repository-configured diff, filter or
+fsmonitor callback runs; the raw worktree bytes are hashed by Core itself.
+Git and the `claude` authentication probe are still found through PATH, which
+must not contain a session-writable directory. The stream does not report
 sandbox status, so enforcement rests on failIfUnavailable. Hooks, MCP servers
 and other processes Claude Code itself starts run outside the sandbox. This
 follows https://code.claude.com/docs/en/sandboxing,
@@ -260,9 +262,12 @@ exemptions above close the first path. For the second, native children must use
 Other hosts retain their explicitly limited manual-receipt route. No-model
 regression checks cover both repairs; they do not replace a live full-chain run.
 
-Remaining release blocker: Git fsmonitor and clean/process filters are not
-isolated by the two diff flags. A callback script writable by the session can
-still execute outside Bash isolation; candidate --workspace also requires
-review for nested/temporary repository configuration. The trusted-host caveat
-is not an enforced prerequisite. Do not claim full sandbox integrity until this
-boundary has been closed and independently checked.
+The review also found that the two diff flags left Git fsmonitor and
+clean/process filters active during candidate capture, for any workspace the
+caller names. Capture no longer diffs through the worktree: it records the
+committed `ls-tree` entries of the candidate paths beside Core's own hash of
+their raw bytes, which still distinguishes a dirty change from the same bytes
+once committed. Fixtures configure each callback kind (textconv, external
+diff, clean, process, fsmonitor), confirm that a plain `git diff` runs it, and
+confirm that capture, revalidation and drift checks never do. These are
+no-model checks; the sandboxed full chain still needs its live run.

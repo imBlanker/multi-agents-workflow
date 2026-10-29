@@ -29,7 +29,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 
 ### Fixed
 
-- Native Core management commands pin the resolved Node executable and protect its directory. Candidate diffs disable external diff and textconv callbacks; trusted host tools/configuration remain a prerequisite.
+- Native Core management commands pin the resolved Node executable and protect its directory. Candidate capture reads committed Git objects only (no index, no worktree diff), so no repository-configured diff, filter or fsmonitor callback runs outside the sandbox; Git and the `claude` CLI found through PATH remain trusted host tools.
 
 - Native sandbox review: restrict exemptions to management subcommands so local-process dispatch cannot inherit Core access. Registered native children require Core-captured completion events and reject manual receipts (`NATIVE_RECEIPT_REQUIRED`), preserving Hacker evidence provenance.
 - Keep the hook fixture on Node's JavaScript directory-copy path to avoid a Windows Node 22.18 native-copy crash on Unicode paths; preserve all hook assertions.
