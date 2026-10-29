@@ -29,7 +29,7 @@
 
 ### 修復
 
-- 原生 Core 管理命令固定使用解析後的 Node 絕對路徑並保護其目錄；豁免規則就是這個不帶引號的絕對前綴，因此需要 shell 引號的 Node 或套件路徑會被拒絕（`NATIVE_SANDBOX_PATH_UNSUPPORTED`）。候選擷取只讀取已提交的 Git 物件（不讀索引、不經工作區 diff），因此儲存庫設定的 diff、filter 與 fsmonitor 回呼都不會在沙箱外執行；經 PATH 找到的 Git 與 `claude` CLI 仍屬可信宿主工具。
+- 原生 Core 管理命令固定使用解析後的 Node 絕對路徑並保護其目錄；豁免規則就是這個不帶引號的絕對前綴，因此需要 shell 引號的 Node 或套件路徑會被拒絕（`NATIVE_SANDBOX_PATH_UNSUPPORTED`）。候選擷取只向 Git 讀取 HEAD 提交（不讀索引、不列樹、不經工作區 diff），因此儲存庫設定的 diff、filter 與 fsmonitor 回呼都不會在沙箱外執行；經 PATH 找到的 Git 與 `claude` CLI 仍屬可信宿主工具。
 
 - 原生沙箱審查：例外收緊到管理子命令，阻止本機程序派發繼承 Core 權限。受管原生子任務必須使用 Core 擷取的完成事件，拒絕手工回執（`NATIVE_RECEIPT_REQUIRED`），保留 Hacker 證據來源約束。
 - hook 測試夾具改走 Node 的 JavaScript 目錄複製路徑，避開 Windows Node 22.18 在 Unicode 路徑上的原生複製崩潰；保留全部 hook 斷言。

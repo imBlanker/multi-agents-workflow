@@ -65,10 +65,10 @@ inside a native session. Sandbox arrays and directories from user or managed
 settings (excludedCommands, allowWrite, allowedDomains, additionalDirectories)
 still merge in and can widen it; repository settings cannot, because
 allowUnsandboxedCommands:false from `--settings` makes the sandbox
-admin-required. Candidate capture and revalidation read committed Git objects
-only (`rev-parse` and `ls-tree` with fsmonitor and transports off), never the
-index or a worktree diff, so no repository-configured diff, filter or
-fsmonitor callback runs; the raw worktree bytes are hashed by Core itself.
+admin-required. Candidate capture and revalidation ask Git only for the HEAD
+commit (`rev-parse`, with fsmonitor and transports off), never the index, a
+tree listing or a worktree diff, so no repository-configured diff, filter or
+fsmonitor callback runs; Core hashes the raw worktree bytes itself.
 Git and the `claude` authentication probe are still found through PATH, which
 must not contain a session-writable directory. The stream does not report
 sandbox status, so enforcement rests on failIfUnavailable. Hooks, MCP servers
@@ -266,10 +266,13 @@ regression checks cover both repairs; they do not replace a live full-chain run.
 
 The review also found that the two diff flags left Git fsmonitor and
 clean/process filters active during candidate capture, for any workspace the
-caller names. Capture no longer diffs through the worktree: it records the
-committed `ls-tree` entries of the candidate paths beside Core's own hash of
-their raw bytes, which still distinguishes a dirty change from the same bytes
-once committed. Fixtures configure each callback kind (textconv, external
+caller names. Capture no longer diffs through the worktree: the diff hash
+covers the HEAD commit, which pins the committed side, and Core's own hash of
+the candidate's raw bytes. That still distinguishes a dirty change from the
+same bytes once committed. A first version also listed the committed tree; an
+independent review noted that the listing grew with the repository and could
+overflow Git's output buffer on large tracked trees, and that the commit
+already determines it, so it was dropped. Fixtures configure each callback kind (textconv, external
 diff, clean, process, fsmonitor), confirm that a plain `git diff` runs it, and
 confirm that capture, revalidation and drift checks never do. These are
 no-model checks; the sandboxed full chain still needs its live run.

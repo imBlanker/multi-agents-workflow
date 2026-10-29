@@ -63,7 +63,7 @@ The subsequent independent review found and repaired these paths:
   refused (`NATIVE_SANDBOX_PATH_UNSUPPORTED`).
 - Candidate capture diffed through the worktree, where repository-configured Git
   callbacks (external diff, textconv, clean/process filters, fsmonitor) ran
-  outside the sandbox. Capture now reads committed objects only; fixtures
+  outside the sandbox. Capture now asks Git only for the HEAD commit; fixtures
   confirm a plain diff runs each callback and capture/revalidation never do.
 
 No-model regressions cover these repairs, including real shell quoting and

@@ -7,8 +7,8 @@ import { execFileSync } from 'node:child_process';
 import { assertSafePath, stateError } from './atomic-state.js';
 import { comparablePath } from './platform/index.js';
 export const digest = value => crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
-// Core runs these reads outside a native session's sandbox, on a repository the
-// session can write. They read committed objects only (no index, no worktree
+// Core runs Git outside a native session's sandbox, on a repository the session
+// can write. It only resolves HEAD (no index, tree listing or worktree
 // conversion), so no repository-configured callback or transport runs.
 const GIT_READS_ONLY = ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never'];
 const git = (root, argv) => { try { return execFileSync('git', [...GIT_READS_ONLY, '-C', root, ...argv], { encoding: 'utf8', timeout: 10000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } }).trim(); } catch { return null; } };
@@ -41,11 +41,10 @@ export function candidateIdentity(run, opts = {}) {
   const files = inventory(workspace, [...scope, ...artifacts]);
   if (!files.length) throw stateError('EMPTY_CANDIDATE', 'Candidate scope contains no product files');
   const commitSha = git(workspace, ['rev-parse', 'HEAD']);
-  // The committed entries of the same paths plus their raw bytes name the dirty
-  // delta against HEAD exactly, without diffing through the worktree.
-  const base = commitSha ? git(workspace, ['ls-tree', '-r', '-z', commitSha, '--', ...scope, ...artifacts]) : null;
-  if (commitSha && base === null) throw stateError('CANDIDATE_DIFF_UNAVAILABLE', 'Cannot read the committed baseline of the candidate');
-  const identity = { schemaVersion: 1, commitSha, diffHash: digest({ base: base || '', files }), contentHash: digest(files), effectiveConfigHash: run.snapshot.effectiveConfigHash, scope, artifacts };
+  // The commit pins the committed side of the scope and the raw bytes the
+  // worktree side, so together they name the dirty delta against HEAD exactly,
+  // at a cost that scales with the candidate rather than the repository.
+  const identity = { schemaVersion: 1, commitSha, diffHash: digest({ commitSha, files }), contentHash: digest(files), effectiveConfigHash: run.snapshot.effectiveConfigHash, scope, artifacts };
   return { ...identity, candidateId: digest(identity), workspace, files };
 }
 export function candidateAuthors(run) {
