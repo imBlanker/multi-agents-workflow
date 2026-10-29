@@ -59,7 +59,9 @@ test("only management calls leave the sandbox; process launchers are never exemp
   // Exercise the policy boundary, not just the number/shape of generated rules.
   const matches = command => excluded.some(pattern => command.startsWith(pattern.slice(0, -1)));
   const entry = nativeCoreCommand({ packageRoot, nodePath });
-  assert.equal(entry, "'/usr/bin/node' '/opt/mawf/bin/mawf.js'");
+  assert.equal(entry, "/usr/bin/node /opt/mawf/bin/mawf.js");
+  // Live Claude Code matched neither a quoted rule nor a quoted command.
+  assert.ok(excluded.every((pattern) => !/['"\\]/.test(pattern)), "rules are plain, unquoted text");
   assert.equal(matches(`node "${packageRoot}/bin/mawf.js" task status --json`), false, "PATH-resolved node is not exempt");
   for (const management of [
     'run prepare --host-managed --request-ref ref --json',
@@ -164,14 +166,22 @@ test("sandbox rules refuse wildcard paths rather than granting a wider command p
     assert.throws(() => nativeSandboxPolicy({ packageRoot, stateRoot: unsafe, nodePath }), { code: 'NATIVE_SANDBOX_PATH_UNSUPPORTED' });
     assert.throws(() => nativeSandboxPolicy({ packageRoot, stateRoot, nodePath: unsafe }), { code: 'NATIVE_SANDBOX_PATH_UNSUPPORTED' });
   }
+  // The command prefix cannot be quoted, so anything that would need quoting is refused.
+  for (const unsafe of ['/opt/ma wf', "/opt/ma'wf", '/opt/ma"wf', '/opt/$HOME', '/opt/a;b', '/opt/a\\b', '/opt/项目', 'opt/mawf', 'C:\\mawf']) {
+    assert.throws(() => nativeCoreCommand({ packageRoot: unsafe, nodePath }), { code: 'NATIVE_SANDBOX_PATH_UNSUPPORTED' }, unsafe);
+    assert.throws(() => nativeCoreCommand({ packageRoot, nodePath: unsafe }), { code: 'NATIVE_SANDBOX_PATH_UNSUPPORTED' }, unsafe);
+  }
+  // The state root is never shell text; it only has to stay a literal rule path.
+  assert.deepEqual(nativeSandboxPolicy({ packageRoot, stateRoot: "/work/my app/.mawf/runtime", nodePath }).settings.sandbox.filesystem.denyWrite[0], "/work/my app/.mawf/runtime");
 });
 
 
-test("the literal Core prefix preserves spaced Unicode and shell-special paths", { skip: process.platform !== 'linux' }, (t) => {
-  const root = path.join(tmp(t), "package 项目 '$literal");
+test("the plain Core prefix runs as typed and matches its own exemption", { skip: process.platform !== 'linux' }, (t) => {
+  const root = path.join(tmp(t), "mawf-1.0.0_pkg@scope+x");
   fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(root, 'bin', 'mawf.js'), 'console.log(JSON.stringify(process.argv.slice(2)))');
   const prefix = nativeCoreCommand({ packageRoot: root });
+  assert.equal(prefix, `${fs.realpathSync(process.execPath)} ${root}/bin/mawf.js`);
   const result = spawnSync('/bin/sh', ['-c', `${prefix} task status --json`], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), ['task', 'status', '--json']);

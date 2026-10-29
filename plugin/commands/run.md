@@ -14,7 +14,8 @@ leave it; `task dispatch` and bare `run` never do. User/managed sandbox grants
 remain part of the trusted host configuration.
 For a registered native controller, use the exact absolute Core command prefix
 supplied in the session instructions, including for the initial prepare call.
-Do not replace that interpreter with PATH-resolved `node`. For other host
+Type it unquoted and unchanged: adding quotes or replacing that interpreter with
+PATH-resolved `node` keeps the call sandboxed. For other host
 sessions, use the installed package's fallback Core entry:
 `node "${CLAUDE_PLUGIN_ROOT}/../bin/mawf.js"`.
 The host expands this literal plugin-root variable; do not read it from the Bash

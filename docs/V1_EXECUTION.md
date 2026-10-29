@@ -45,11 +45,13 @@ state root, package and resolved Node interpreter directory (filesystem.denyWrit
 denial, keeping Edit, Write and NotebookEdit out of these paths. Only named management subcommands are exempt:
 `run prepare/queue/next/respec` and
 `task bind/heartbeat/result/host-complete/candidate/evidence/accept/acceptance/status/list`.
-The exceptions match a single literal command prefix containing the resolved
-absolute `process.execPath` and this package's Core entry. The controller supplies
+The exceptions match one unquoted command prefix: the resolved absolute
+`process.execPath`, a space, and this package's Core entry. The controller supplies
 that prefix through `--append-system-prompt`, including for the initial prepare.
-Bare PATH-resolved `node` is not exempt. Wildcard/newline characters in rule paths
-are refused before reservation (`NATIVE_SANDBOX_PATH_UNSUPPORTED`). Bare `run`,
+Claude Code 2.1.303 exempted only the unquoted spelling: a quoted rule or a quoted
+command stayed sandboxed, as does bare PATH-resolved `node`. Node and package
+paths outside letters, digits and `._@+/-`, and state-root paths with wildcard or
+newline characters, are refused before reservation (`NATIVE_SANDBOX_PATH_UNSUPPORTED`). Bare `run`,
 `task add`, and `task dispatch` are not exempt: an arbitrary local command must
 never inherit Core's access to the ledger or package. A workspace
 inside the package is refused (NATIVE_WORKSPACE_INSIDE_PACKAGE). Sessions write
@@ -271,3 +273,11 @@ once committed. Fixtures configure each callback kind (textconv, external
 diff, clean, process, fsmonitor), confirm that a plain `git diff` runs it, and
 confirm that capture, revalidation and drift checks never do. These are
 no-model checks; the sandboxed full chain still needs its live run.
+
+A live Claude Code 2.1.303 probe on Linux (Haiku, explicit commands) then showed
+that the review's quoted prefix never left the sandbox: a quoted rule did not
+match the identically quoted command, and an unquoted rule did not match a
+quoted command; both returned EROFS from the state root. The unquoted command
+matched the unquoted rule and Core recorded the run, while `node` resolved
+through PATH stayed sandboxed. The prefix is therefore unquoted, and paths that
+would need quoting are refused before reservation.

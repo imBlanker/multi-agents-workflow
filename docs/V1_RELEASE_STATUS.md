@@ -57,6 +57,10 @@ The subsequent independent review found and repaired these paths:
   completion events and reject manual/omitted receipts before mutation.
 - A bare `node` exemption depended on PATH. Exemptions and initial/subsequent
   command instructions now pin the resolved interpreter; its directory is sealed.
+  A live probe then showed that the review's quoted prefix never matched in
+  Claude Code 2.1.303, which would have kept every Core call sandboxed. The
+  prefix is now unquoted, and Node/package paths that would need quoting are
+  refused (`NATIVE_SANDBOX_PATH_UNSUPPORTED`).
 - Candidate capture diffed through the worktree, where repository-configured Git
   callbacks (external diff, textconv, clean/process filters, fsmonitor) ran
   outside the sandbox. Capture now reads committed objects only; fixtures

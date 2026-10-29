@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { findExecutable, execFile, platformFor } from './platform/index.js';
+import { findExecutable, execFile } from './platform/index.js';
 import { isEnabled } from './integrations.js';
 import { processIdentity, stateError, assertSafePath, writeAtomic } from './atomic-state.js';
 import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed } from './runtime.js';
@@ -34,7 +34,7 @@ const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 // A native session runs every Bash command, its subagents' included, in Claude
 // Code's sandbox: no network, no unsandboxed retry, and no writes to the MAWF
 // state root or package. Edit deny rules keep the file tools out of both. Only
-// Explicit Core management calls leave the sandbox, so Core alone writes the ledger,
+// explicit Core management calls leave the sandbox, so Core alone writes the ledger,
 // receipts and events, and the session cannot rewrite the Core it runs. The
 // boolean keys pin the sandbox's weakening switches against user settings.
 export const NATIVE_SANDBOX_TOOLS = Object.freeze(['bwrap', 'socat']);
@@ -46,11 +46,15 @@ const NATIVE_CORE_ACTIONS = Object.freeze([
   'task candidate', 'task evidence', 'task accept', 'task acceptance',
   'task status', 'task list',
 ]);
+// The prefix is both shell text and the raw text of host wildcard rules. Live
+// Claude Code 2.1.303 exempted it only when typed unquoted: neither a quoted
+// rule nor a quoted command matched. So paths that would need shell quoting
+// (or could widen a rule) are refused rather than quoted.
+const SHELL_SAFE_PATH = /^\/[A-Za-z0-9._@+/-]*$/;
 export function nativeCoreCommand({ packageRoot, nodePath = fs.realpathSync(process.execPath) }) {
-  // These paths become host wildcard rules as well as shell text. Refuse rule
-  // metacharacters rather than accidentally widening an exemption.
-  for (const root of [packageRoot, nodePath]) if (/[\*?\[\]\r\n]/.test(root)) throw stateError('NATIVE_SANDBOX_PATH_UNSUPPORTED', 'Native sandbox command paths cannot contain wildcard or newline characters');
-  return platformFor('linux').commandText(nodePath, [`${packageRoot}/bin/mawf.js`]);
+  const entry = `${packageRoot}/bin/mawf.js`;
+  for (const file of [nodePath, entry]) if (!SHELL_SAFE_PATH.test(file)) throw stateError('NATIVE_SANDBOX_PATH_UNSUPPORTED', `Native sandbox exemptions need absolute Node and MAWF package paths made of letters, digits and ._@+/- only: ${JSON.stringify(file)}`);
+  return `${nodePath} ${entry}`;
 }
 export function nativeSandboxPolicy({ packageRoot, stateRoot, nodePath = fs.realpathSync(process.execPath) }) {
   if (/[\*?\[\]\r\n]/.test(stateRoot)) throw stateError('NATIVE_SANDBOX_PATH_UNSUPPORTED', 'Native sandbox state paths cannot contain wildcard or newline characters');
@@ -71,7 +75,7 @@ export function workspaceInsidePackage(workspace, packageRoot = PACKAGE_ROOT) {
 export function nativeLaunchArgs({ requestRef, packageRoot, stateRoot, modeId, allowedTools, modelId, nodePath = fs.realpathSync(process.execPath) }) {
   const sandbox = nativeSandboxPolicy({ packageRoot, stateRoot, nodePath });
   const coreCommand = nativeCoreCommand({ packageRoot, nodePath });
-  const coreInstruction = `Registered MAWF native controller: use this exact literal Core command prefix for EVERY management call, starting with run prepare: ${coreCommand}. Append the management subcommand and arguments. This replaces the fallback node command in /mawf:run. Do not substitute another interpreter or package path.`;
+  const coreInstruction = `Registered MAWF native controller: start EVERY Core management call, beginning with run prepare, with this exact prefix, typed unquoted and unchanged: \`${coreCommand}\`. Append the management subcommand and arguments. Quoting or rewriting the prefix keeps the call sandboxed, so Core cannot record state. This replaces the fallback node command in /mawf:run. Do not substitute another interpreter or package path.`;
   return ['-p', `/mawf:run --request-ref ${requestRef}`, '--plugin-dir', path.join(packageRoot, 'plugin'), '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--forward-subagent-text', '--include-hook-events', '--permission-mode', modeId === 'fixed-1' ? 'acceptEdits' : 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--tools', 'default', '--append-system-prompt', coreInstruction, '--settings', JSON.stringify(sandbox.settings), '--allowedTools', ...allowedTools, '--disallowedTools', ...sandbox.disallowedTools, ...(modeId === 'fixed-1' ? ['--agent', 'mawf:mawf-fixed-orchestrator'] : []), '--model', modelId];
 }
 export async function executeNative(opts) {
