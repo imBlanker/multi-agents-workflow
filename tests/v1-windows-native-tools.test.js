@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runWindowsTool, validateCoreArgs, assertWindowsToolLocations } from '../src/windows-native-tools.js';
-import { windowsNativeArgs, prepareWindowsNative, cleanupWindowsNative } from '../src/windows-native.js';
+import { windowsNativeArgs, prepareWindowsNative } from '../src/windows-native.js';
 import { execFileSync } from 'node:child_process';
 
 test('Windows native host exposes only broker tools and keeps Core argv scoped', () => {
@@ -50,7 +50,7 @@ test('workspace-local TEMP cannot contain privileged Windows helpers', { skip: p
   assert.deepEqual(fs.readdirSync(root), []);
 });
 
-test('temporary Git protection preserves an ancestor repository and is removed', { skip: process.platform !== 'win32' }, async t => {
+test('nested Git workspace is refused without changing repository discovery', { skip: process.platform !== 'win32' }, async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mawf-win-git-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 }));
   const repository = path.join(root, 'repo'), workspace = path.join(repository, 'subdir');
@@ -59,9 +59,8 @@ test('temporary Git protection preserves an ancestor repository and is removed',
   const git = args => execFileSync('git', ['-C', repository, '-c', 'core.hooksPath=' + path.join(root, 'no-hooks'), ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: emptyConfig } }).trim();
   git(['init', '-q']); git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '-qm', 'fixture']);
   const before = git(['-C', workspace, 'rev-parse', 'HEAD']);
-  const { policy } = prepareWindowsNative({ state: { task: { workspace, runId: 'run' }, run: { snapshot: { authorityProject: workspace } } }, identity: { stateRoot: path.join(workspace, '.mawf', 'runtime'), leaseId: 'lease' }, packageRoot: root, shell: path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), deadlineAt: Date.now() + 10000, requestRef: 'request' });
+  assert.throws(() => prepareWindowsNative({ state: { task: { workspace, runId: 'run' }, run: { snapshot: { authorityProject: workspace } } }, identity: { stateRoot: path.join(workspace, '.mawf', 'runtime'), leaseId: 'lease' }, packageRoot: root, shell: path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), deadlineAt: Date.now() + 10000, requestRef: 'request' }), /repository.*root/);
   assert.equal(git(['-C', workspace, 'rev-parse', 'HEAD']), before);
-  cleanupWindowsNative(policy);
   assert.equal(fs.existsSync(path.join(workspace, '.git')), false);
   assert.equal(fs.existsSync(path.join(workspace, '.claude')), false);
   assert.equal(git(['-C', workspace, 'rev-parse', 'HEAD']), before);

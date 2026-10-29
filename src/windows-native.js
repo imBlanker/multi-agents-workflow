@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { jobHelper, spawnWindowsJob, recoverWindowsSandbox, execFile } from './platform/index.js';
+import { jobHelper, spawnWindowsJob, recoverWindowsSandbox, execFile, comparablePath } from './platform/index.js';
 import { assertSafePath, writeAtomic } from './atomic-state.js';
 import crypto from 'node:crypto';
 import net from 'node:net';
@@ -15,6 +15,11 @@ export function windowsNativePrerequisites() {
 }
 export function prepareWindowsNative({ state, identity, packageRoot, shell, deadlineAt, requestRef }) {
   const workspace = state.task.workspace;
+  if (!fs.existsSync(path.join(workspace, '.git'))) {
+    let gitRoot = null;
+    try { gitRoot = execFile('git', ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never', '-C', workspace, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch {}
+    if (gitRoot && comparablePath(gitRoot) !== comparablePath(workspace)) throw new Error('Native Windows workspace must be a Git repository/worktree root or a non-Git directory, not a nested repository subdirectory');
+  }
   const controlDirectory = path.join(identity.stateRoot, 'runs', state.task.runId, 'windows');
   assertSafePath(controlDirectory); fs.mkdirSync(controlDirectory, { recursive: true });
   const temp = path.join(workspace, '.mawf', 'windows-temp', state.task.runId);
@@ -34,8 +39,8 @@ export function prepareWindowsNative({ state, identity, packageRoot, shell, dead
       if (path.basename(file) === '.git') {
         let gitDir = null;
         try { gitDir = execFile('git', ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never', '-C', workspace, 'rev-parse', '--absolute-git-dir'], { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } }).trim(); } catch {}
-        if (gitDir && /[\r\n]/.test(gitDir)) throw new Error('Git metadata path contains a newline');
-        const contents = gitDir ? `gitdir: ${gitDir.replaceAll('\\', '/')}\n` : '# MAWF temporary protected non-repository marker\n';
+        if (gitDir) throw new Error('Native Windows requires a repository/worktree root or a non-Git directory');
+        const contents = '# MAWF temporary protected non-repository marker\n';
         fs.writeFileSync(file, contents, { flag: 'wx' }); createdProtectedFiles.push({ file, contents });
       } else { fs.mkdirSync(file); createdProtectedDirectories.push(file); }
     }

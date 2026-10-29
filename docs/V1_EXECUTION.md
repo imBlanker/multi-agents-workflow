@@ -303,3 +303,8 @@ registered both Hacker files unchanged. Claude Code created an empty
 commit, so live capture took the no-commit path; the committed-object path is
 covered by the fixtures above, not by this run. So is the later `db7e4cc`
 change that dropped the tree listing from the diff hash.
+
+On Windows, start the native controller at a repository/worktree root or a non-Git
+workspace, with its default authority ledger and TEMP outside that workspace.
+One controller owns a workspace at a time; its child queue still manages the
+configured concurrency. See V1_WINDOWS.md for the native tool contract.

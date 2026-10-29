@@ -6,10 +6,10 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { findExecutable, execFile, nativeInvocation } from './platform/index.js';
+import { findExecutable, execFile, nativeInvocation, comparablePath } from './platform/index.js';
 import { isEnabled } from './integrations.js';
 import { processIdentity, stateError, assertSafePath, writeAtomic } from './atomic-state.js';
-import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed } from './runtime.js';
+import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed, authorityProject, resolveStateRoot } from './runtime.js';
 import { signalKnownBackend } from './local-runtime.js';
 import { storeNativeRequest, validateNativeDescription } from './native-request.js';
 import { windowsNativePrerequisites, prepareWindowsNative, windowsNativeArgs, verifyWindowsBoundary, cleanupWindowsNative } from './windows-native.js';
@@ -89,6 +89,7 @@ export async function executeNative(opts) {
   if (missing.length) return { ok: false, reasonCode: 'NATIVE_SANDBOX_UNAVAILABLE', reason: `Native runs need the Claude Code Bash sandbox, which needs bubblewrap and socat; missing: ${missing.join(', ')}` };
   validateNativeDescription(opts.description || '');
   const state = runtimeStatus(opts), task = state.task;
+  if (windows && (comparablePath(authorityProject(task.workspace)) !== comparablePath(state.run.snapshot.authorityProject) || comparablePath(state.stateRoot) !== comparablePath(resolveStateRoot(task.workspace)))) return { ok: false, reasonCode: 'NATIVE_WINDOWS_AUTHORITY_REQUIRED', reason: 'Native Windows controllers use their workspace authority and its default ledger, so concurrent controllers share one atomic admission boundary' };
   if (workspaceInsidePackage(task.workspace)) return { ok: false, reasonCode: 'NATIVE_WORKSPACE_INSIDE_PACKAGE', reason: 'The native sandbox keeps the MAWF package read-only, so the workspace cannot be inside it; run an installed MAWF package outside the workspace' };
   if (windows && (workspaceInsidePackage(PACKAGE_ROOT, task.workspace) || workspaceInsidePackage(fs.realpathSync.native(process.execPath), task.workspace))) return { ok: false, reasonCode: 'NATIVE_SANDBOX_INSTALL_INSIDE_WORKSPACE', reason: 'Native Windows Core and Node must be installed outside the writable workspace' };
   if (windows) { try { assertWindowsToolLocations(task.workspace); } catch (error) { return { ok: false, reasonCode: 'NATIVE_SANDBOX_HELPER_IN_WORKSPACE', reason: error.message, modelCallMade: false }; } }

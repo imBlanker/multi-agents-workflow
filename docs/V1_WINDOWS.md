@@ -29,9 +29,12 @@ is also available. Access to arbitrary installed developer tools is not implied.
 
 TEMP and all privileged helper storage must be outside the writable workspace;
 this is checked before model launch and independently by both broker tools.
-Missing .git metadata gets a temporary protected reference that preserves an
-ancestor repository HEAD; only owned, unchanged placeholders are removed on
-success/failure. Windows shell Node processes preserve symlink paths for module
+Use a repository/worktree root or a non-Git workspace; nested repository
+subdirectories are refused before metadata changes. Windows native controllers
+use their workspace authority's default ledger, and atomic admission permits one
+controller per workspace. Its independent child queue remains concurrent; use a
+separate workspace for another controller. Only owned, unchanged temporary
+non-repository/.claude placeholders are removed on success/failure. Windows shell Node processes preserve symlink paths for module
 loading so they need no additional drive-root metadata grant.
 
 The helper uses inbox 64-bit .NET Framework's C# compiler and Windows PowerShell.

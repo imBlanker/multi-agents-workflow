@@ -7,7 +7,9 @@ import { once } from 'node:events';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { spawnWindowsJob, windowsLaunch, windowsStartIdentity, windowsJobStopped, stopWindowsJob } from '../src/platform/windows-process.js';
-import { createRun, addTask, runtimeStatus } from '../src/runtime.js';
+import { createRun, addTask, runtimeStatus, acquireTask, claimLocalLaunch, markLaunchFailed } from '../src/runtime.js';
+import { updateSettings } from '../src/settings.js';
+import { processIdentity } from '../src/atomic-state.js';
 import { dispatchLocal } from '../src/local-runtime.js';
 const windows = { skip: process.platform !== 'win32' };
 function fixture(t) {
@@ -82,4 +84,23 @@ test('an empty job with a live supervisor cannot release or start after cancella
   assert.notEqual(code, 0);
   assert.equal(fs.existsSync(marker), false);
   assert.equal(windowsJobStopped(lease).stopped, true);
+});
+
+test('one Windows workspace admits one native controller while preserving its child queue', windows, async t => {
+  const project = fixture(t);
+  updateSettings(project, draft => { draft.pricing.unknownPricePolicy = 'bounded'; draft.pricing.bounds = { maxConcurrency: 2, maxDurationMs: 10000 }; });
+  for (const runId of ['first', 'second']) {
+    await createRun({ project, runId });
+    addTask({ project, runId, taskId: 'controller', adapter: 'claude-native', coordinationOnly: true, providerId: 'fixture', modelId: 'fixture', billingMode: 'api', maxDurationMs: 10000 });
+  }
+  const first = acquireTask({ project, runId: 'first', taskId: 'controller', controllerProcess: processIdentity() });
+  assert.equal(first.allowed, true);
+  const blocked = acquireTask({ project, runId: 'second', taskId: 'controller', controllerProcess: processIdentity() });
+  assert.equal(blocked.reasonCode, 'WINDOWS_NATIVE_WORKSPACE_BUSY');
+  const identity = { project, runId: 'first', taskId: 'controller', leaseId: first.leaseId, token: first.fencingToken };
+  claimLocalLaunch(identity); markLaunchFailed({ ...identity, error: { code: 'FIXTURE_NO_LAUNCH' } });
+  const second = acquireTask({ project, runId: 'second', taskId: 'controller', controllerProcess: processIdentity() });
+  assert.equal(second.allowed, true);
+  const secondIdentity = { project, runId: 'second', taskId: 'controller', leaseId: second.leaseId, token: second.fencingToken };
+  claimLocalLaunch(secondIdentity); markLaunchFailed({ ...secondIdentity, error: { code: 'FIXTURE_NO_LAUNCH' } });
 });

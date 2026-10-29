@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { withLock, readStrict, writeAtomic, assertSafePath, processIdentity, processAlive, stateError } from './atomic-state.js';
-import { realpath } from './platform/index.js';
+import { realpath, comparablePath } from './platform/index.js';
 import { readSettings, settingsPath } from './settings.js';
 import { getMode, modePolicy } from './modes.js';
 import { listIntegrations, capabilityStatus } from './integrations.js';
@@ -305,6 +305,7 @@ export function acquireTask(opts) {
       const decision = admission(task, run, directory, ledger);
       if (!decision.allowed) return { ok: false, allowed: false, action: 'deny', ...decision };
       const active = Object.values(ledger.leases).filter(lease => ACTIVE.has(lease.status));
+      if (process.platform === 'win32' && task.adapter === 'claude-native' && active.some(lease => lease.adapter === 'claude-native' && comparablePath(ledger.runs[lease.runId].tasks[lease.taskId].workspace) === comparablePath(task.workspace))) return { ok: false, allowed: false, action: 'deny', reasonCode: 'WINDOWS_NATIVE_WORKSPACE_BUSY', reason: 'A native controller already owns this Windows workspace; use its child queue or a separate workspace' };
       const riskBounded = task.adapter !== 'local-process' && decision.requiresBounds === true;
       const bounds = riskBounded ? run.snapshot.settings.pricing.bounds : null;
       if (bounds && (!bounds.maxDurationMs || task.maxDurationMs > bounds.maxDurationMs)) return { ok: false, allowed: false, action: 'deny', reasonCode: 'BOUNDED_DURATION_REQUIRED', reason: 'This adapter cannot enforce an iteration-only bound; supply a task duration within the configured bound' };
