@@ -64,7 +64,9 @@ export async function runWindowsTool(name, input, policy) {
   if (!within(policy.workspace, cwd) || !fs.statSync(cwd).isDirectory()) throw new Error('Shell cwd must remain inside the run workspace');
   const maxDurationMs = Math.min(120000, policy.deadlineAt - Date.now());
   if (maxDurationMs <= 0) throw new Error('Native run deadline expired');
-  const prelude = "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); New-PSDrive -Name mawf -PSProvider FileSystem -Root $env:MAWF_SHELL_CWD | Out-Null; Set-Location mawf:\\; ";
+  // AppContainer cannot rely on the host's snap-in registry/module discovery.
+  // Load inbox strong-named assemblies directly, without searching user modules.
+  const prelude = "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); foreach($name in @('Microsoft.PowerShell.Commands.Management','Microsoft.PowerShell.Commands.Utility')) { Import-Module -Assembly ([Reflection.Assembly]::Load(($name+', Version=3.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35'))) -ErrorAction Stop }; New-PSDrive -Name mawf -PSProvider FileSystem -Root $env:MAWF_SHELL_CWD | Out-Null; Set-Location mawf:\\; ";
   return collect(spawnWindowsJob([policy.shell, '-NoLogo', '-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(prelude + input.command, 'utf16le').toString('base64')], {
     cwd, directory: policy.controlDirectory, maxDurationMs, env: { ...shellEnvironment(policy), MAWF_SHELL_CWD: cwd },
     sandbox: policy.sandbox,
