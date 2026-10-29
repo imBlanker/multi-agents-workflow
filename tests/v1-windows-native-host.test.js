@@ -54,7 +54,9 @@ async function fixture(t, maxDurationMs = 60000) {
 test('Windows native controller uses the broker, captures actual host events and releases its job', { skip: process.platform !== 'win32' }, async t => {
   const opts = await fixture(t); const { project } = opts;
   const result = await executeNative({ project, runId: 'native-windows', taskId: 'controller', description: 'No-model broker integration fixture' });
-  assert.equal(result.ok, true, JSON.stringify(result));
+  const stderrFile = result.outputPath && path.join(path.dirname(result.outputPath), 'stderr.log');
+  const diagnostics = stderrFile && fs.existsSync(stderrFile) ? fs.readFileSync(stderrFile, 'utf8').slice(-8000) : JSON.stringify(result);
+  assert.equal(result.ok, true, diagnostics);
   const state = runtimeStatus({ project, runId: 'native-windows', taskId: 'controller' });
   assert.equal(state.leases[0].status, 'released');
   assert.equal(state.task.adapterState.sessionId, 'fixture-host-session');

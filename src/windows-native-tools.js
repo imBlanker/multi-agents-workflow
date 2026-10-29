@@ -37,7 +37,8 @@ export function shellEnvironment(policy) {
   for (const key of ['SystemRoot', 'SystemDrive', 'WINDIR', 'COMSPEC', 'PATHEXT', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA']) if (process.env[key]) env[key] = onDisk(process.env[key]);
   // PowerShell inside AppContainer cannot expand 8.3 aliases through ancestors
   // it cannot read. Resolve all paths in the trusted parent before launch.
-  return { ...env, HOME: onDisk(policy.workspace), TEMP: onDisk(policy.temp), TMP: onDisk(policy.temp), PATH: policy.commandPaths.map(onDisk).join(path.delimiter), NODE_OPTIONS: '--preserve-symlinks --preserve-symlinks-main' };
+  return { ...env, HOME: onDisk(policy.workspace), TEMP: onDisk(policy.temp), TMP: onDisk(policy.temp), PATH: policy.commandPaths.map(onDisk).join(path.delimiter), NODE_OPTIONS: '--preserve-symlinks --preserve-symlinks-main',
+    PSModulePath: path.join(env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'Modules'), PSModuleAnalysisCachePath: path.join(onDisk(policy.temp), 'powershell-module-cache') };
 }
 function collect(child) {
   return new Promise((resolve, reject) => {
