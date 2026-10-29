@@ -2,7 +2,7 @@ import { fixedVerificationHandoff } from './run-queue-policy.js';
 import { captureNativeReceipt } from './native-receipt.js';
 import { candidateIdentity, candidateAuthors, checkCandidateCurrent, validateEvidence, acceptanceDecision, bindDeclaredEvidence } from './verification.js';
 import { ChildProcess } from 'node:child_process';
-import { windowsLaunch, windowsJobStopped } from './platform/windows-process.js';
+import { windowsLaunch, windowsJobStopped } from './platform/index.js';
 // Shared, fenced runtime ledger. A reservation is permission to start once,
 // never evidence that an unbound backend did not start.
 import fs from 'node:fs';

@@ -19,3 +19,6 @@ export function execFile(command, args = [], options = {}) {
 // Checkout, path-spelling and file-sharing conventions that differ on Windows.
 export const { checkoutVariants, realpath, comparablePath, retryTransient } = platformFor();
 export const { nativeInvocation } = platformFor();
+// Explicit Windows controlled-execution capability, consumed only after native
+// platform admission; the helper module has no import-time process side effects.
+export { jobHelper, windowsStartIdentity, spawnWindowsJob, windowsLaunch, windowsJobStopped, stopWindowsJob, recoverWindowsSandbox } from './windows-process.js';

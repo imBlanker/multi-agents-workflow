@@ -12,8 +12,8 @@ import { processIdentity, stateError, assertSafePath, writeAtomic } from './atom
 import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed } from './runtime.js';
 import { signalKnownBackend } from './local-runtime.js';
 import { storeNativeRequest, validateNativeDescription } from './native-request.js';
-import { windowsNativePrerequisites, prepareWindowsNative, windowsNativeArgs } from './windows-native.js';
-import { spawnWindowsJob, windowsLaunch, recoverWindowsSandbox } from './platform/windows-process.js';
+import { windowsNativePrerequisites, prepareWindowsNative, windowsNativeArgs, verifyWindowsBoundary } from './windows-native.js';
+import { spawnWindowsJob, windowsLaunch, recoverWindowsSandbox } from './platform/index.js';
 export function nativeHostCapability(settings, project) {
   const selected = isEnabled(settings, 'host.claude-code');
   const base = { host: 'claude-code', selected, installed: false, authenticated: 'unknown', compatible: 'unknown', ready: false, verificationStatus: 'unverified', actualBillingMode: 'unknown', actualProvider: null };
@@ -89,6 +89,7 @@ export async function executeNative(opts) {
   validateNativeDescription(opts.description || '');
   const state = runtimeStatus(opts), task = state.task;
   if (workspaceInsidePackage(task.workspace)) return { ok: false, reasonCode: 'NATIVE_WORKSPACE_INSIDE_PACKAGE', reason: 'The native sandbox keeps the MAWF package read-only, so the workspace cannot be inside it; run an installed MAWF package outside the workspace' };
+  if (windows && (workspaceInsidePackage(PACKAGE_ROOT, task.workspace) || workspaceInsidePackage(fs.realpathSync.native(process.execPath), task.workspace))) return { ok: false, reasonCode: 'NATIVE_SANDBOX_INSTALL_INSIDE_WORKSPACE', reason: 'Native Windows Core and Node must be installed outside the writable workspace' };
   // Validate host rule paths before consuming a lease.
   if (!windows) nativeSandboxPolicy({ packageRoot: PACKAGE_ROOT, stateRoot: state.stateRoot });
   const capability = nativeHostCapability(state.run.snapshot.settings, task.workspace);
@@ -106,7 +107,15 @@ export async function executeNative(opts) {
   // main turn. Re-grant exactly run.md's allowed-tools for the session so later turns match the first.
   const allowedTools = fs.readFileSync(path.join(PACKAGE_ROOT, 'plugin', 'commands', 'run.md'), 'utf8').match(/^allowed-tools:\s*(.+)$/m)?.[1].split(',').map(tool => tool.trim()).filter(Boolean) || [];
   if (!allowedTools.length) throw stateError('NATIVE_COMMAND_TOOLS_MISSING', 'plugin/commands/run.md must declare allowed-tools');
-  const windowPolicy = windows ? prepareWindowsNative({ state, identity, packageRoot: PACKAGE_ROOT, shell: windows.shell, deadlineAt }) : null;
+  let windowPolicy = null;
+  if (windows) {
+    try {
+      windowPolicy = prepareWindowsNative({ state, identity, packageRoot: PACKAGE_ROOT, shell: windows.shell, deadlineAt, requestRef });
+      recordAdapterState(identity, { windowsPreflight: await verifyWindowsBoundary(windowPolicy.policy, PACKAGE_ROOT) });
+    } catch (error) {
+      return { ...markLaunchFailed({ ...identity, error: { code: 'NATIVE_SANDBOX_UNAVAILABLE', message: error.message } }), ok: false, reasonCode: 'NATIVE_SANDBOX_UNAVAILABLE', reason: error.message, modelCallMade: false };
+    }
+  }
   const launchOpts = { requestRef, packageRoot: PACKAGE_ROOT, stateRoot: identity.stateRoot, modeId: state.run.snapshot.modeId, allowedTools, modelId: task.selection.modelId };
   const argv = windows ? windowsNativeArgs({ ...launchOpts, mcpConfig: windowPolicy.mcpConfig }) : nativeLaunchArgs(launchOpts);
   const env = { ...process.env, MAWF_NATIVE_RUN_CONTEXT: JSON.stringify({ project: state.run.snapshot.authorityProject, runId: task.runId, stateRoot: identity.stateRoot, controllerLeaseId: identity.leaseId }) };

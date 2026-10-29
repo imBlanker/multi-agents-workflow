@@ -1,11 +1,11 @@
 # Native Windows execution
 
 Windows local-process and native Claude controllers use creation-time identities
-and Job Objects. Each child is created suspended, assigned to a non-breakaway
-kill-on-close job, and only then resumed. The supervisor waits for every descendant,
+and Job Objects. Each child is atomically created inside a non-breakaway kill-on-close job using
+PROC_THREAD_ATTRIBUTE_JOB_LIST, initially suspended and then resumed. The supervisor waits for every descendant,
 not just the first process. Cancellation terminates the named job after checking
 the supervisor's exact creation identity. A deadline or loss of the controller
-also terminates the job; an empty job is required before releasing the lease.
+also terminates the job; a terminal supervisor and an empty job are required before releasing the lease.
 
 ## Native Claude boundary
 
@@ -17,8 +17,9 @@ supplies two explicit MCP tools, without WSL:
   to the registered controller. Shell interpretation is never used here.
 - `mcp__mawf_windows__shell` runs PowerShell inside a fresh AppContainer with no
   network capabilities. Workspace and per-run temporary files are writable;
-  the ledger, package, Node interpreter, `.claude` and existing `.git` directories
-  are read-only. Paths with spaces and Unicode are passed as arguments.
+  the ledger and reserved `.claude`/`.git` paths are read-only. A private staged Node
+  executable is readable. The original Core package/interpreter must be installed
+  outside the workspace; their ACLs are never changed or granted to the shell. Paths with spaces and Unicode are passed as arguments.
 
 Native Bash/PowerShell/Monitor and built-in file/web tools are absent from the
 Windows host's tool pool; subagents use the same broker. PowerShell mounts the
@@ -36,10 +37,16 @@ AppContainer package checks do not enforce a DENY ACE as a restrictive-token
 check would. Protected subtrees instead cut inherited grants and retain read
 access only. ACL transactions are serialized per Windows user, with original
 descriptors journalled outside the writable workspace surface before mutation.
-Normal shutdown restores them; controller/deadline cleanup recovers journals
-after forced helper termination. Existing user/managed host hooks and extensions
+All grant paths and ancestors are pinned with non-share-delete handles. Recovery
+checks stored filesystem identities before restoring any descriptor and refuses
+replaced objects/reparse points. Normal shutdown restores ACLs; controller/deadline
+cleanup recovers journals after forced helper termination. Existing user/managed host hooks and extensions
 remain trusted host code outside this boundary, as on Linux. Role/file ownership
 is still policy_only; all workers share the run workspace.
+
+Before any model starts, a real AppContainer canary checks protected writes,
+external TCP denial, and blocked loopback against a reachable positive control.
+A failed canary records a failed, never-started launch and releases the reservation.
 
 ## Verification and limits
 
@@ -53,3 +60,5 @@ V1_RELEASE_STATUS.md for final CI and any live evidence.
 External Pi/Codex background companions and Pi Autoresearch still lack their own
 Windows Job Object transport and refuse before launching. Their pricing and
 billing policy is unchanged. OAuth is not evidence of quota or payment.
+
+Windows API references: [AppContainer](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer), [atomic job assignment](https://devblogs.microsoft.com/oldnewthing/20230209-00/?p=107812).

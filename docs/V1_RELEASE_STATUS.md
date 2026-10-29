@@ -95,8 +95,9 @@ At `db7e4cc` the final local suite contains 66 test files / 593 tests:
 | WSL2 Arch Linux / Node 25.0.0 | 577 | 0 | 15 | 1 |
 | Arch Linux (wsz05-1, bwrap 0.13.1) / Node 24.17.0 | 577 | 0 | 15 | 1 |
 
-The single TODO is the explicitly deferred MAWF-only option isolation at the
-legacy Trellis runner boundary. It is not a passed assertion. Windows Node22
+At that historical revision the single TODO was MAWF-only option isolation at the
+legacy Trellis runner boundary. The final release changes replace it with an
+explicit runner option allowlist and a passing regression. Windows Node22
 initially crashed in the hook fixture's native directory-copy implementation
 (exit `0xC0000005`); keeping that fixture on the JavaScript copy path preserves
 Unicode coverage and all hook assertions while avoiding that crash.
@@ -121,8 +122,9 @@ the earlier failure under the old implicit-selection assumption remains historic
   exemptions differently; a mismatch fails closed, with Core calls returning
   EROFS rather than running outside the sandbox.
 - PRs #44, #45 and #46 are merged into #42, and its body and CI are current at 1d36fde. The maintainer authorized final fixes, review and publication on 2026-10-29. Main merge, tag and npm publish still await completion of those checks. Existing oversized modules remain a documented review item.
-- Windows continues to refuse local-process and companion admission without a
-  verified PID start identity. Native controlled execution remains Linux-only.
+- Windows local-process and native Claude execution now have a separate native
+  Job Object/AppContainer implementation (V1_WINDOWS.md). External companion and
+  Pi experiment transports remain refused until they have Windows job ownership.
 - The installed Codex custom provider lacks applicable pricing/billing evidence;
   its real companion path stays blocked. Claude OAuth does not prove quota or
   payment. Strict current measured payment telemetry is not verified.
@@ -134,4 +136,4 @@ the earlier failure under the old implicit-selection assumption remains historic
 
 ## Final release scope added 2026-10-29
 
-Pure native Windows controlled execution and process control, Trellis option isolation, deterministic inventory ordering, and temporary fixture cleanup are now required for 1.0.0. Their implementation and validation are pending; earlier test evidence does not certify them. Pricing behavior is unchanged. A CSV model/reasoning-effort authorization redesign is planned for 1.0.1.
+Pure native Windows controlled execution and process control, Trellis option isolation, deterministic inventory ordering, and temporary fixture cleanup are now required for 1.0.0. Implementation and targeted native regressions are present. The final reviewed commit still requires the complete matrix and packed-install gates; earlier CI does not certify these additions. Pricing behavior is unchanged. A CSV model/reasoning-effort authorization redesign is planned for 1.0.1.

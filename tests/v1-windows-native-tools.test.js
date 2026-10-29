@@ -11,6 +11,11 @@ test('Windows native host exposes only broker tools and keeps Core argv scoped',
   assert.throws(() => validateCoreArgs(['task', 'dispatch'], policy));
   assert.throws(() => validateCoreArgs(['run', 'prepare', '--project=other'], policy));
   assert.throws(() => validateCoreArgs(['task', 'status', '--run-id', 'other'], policy));
+  for (const flag of ['--request-base64', '-request-base64', '---request-base64', '--request-base64=abc', '--unknown']) {
+    assert.throws(() => validateCoreArgs(['run', 'prepare', flag, 'abc'], policy));
+  }
+  assert.throws(() => validateCoreArgs(['run', 'prepare', '--request-ref', 'other-run'], policy));
+  assert.throws(() => validateCoreArgs(['run', 'next', '--json', '--json'], policy));
   assert.equal(validateCoreArgs(['task', 'status'], policy).at(-1), '--json');
   const args = windowsNativeArgs({ requestRef: 'request', packageRoot: 'C:/package', modeId: 'fixed-1', modelId: 'model', mcpConfig: {} });
   assert.equal(args[args.indexOf('--tools') + 1], 'Agent,TaskOutput,TaskStop');

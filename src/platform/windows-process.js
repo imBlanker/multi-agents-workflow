@@ -21,14 +21,13 @@ export function jobHelper() {
   if (binary && fs.existsSync(binary)) return binary;
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mawf-windows-helper-'));
   // Helpers are never compiled into the product/workspace being executed.
-  fs.mkdirSync(directory, { recursive: true });
+  process.once('exit', () => { try { fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5 }); } catch {} });
   // Compile a private image each process, avoiding trust in a shared cached binary.
   const temporary = path.join(directory, `windows-job-${process.pid}-${crypto.randomUUID()}.exe`);
   const compiler = path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
   const result = spawnSync(compiler, ['/nologo', '/target:exe', '/platform:x64', '/reference:System.Web.Extensions.dll', `/out:${temporary}`, source, sandboxSource], { encoding: 'utf8', timeout: 30000, windowsHide: true });
   if (result.error || result.status !== 0) throw result.error || new Error(`Windows helper compilation failed: ${result.stdout} ${result.stderr}`);
   binary = temporary;
-  process.once('exit', () => { try { fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5 }); } catch {} });
   return binary;
 }
 export function windowsStartIdentity(pid) {
@@ -54,8 +53,11 @@ export function recoverWindowsSandbox(policyFile) { invoke(['recover', policyFil
 export function windowsJobStopped(lease) {
   if (!lease.windowsJob || !lease.ownerProcess) return { stopped: false, reason: 'No Windows Job Object binding' };
   try {
-    const count = invoke(['query', lease.windowsJob, String(lease.ownerProcess.pid), lease.ownerProcess.startIdentity || '']);
-    return { stopped: count === '0', active: /^\d+$/.test(count) && Number(count) > 0, reason: count === '0' ? 'Windows Job Object has no remaining processes' : 'Windows Job Object is active' };
+    const observation = invoke(['query', lease.windowsJob, String(lease.ownerProcess.pid), lease.ownerProcess.startIdentity || '']);
+    const match = /^(alive|stopped):(\d+)$/.exec(observation);
+    if (!match) throw new Error('Invalid Windows job observation');
+    const stopped = match[1] === 'stopped' && match[2] === '0';
+    return { stopped, active: match[1] === 'alive' && Number(match[2]) > 0, reason: stopped ? 'Supervisor and Windows Job Object are stopped' : 'Supervisor or Windows Job Object remains active' };
   } catch { return { stopped: false, reason: 'Windows Job Object state could not be verified' }; }
 }
 export function stopWindowsJob(lease) {

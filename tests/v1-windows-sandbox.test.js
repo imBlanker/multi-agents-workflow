@@ -11,7 +11,7 @@ import { spawnWindowsJob, recoverWindowsSandbox, windowsStartIdentity } from '..
 test('native AppContainer permits workspace writes and denies sealed writes and outbound sockets', { skip: process.platform !== 'win32' }, async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mawf-appcontainer-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 }));
-  const workspace = path.join(root, 'workspace'), sealed = path.join(workspace, 'ledger'), bin = path.join(root, 'bin'), control = path.join(root, 'control');
+  const workspace = path.join(root, 'workspace'), sealed = path.join(workspace, '.mawf', 'runtime'), bin = path.join(root, 'bin'), control = path.join(root, 'control');
   for (const dir of [workspace, sealed, bin, control]) fs.mkdirSync(dir, { recursive: true });
   const node = path.join(bin, 'node.exe'); fs.copyFileSync(process.execPath, node);
   const source = `const fs=require('fs'),net=require('net');
@@ -19,6 +19,7 @@ test('native AppContainer permits workspace writes and denies sealed writes and 
     for(const [key,target] of Object.entries(${JSON.stringify({ allowed: path.join(workspace, 'ok'), sealed: path.join(sealed, 'no'), interpreter: path.join(bin, 'no'), outside: path.join(control, 'no') })})) {
       try { fs.writeFileSync(target,'test');result[key]='wrote'; } catch(e) { result[key]=e.code; }
     }
+    try { fs.renameSync(${JSON.stringify(path.dirname(sealed))},${JSON.stringify(path.dirname(sealed) + '-moved')});result.rename='renamed'; } catch(e) {result.rename=e.code;}
     const socket=net.connect({host:'1.1.1.1',port:443});socket.setTimeout(2000);
     socket.on('connect',()=>{result.network='connected';socket.destroy();});
     socket.on('error',e=>{result.network=e.code;});socket.on('timeout',()=>{result.network='timeout';socket.destroy();});
@@ -31,6 +32,7 @@ test('native AppContainer permits workspace writes and denies sealed writes and 
   assert.equal(result.allowed, 'wrote');
   for (const key of ['sealed', 'interpreter', 'outside']) assert.notEqual(result[key], 'wrote', JSON.stringify({ key, result, actualSealedWrite: fs.existsSync(path.join(sealed, 'no')) }));
   assert.equal(result.network, 'EACCES');
+  assert.notEqual(result.rename, 'renamed', 'Protected path ancestors cannot be renamed');
   assert.equal(fs.existsSync(path.join(sealed, 'no')), false);
 });
 

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { runtimeStatus, markCancelPending, backendStopped, settleControlledHostChildren, releaseLease } from './runtime.js';
 import { signalKnownBackend } from './local-runtime.js';
-import { recoverWindowsSandbox } from './platform/windows-process.js';
+import { recoverWindowsSandbox } from './platform/index.js';
 const { identity, deadlineAt } = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 if (!Number.isFinite(deadlineAt)) throw new Error('Invalid native deadline');
 const lease = () => runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId);

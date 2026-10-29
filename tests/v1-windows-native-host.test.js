@@ -29,7 +29,8 @@ test('Windows native controller uses the broker, captures actual host events and
     let buffer='';server.stdout.on('data',b=>{buffer+=b;let end;while((end=buffer.indexOf('\\n'))>=0){
       const reply=JSON.parse(buffer.slice(0,end));buffer=buffer.slice(end+1);
       if(reply.id===1)server.stdin.write(JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'core',arguments:{args:['task','status','--task-id','controller']}}})+'\\n');
-      if(reply.id===2){if(reply.result.isError){console.error(JSON.stringify(reply));process.exitCode=3;}server.stdin.end();}
+      if(reply.id===2){if(reply.result.isError){console.error(JSON.stringify(reply));process.exitCode=3;}server.stdin.write(JSON.stringify({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'shell',arguments:{command:"Set-Content -LiteralPath artifact.txt -Value 'sandboxed native tool' -NoNewline"}}})+'\\n');}
+      if(reply.id===3){if(reply.result.isError){console.error(JSON.stringify(reply));process.exitCode=4;}server.stdin.end();}
     }});
     server.on('close',code=>{console.log(JSON.stringify({type:'result',is_error:code!==0,result:'fixture produced'}));});
     server.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'fixture',version:'1'}}})+'\\n');
@@ -37,7 +38,7 @@ test('Windows native controller uses the broker, captures actual host events and
   updateSettings(project, draft => {
     draft.integrations['host.claude-code'] = { enabled: true, options: {} };
     draft.pricing.unknownPricePolicy = draft.pricing.unknownCoveragePolicy = 'bounded';
-    draft.pricing.bounds = { maxConcurrency: 2, maxDurationMs: 15000 };
+    draft.pricing.bounds = { maxConcurrency: 2, maxDurationMs: 60000 };
     draft.cost.enforcement = 'best_effort';
     draft.verification.minIndependentHackers = 0;
     draft.verification.requireRealUserPath = false;
@@ -45,11 +46,12 @@ test('Windows native controller uses the broker, captures actual host events and
     draft.verification.requiredCapabilities = [];
   });
   await createRun({ project, runId: 'native-windows' });
-  addTask({ project, runId: 'native-windows', taskId: 'controller', adapter: 'claude-native', coordinationOnly: true, role: 'orchestrator', providerId: 'anthropic', modelId: 'fixture-model', billingMode: 'subscription', maxDurationMs: 15000 });
+  addTask({ project, runId: 'native-windows', taskId: 'controller', adapter: 'claude-native', coordinationOnly: true, role: 'orchestrator', providerId: 'anthropic', modelId: 'fixture-model', billingMode: 'subscription', maxDurationMs: 60000 });
   const result = await executeNative({ project, runId: 'native-windows', taskId: 'controller', description: 'No-model broker integration fixture' });
   assert.equal(result.ok, true, JSON.stringify(result));
   const state = runtimeStatus({ project, runId: 'native-windows', taskId: 'controller' });
   assert.equal(state.leases[0].status, 'released');
   assert.equal(state.task.adapterState.sessionId, 'fixture-host-session');
   assert.equal(state.task.adapterState.selectionGate.allowed, true);
+  assert.equal(fs.readFileSync(path.join(project, 'artifact.txt'), 'utf8'), 'sandboxed native tool');
 });

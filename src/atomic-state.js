@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { retryTransient } from './platform/index.js';
-import { windowsStartIdentity } from './platform/windows-process.js';
+import { windowsStartIdentity } from './platform/index.js';
 
 export function stateError(code, message) {
   return Object.assign(new Error(message), { code });

@@ -54,7 +54,7 @@ partial class WindowsJob {
     }
     return b.Append('\\',slashes*2).Append('"').ToString();
   }
-  static bool Matches(int pid,string start) { try { return Identity(pid)==start; } catch { return false; } }
+  static bool Matches(int pid,string start) { try { return Identity(pid)==start; } catch(ArgumentException) { return false; } catch(InvalidOperationException) { return false; } }
   static uint Count(IntPtr job) { var a=new Accounting(); Check(QueryInformationJobObject(job,1,ref a,Marshal.SizeOf(a),IntPtr.Zero)); return a.ActiveProcesses; }
   static int Run(Dictionary<string,object> r) {
     string name=(string)r["jobName"];
@@ -74,11 +74,13 @@ partial class WindowsJob {
       var argv=(System.Collections.ArrayList)r["command"];
       var command=new StringBuilder(); foreach(string arg in argv) { if(command.Length>0) command.Append(' '); command.Append(Quote(arg)); }
       if(r.ContainsKey("sandbox")) {
-        sandbox=new Sandbox((Dictionary<string,object>)r["sandbox"]);
-        sandbox.Start((string)argv[0],command,(string)r["cwd"],si,(Dictionary<string,object>)r["childEnv"],out pi);
-      } else Check(CreateProcess((string)argv[0],command,IntPtr.Zero,IntPtr.Zero,true,0x08000004,IntPtr.Zero,(string)r["cwd"],ref si,out pi));
-      // A failed assignment must never resume the suspended process.
-      Check(AssignProcessToJobObject(job,pi.process));
+        sandbox=new Sandbox((Dictionary<string,object>)r["sandbox"],Convert.ToInt64(r["deadlineUnixMs"]));
+        if(!Matches(parent,parentStart) || DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()>=Convert.ToInt64(r["deadlineUnixMs"])) throw new Exception("Controller/deadline ended before launch");
+        StartInJob((string)argv[0],command,(string)r["cwd"],si,job,sandbox.Sid,(Dictionary<string,object>)r["childEnv"],out pi);
+      } else StartInJob((string)argv[0],command,(string)r["cwd"],si,job,IntPtr.Zero,null,out pi);
+      // JOB_LIST assigns atomically during process creation, including when
+      // this helper dies before CreateProcess returns its suspended child.
+      if(!Matches(parent,parentStart) || DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()>=Convert.ToInt64(r["deadlineUnixMs"])) throw new Exception("Controller/deadline ended before resume");
       if(ResumeThread(pi.thread)==0xffffffff) throw new Win32Exception();
       long deadline=Convert.ToInt64(r["deadlineUnixMs"]);
       bool interrupted=false;
@@ -110,10 +112,10 @@ partial class WindowsJob {
         if(args[0]=="stop" && !alive) throw new Exception("Controller identity mismatch");
         IntPtr job=OpenJobObject(args[0]=="stop"? 8u:4u,false,args[1]);
         if(job==IntPtr.Zero) {
-          if(Marshal.GetLastWin32Error()==2 && !alive) { Console.WriteLine("0"); return 0; }
+          if(Marshal.GetLastWin32Error()==2 && !alive) { Console.WriteLine("stopped:0"); return 0; }
           throw new Win32Exception(Marshal.GetLastWin32Error());
         }
-        try { if(args[0]=="stop") Check(TerminateJobObject(job,130)); else Console.WriteLine(Count(job)); }
+        try { if(args[0]=="stop") Check(TerminateJobObject(job,130)); else Console.WriteLine((alive?"alive:":"stopped:")+Count(job)); }
         finally { CloseHandle(job); }
         return 0;
       }

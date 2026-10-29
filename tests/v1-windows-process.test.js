@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
+import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { spawnWindowsJob, windowsLaunch, windowsStartIdentity, windowsJobStopped, stopWindowsJob } from '../src/platform/windows-process.js';
 import { createRun, addTask, runtimeStatus } from '../src/runtime.js';
@@ -60,4 +61,25 @@ test('Windows Job independently enforces deadlines on descendant trees', windows
   const [code] = await once(child, 'close');
   assert.equal(code, 124);
   assert.equal(windowsStartIdentity(Number(output.trim())), null);
+});
+test('an empty job with a live supervisor cannot release or start after cancellation', windows, async t => {
+  const root = fixture(t), workspace = path.join(root, 'workspace'), control = path.join(root, 'control');
+  fs.mkdirSync(workspace); fs.mkdirSync(control);
+  const holder = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "$gate=[Threading.Mutex]::new($false,('Global\\mawf-acl-'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value)); $null=$gate.WaitOne(); [Console]::WriteLine('locked'); try {[Threading.Thread]::Sleep(3000)} finally {$gate.ReleaseMutex();$gate.Dispose()}"], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => holder.kill());
+  await once(holder.stdout, 'data');
+  const marker = path.join(workspace, 'must-not-start');
+  const child = spawnWindowsJob([process.execPath, '-e', `require('fs').writeFileSync(${JSON.stringify(marker)},'bad')`], { cwd: workspace, directory: control, maxDurationMs: 10000,
+    sandbox: { read: [], write: [workspace], denyWrite: [], journalDirectory: control }, env: { SystemRoot: process.env.SystemRoot } });
+  const closed = once(child, 'close'); child.stdout.resume(); child.stderr.resume();
+  const lease = { windowsJob: windowsLaunch(child).jobName, ownerProcess: { pid: child.pid, startIdentity: windowsStartIdentity(child.pid) } };
+  let observation;
+  for (let i=0;i<50;i++) { observation=windowsJobStopped(lease); if(observation.active===false) break; await delay(20); }
+  assert.equal(observation.stopped, false);
+  assert.equal(observation.active, false);
+  assert.equal(stopWindowsJob(lease).sent, true);
+  const [code] = await closed;
+  assert.notEqual(code, 0);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(windowsJobStopped(lease).stopped, true);
 });

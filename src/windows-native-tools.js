@@ -3,20 +3,29 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { spawnWindowsJob } from './platform/windows-process.js';
+import { spawnWindowsJob } from './platform/index.js';
 import { comparablePath } from './platform/index.js';
 
 export const CORE_ACTIONS = new Set(['run prepare', 'run queue', 'run next', 'run respec', 'task bind', 'task heartbeat', 'task result', 'task host-complete', 'task candidate', 'task evidence', 'task accept', 'task acceptance', 'task status', 'task list']);
 const within = (root, file) => { const r = comparablePath(root), f = comparablePath(file); return f === r || f.startsWith(r + path.sep); };
 export function validateCoreArgs(args, policy) {
   if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string' || arg.includes('\0')) || !CORE_ACTIONS.has(args.slice(0, 2).join(' '))) throw new Error('Only named Core management operations are allowed');
-  for (const key of ['--project', '--state-root', '--run-id']) {
-    const expected = { '--project': policy.project, '--state-root': policy.stateRoot, '--run-id': policy.runId }[key];
-    for (let i = 2; i < args.length; i++) {
-      if (args[i] === key && args[i + 1] !== expected || args[i].startsWith(key + '=') && args[i].slice(key.length + 1) !== expected) throw new Error('Core calls must target this registered run');
-    }
+  const flags = new Set(['project', 'state-root', 'run-id', 'json', 'task-id', 'lease-id', 'token', 'actor-id', 'attempt', 'job-id', 'session-id', 'resolved-model', 'progress', 'waiting-external', 'status', 'result-json', 'native-receipt', 'workspace', 'scope-json', 'artifacts-json', 'input', 'request-ref', 'host-managed']);
+  const booleans = new Set(['json', 'waiting-external', 'native-receipt', 'host-managed']);
+  const seen = new Set(), normalized = args.slice(0, 2);
+  for (let i = 2; i < args.length; i++) {
+    const match = /^--([a-z][a-z-]*)(?:=(.*))?$/.exec(args[i]);
+    if (!match || !flags.has(match[1]) || seen.has(match[1])) throw new Error('Unknown, alternate or duplicate Core flag');
+    const key = match[1]; seen.add(key);
+    if (booleans.has(key)) { if (match[2] !== undefined) throw new Error('Boolean flags take no value'); normalized.push(`--${key}`); continue; }
+    const value = match[2] ?? args[++i];
+    if (value === undefined || value.startsWith('-')) throw new Error('Core flag requires a literal value');
+    const expected = { project: policy.project, 'state-root': policy.stateRoot, 'run-id': policy.runId, 'request-ref': policy.requestRef };
+    if (Object.hasOwn(expected, key) && value !== expected[key]) throw new Error('Core calls must target this registered run');
+    if (['input', 'workspace'].includes(key) && !within(policy.workspace, path.resolve(policy.workspace, value))) throw new Error('Core file paths must remain inside the run workspace');
+    if (!['project', 'state-root', 'run-id'].includes(key)) normalized.push(`--${key}`, value);
   }
-  return [...args, '--project', policy.project, '--state-root', policy.stateRoot, '--run-id', policy.runId, '--json'];
+  return [...normalized, '--project', policy.project, '--state-root', policy.stateRoot, '--run-id', policy.runId, ...(seen.has('json') ? [] : ['--json'])];
 }
 export function shellEnvironment(policy) {
   const env = {};

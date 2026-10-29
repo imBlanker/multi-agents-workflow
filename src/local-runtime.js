@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
-import { spawnWindowsJob, windowsLaunch, stopWindowsJob } from './platform/windows-process.js';
+import { spawnWindowsJob, windowsLaunch, stopWindowsJob } from './platform/index.js';
 import { processIdentity, processAlive, stateError, assertSafePath } from './atomic-state.js';
 import { acquireTask, claimLocalLaunch, bindJob, heartbeat, reportResult, releaseLease, markCancelPending, markLaunchFailed, runtimeStatus, linuxProcess, backendStopped, observeLocalExit } from './runtime.js';
 
