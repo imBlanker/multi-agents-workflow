@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { withLock, readStrict, writeAtomic, assertSafePath, processIdentity, processAlive, stateError } from './atomic-state.js';
+import { realpath } from './platform/index.js';
 import { readSettings, settingsPath } from './settings.js';
 import { getMode, modePolicy } from './modes.js';
 import { listIntegrations, capabilityStatus } from './integrations.js';
@@ -26,7 +27,7 @@ function identifier(value, label) {
 }
 function canonical(directory) {
   const absolute = path.resolve(directory);
-  if (fs.existsSync(absolute)) return fs.realpathSync(absolute);
+  if (fs.existsSync(absolute)) return realpath(absolute);
   const parent = path.dirname(absolute);
   return parent === absolute ? absolute : path.join(canonical(parent), path.basename(absolute));
 }

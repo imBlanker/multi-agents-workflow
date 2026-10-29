@@ -5,13 +5,15 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { isEnabled } from '../integrations.js';
-import { findExecutable } from '../platform/index.js';
+import { findExecutable, checkoutVariants } from '../platform/index.js';
 import { stateError } from '../atomic-state.js';
 export const ADAPTERS = Object.freeze({
   'codex-plugin-cc': { source: 'https://github.com/imBlanker/codex-plugin-cc', ref: 'd6a979b35741f3654c6f0f64cea0642104e9105b', version: '0.2.0', scriptSha256: '18b39fd37e12ba2e0c5e4088216b233e85d4d8f5072f986c07e9916d484c06fd', plugin: 'codex', script: 'codex-companion.mjs', binary: 'codex', efforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] },
   'pi-plugin-cc': { source: 'https://github.com/Kagandi/pi-plugin-cc', ref: 'a8c4db32fbd5b3b3a028b1dcb95cbba60c4cc07e', version: '1.2.0', scriptSha256: '639673c435c7e428e7414410d272abc206d1ea069b27c14a0e934cef48836220', plugin: 'pi', script: 'pi-companion.mjs', binary: 'pi', efforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] },
 });
 const json = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
+// A pin names the committed bytes; a Windows checkout may hold them with CRLF.
+export const scriptDigestMatches = (bytes, sha256) => checkoutVariants(bytes).some(variant => crypto.createHash('sha256').update(variant).digest('hex') === sha256);
 const file = target => { try { return fs.statSync(target).isFile(); } catch { return false; } };
 function git(directory, args) { try { return execFileSync('git', ['-C', directory, ...args], { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } }
 const normalizeSource = value => (typeof value === 'string' ? value : '').replace(/^git@github.com:/, 'https://github.com/').replace(/\.git$/, '').replace(/\/$/, '').toLowerCase();
@@ -48,7 +50,7 @@ export function discoverAdapter(id, settings, opts = {}) {
     const sourceVerified = normalizeSource(source) === normalizeSource(adapter.source);
     const bytes = fs.readFileSync(companion);
     const code = bytes.toString('utf8');
-    const versionVerified = manifest?.version === adapter.version && crypto.createHash('sha256').update(bytes).digest('hex') === adapter.scriptSha256 && (!ref || ref === adapter.ref);
+    const versionVerified = manifest?.version === adapter.version && scriptDigestMatches(bytes, adapter.scriptSha256) && (!ref || ref === adapter.ref);
     const protocol = ['task', 'status', 'result', 'cancel'].every(command => code.includes(`case "${command}"`) || code.includes(`case '${command}'`));
     const capabilities = { start: protocol, status: protocol, result: protocol, cancel: protocol, resume: false, fresh: code.includes('fresh'), explicitModel: code.includes('model'), background: code.includes('background') };
     const binary = findExecutable(adapter.binary);

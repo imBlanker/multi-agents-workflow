@@ -72,8 +72,11 @@ leases. Those fixes were written by the same Claude Code session that ran the
 checks; the code still needs independent review. Ordinary already-open Slash sessions lack the observed
 parent-model binding and cannot silently acquire it from caller labels.
 
-Windows v1 execution/process-tree behavior is not verified here; that work moves
-to a Windows host. Strict current measured payment telemetry is not verified. Some planned W09 negative checks were stopped by the
+The Windows host check of d6be4d0 is recorded in docs/CROSS_PLATFORM.md: Windows
+refuses local-process, companion and Pi autoresearch launches at admission (no PID
+start identity), native controlled execution stays Linux-only, and the Windows-only
+path, checkout and file-sharing defects it found are fixed through the platform
+facade. Strict current measured payment telemetry is not verified. Some planned W09 negative checks were stopped by the
 tool's automatic content review; their absent results remain unverified. No test
 content was transferred or self-accepted to fill that gap.
 

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { retryTransient } from './platform/index.js';
 
 export function stateError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -35,7 +36,7 @@ export function assertSafePath(file) {
   for (const part of absolute.slice(cursor.length).split(path.sep).filter(Boolean)) {
     cursor = path.join(cursor, part);
     try {
-      if (fs.lstatSync(cursor).isSymbolicLink()) throw stateError('UNSAFE_PATH', `State path contains a symbolic link: ${cursor}`);
+      if (retryTransient(() => fs.lstatSync(cursor)).isSymbolicLink()) throw stateError('UNSAFE_PATH', `State path contains a symbolic link: ${cursor}`);
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   return absolute;
@@ -43,7 +44,7 @@ export function assertSafePath(file) {
 
 export function readStrict(file, fallback) {
   assertSafePath(file);
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+  try { return JSON.parse(retryTransient(() => fs.readFileSync(file, 'utf8'))); }
   catch (error) {
     if (error.code === 'ENOENT') return typeof fallback === 'function' ? fallback() : fallback;
     if (error instanceof SyntaxError) throw stateError('INVALID_STATE', `Invalid JSON in ${file}: ${error.message}`);
@@ -66,7 +67,7 @@ export function writeAtomic(file, value) {
     fs.fsyncSync(fd);
     fs.closeSync(fd); fd = undefined;
     assertSafePath(file);
-    fs.renameSync(temporary, file);
+    retryTransient(() => fs.renameSync(temporary, file));
     // Windows does not support fsync on directories; rename remains atomic.
     if (process.platform !== 'win32') {
       const directory = fs.openSync(path.dirname(file), 'r');
@@ -141,6 +142,6 @@ export function withLock(root, key, fn, opts = {}) {
     return result;
   } finally {
     // Only our never-reused claim is released, even after validation/timeout.
-    try { fs.unlinkSync(claimPath); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    try { retryTransient(() => fs.unlinkSync(claimPath)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
 }

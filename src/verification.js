@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { assertSafePath, stateError } from './atomic-state.js';
+import { comparablePath } from './platform/index.js';
 export const digest = value => crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
 const git = (root, argv) => { try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', timeout: 10000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
 const EXCLUDED = new Set(['.git', '.mawf', '.trellis', 'node_modules', '.venv', '__pycache__']);
@@ -87,7 +88,8 @@ export function validateEvidence(run, candidate, record, ledger) {
   const outputs = record.rawOutputs.map(item => {
     if (!item?.path || !/^[a-f0-9]{64}$/.test(item.sha256 || '')) throw stateError('RAW_EVIDENCE_REQUIRED', 'Each raw output needs its file path and SHA256');
     const absolute = path.resolve(item.path); assertSafePath(absolute);
-    if (absolute.startsWith(candidate.workspace + path.sep) && !absolute.startsWith(path.join(candidate.workspace, '.mawf', 'runtime') + path.sep)) throw stateError('EVIDENCE_PRODUCT_OVERLAP', 'Independent evidence must be stored outside product scope');
+    const spelled = comparablePath(absolute);
+    if (spelled.startsWith(comparablePath(candidate.workspace) + path.sep) && !spelled.startsWith(comparablePath(path.join(candidate.workspace, '.mawf', 'runtime')) + path.sep)) throw stateError('EVIDENCE_PRODUCT_OVERLAP', 'Independent evidence must be stored outside product scope');
     const bytes = fs.readFileSync(absolute);
     if (!bytes.length || digest(bytes) !== item.sha256) throw stateError('RAW_EVIDENCE_DRIFT', 'Raw output is missing, empty or changed');
     return { path: absolute, sha256: item.sha256 };
@@ -114,8 +116,8 @@ export function bindDeclaredEvidence(run, record, ledger, inputFile) {
   if (!inputFile || !lease?.hostCompletion?.receiptPath) throw stateError('HACKER_EVIDENCE_UNDECLARED', 'Native Hacker evidence must come from a file declared in its completed host receipt');
   const receipt = fs.readFileSync(lease.hostCompletion.receiptPath);
   if (digest(receipt) !== lease.hostCompletion.sha256) throw stateError('HOST_RECEIPT_DRIFT', 'The bound native tool-return receipt changed');
-  const absolute = path.resolve(inputFile);
-  const declared = [...receiptText(receipt).matchAll(DECLARED)].filter(match => path.resolve(match[2]) === absolute);
+  const absolute = path.resolve(inputFile), spelled = comparablePath(absolute);
+  const declared = [...receiptText(receipt).matchAll(DECLARED)].filter(match => comparablePath(path.resolve(match[2])) === spelled);
   if (!declared.length) throw stateError('HACKER_EVIDENCE_UNDECLARED', 'The Hacker did not declare this evidence file as MAWF_EVIDENCE <sha256> <path> in its return');
   const sha256 = digest(fs.readFileSync(absolute));
   if (!declared.some(match => match[1] === sha256)) throw stateError('HACKER_EVIDENCE_MODIFIED', 'Evidence bytes differ from the hash the Hacker declared; register its original file or dispatch a new Hacker');

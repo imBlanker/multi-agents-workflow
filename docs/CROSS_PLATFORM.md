@@ -12,12 +12,27 @@ concurrency races, recovery, and a real 32-minute heartbeat. Native controlled
 Claude execution and its inherited child bounds use this Linux process boundary.
 The native runner explicitly rejects unsupported process-control platforms.
 
-Windows v1 actual process-tree cancellation, companion/native model execution,
-and live payment telemetry have not been run in this delivery. Report those
-capabilities unverified/unsupported, not passed based on a CI matrix definition.
-Configuration/plan source compatibility and prior platform tests are different
-scopes. Authentication, host installation and real request success remain
-separate on every platform. Role prompts/worktrees are not an OS sandbox.
+A Windows 11 host check of d6be4d0 (2026-10-28; Node 20, 22 and 24 from
+PowerShell and Git Bash, compared test by test with Linux) found the retained
+suite identical to Linux apart from fixtures tracked separately (console code
+page, GNU tar under Git Bash). Windows exposes no PID start identity, so
+local-process dispatch, companion adapters and Pi autoresearch are refused at
+admission with `OWNER_IDENTITY_UNVERIFIED` before any child starts, and native
+controlled Claude execution returns `NATIVE_PROCESS_CONTROL_UNSUPPORTED`. Windows
+process-tree cancellation, companion/native model execution and live payment
+telemetry therefore remain unsupported, not passed; report them that way rather
+than from a CI matrix definition. Configuration/plan source compatibility and
+prior platform tests are different scopes. Authentication, host installation and
+real request success remain separate on every platform. Role prompts/worktrees
+are not an OS sandbox.
+
+The v1 core reaches Windows conventions only through the platform facade.
+`realpath` and `comparablePath` give one on-disk, case-folded spelling of a path
+(drive-letter and segment case, 8.3 names) for state roots and evidence checks.
+`checkoutVariants` lets a pinned LF file match the CRLF checkout that Git for
+Windows makes by default. `retryTransient` retries the brief EPERM/EACCES/EBUSY
+that Windows reports while another process holds a state file. On POSIX these are
+identity or single-attempt operations.
 
 ## Structure
 

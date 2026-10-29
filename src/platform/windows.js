@@ -61,6 +61,45 @@ export function run(command, args = [], options = {}) {
   return spawnSync(envValue(env, "COMSPEC") || "cmd.exe", ["/d", "/v:off", "/s", "/c", `"${tokens.join(" ")}"`], { ...options, env: childEnv, windowsVerbatimArguments: true });
 }
 
+// Git for Windows checks text out with CRLF by default (core.autocrlf=true), and so
+// do the plugin clones hosts make. A pin of the committed LF bytes must match such a
+// checkout too, so also offer the content with every CRLF turned back into LF.
+export function checkoutVariants(bytes) {
+  const text = bytes.toString("latin1");
+  return text.includes("\r\n") ? [bytes, Buffer.from(text.replaceAll("\r\n", "\n"), "latin1")] : [bytes];
+}
+
+// fs.realpathSync keeps the caller's letter case and 8.3 short names. The native
+// call returns the on-disk spelling, so one directory has one canonical path.
+export function realpath(file) {
+  try { return fs.realpathSync.native(file); } catch { return fs.realpathSync(file); }
+}
+
+// NTFS names are case-insensitive: compare one case-folded on-disk spelling. A
+// missing tail keeps its own spelling below its deepest existing ancestor.
+export function comparablePath(file) {
+  const absolute = path.win32.resolve(file), parent = path.win32.dirname(absolute);
+  let spelled;
+  try { spelled = fs.realpathSync.native(absolute); }
+  catch { spelled = parent === absolute ? absolute : path.win32.join(comparablePath(parent), path.win32.basename(absolute)); }
+  return spelled.toLowerCase();
+}
+
+// Windows refuses to open or replace a file that another process holds at that
+// moment (a reader during an atomic rename, or on Node 20 a file whose delete is
+// still pending) with EPERM, EACCES or EBUSY. Retry those for about a second; a
+// lasting permission error still fails, only that much later.
+const SHARING_VIOLATIONS = new Set(["EPERM", "EACCES", "EBUSY"]);
+export function retryTransient(operation, { attempts = 100, waitMs = 10 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try { return operation(); }
+    catch (error) {
+      if (!SHARING_VIOLATIONS.has(error.code) || attempt >= attempts) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+    }
+  }
+}
+
 export function projectProcessAlive(dir, runner = run) {
   const script = "$ErrorActionPreference='Stop'; $p=$env:MAWF_PROCESS_PROJECT; $found=@(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf($p,[StringComparison]::OrdinalIgnoreCase) -ge 0 }); if($found.Count){'yes'}";
   const r = runner("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", timeout: 10000, windowsHide: true, env: { ...process.env, MAWF_PROCESS_PROJECT: dir } });

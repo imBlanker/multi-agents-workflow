@@ -3,10 +3,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { findExecutable } from './platform/index.js';
+import { findExecutable, execFile } from './platform/index.js';
 import { isEnabled } from './integrations.js';
 import { processIdentity, stateError, assertSafePath, writeAtomic } from './atomic-state.js';
 import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed } from './runtime.js';
@@ -18,7 +18,8 @@ export function nativeHostCapability(settings, project) {
   if (!selected) return { ...base, reasonCode: 'HOST_NOT_SELECTED' };
   const binary = findExecutable('claude'); if (!binary) return { ...base, reasonCode: 'HOST_UNAVAILABLE' };
   let auth;
-  try { auth = JSON.parse(execFileSync(binary, ['auth', 'status', '--json'], { cwd: project, encoding: 'utf8', timeout: 10000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'ignore'] })); } catch { return { ...base, binary, installed: true, reasonCode: 'AUTHENTICATION_UNVERIFIED' }; }
+  // The platform facade also starts npm's claude.cmd, which Node refuses to spawn directly on Windows.
+  try { auth = JSON.parse(execFile(binary, ['auth', 'status', '--json'], { cwd: project, encoding: 'utf8', timeout: 10000, maxBuffer: 65536, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })); } catch { return { ...base, binary, installed: true, reasonCode: 'AUTHENTICATION_UNVERIFIED' }; }
   const method = auth.authMethod || auth.method || null;
   const billing = ['claude.ai', 'oauth'].includes(method) ? 'subscription' : ['api_key', 'apiKey', 'api-key'].includes(method) ? 'api' : 'unknown';
   return { ...base, binary, installed: true, authenticated: auth.loggedIn === true, compatible: true, authMethod: method, apiProvider: auth.apiProvider || null, actualProvider: auth.apiProvider === 'firstParty' ? 'anthropic' : null, actualBillingMode: billing, reasonCode: auth.loggedIn ? 'BILLING_AND_MODEL_POLICY_REQUIRED' : 'HOST_NOT_AUTHENTICATED', limitations: ['Authentication does not prove subscription quota or paid usage coverage', 'Existing unrelated host plugins/hooks may load', 'Main orchestrator delegation restriction is policy_only'] };
