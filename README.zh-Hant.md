@@ -3,7 +3,7 @@
 # MAWF 1.0.0
 
 MAWF 提供明確模式選擇、共用任務帳本、可選宿主適配與獨立候選驗收。
-目前是本機發行候選，尚未發佈至 npm。套件名稱為 `multi-agents-workflow`，
+此為 1.0.0 原始碼；發佈與驗證狀態見 docs/V1_RELEASE_STATUS.md。套件名稱為 `multi-agents-workflow`，
 命令為 `mawf`；同名单數套件不是本專案。Core 需要 Node >=20.17，
 沒有 npm 執行期依賴；可選 Pi Autoresearch 1.9.0 需要 Node >=22。
 
@@ -86,8 +86,8 @@ installed 不等於 ready；未暴露的逐輪身分維持 null。Pi Autoresearc
 
 獨立 Linux 證據涵蓋設定/安裝界線、真實 32 分鐘本機程序、模式隔離、Pi canonical
 模型 companion 路徑、真實 Pi 最佳化/keep/停止鏈，以及普通 mode-control 獨立交接。
-這些範圍不代表整體產品已 accepted。Windows v1 程序樹、即時實付與完整 Claude
-Slash→Agent→獨立驗收鏈仍依實際阻擋/未驗狀態報告。
+Windows 本機工作使用 Job Object；原生 Claude 使用獨立 AppContainer 工具，不需 WSL。
+先決條件與驗證邊界見 docs/V1_WINDOWS.md；即時實付仍未驗證。
 
 保留並執行 `npm test` 與 `node scripts/test-packed-install.mjs`；舊斷言與未解決失敗
 分類記錄，不修改測試以偽造全綠。見[發行狀態](docs/V1_RELEASE_STATUS.md)、

@@ -4,7 +4,12 @@
 格式：[Keep a Changelog](https://keepachangelog.com/)；版本遵循
 [SemVer](https://semver.org/)。
 
-## [1.0.0] — 2026-10-14（本機候選，未發佈）
+## [1.0.0] — 2026-10-29
+
+- 新增純原生 Windows Job Object 程序控制和 AppContainer MCP 工具，不需 WSL；先決條件和驗證範圍見 docs/V1_WINDOWS.md。
+- Trellis runner 使用明確參數白名單，不再接收 MAWF 專屬參數。
+- 候選清單使用固定 UTF-16 字元順序；舊候選可能漂移，需重新凍結並產生證據。
+- advise/archify 夾具逐項清理；標準套件擁有並回收整棵暫存目錄，失敗時也清理。
 
 - 所有可選整合預設關閉，增加明確設定、模式登錄與可回復舊設定遷移。
 - 分離 dynamic/fixed-1 計畫，保護使用者覆寫與產生檔案所有權，凍結主任務政策快照。
@@ -12,7 +17,7 @@
 - 統一原子租約與 fencing、Linux 真實程序身分/取消、不按年齡清除占位；原生就緒佇列與 Agent 完成回執。
 - 固定來源 Pi/Codex companion、無 prompt 身分核對、持久有界 Pi 實驗、獨立候選證據驗收。
 - 修正 `/mawf:mode`、`/mawf:run` 與原生模型繼承，套件內包含執行/證據契約，安裝狀態目錄可完全隔離。
-- 已驗證範圍及未解決檢查見 docs/V1_RELEASE_STATUS.md；保留既有測試與 prepublishOnly，未執行發佈。
+- 已驗證範圍及未解決檢查見 docs/V1_RELEASE_STATUS.md；保留既有測試與 prepublishOnly 發佈閘門。
 
 ### 新增
 
@@ -25,11 +30,11 @@
 ### 變更
 
 - 保留的測試套件改為遵循 v1 契約：測試夾具明確選擇所用的整合與宿主；斷言改為 v1 的 JSON 輸出與原因碼；價格閘門在准入階段檢查。v1 已移除的行為（依實測 USD/分鐘的 guard、`mawf run` 的分批指引、`mawf help` 中的路由說明）改為斷言 v1 的替代行為。A20 打包安裝閘門先確認未選擇時 `knowledge` 會被拒絕，再明確選擇 `knowledge` 與 `archify` 後使用。
-- 原生 Claude 執行中的每條 Bash 命令（含子代理的命令）現在都在 Claude Code 沙箱內執行：無網路，且不能寫入 MAWF 狀態根目錄與 MAWF 套件；Edit 拒絕規則同樣禁止檔案工具寫入這兩處。只有明確列出的 Core 管理子命令在沙箱外執行；直接 `run` 與 `task dispatch` 不在例外中。使用者或管理員的額外授權仍屬於受信宿主設定。沙箱必須能夠啟動：Linux 上的原生執行需要 bubblewrap 與 socat，否則會被拒絕（`NATIVE_SANDBOX_UNAVAILABLE`）；工作區位於 MAWF 套件內時同樣會被拒絕（`NATIVE_WORKSPACE_INSIDE_PACKAGE`）。佇列規格寫入 `run prepare` 回傳的 `inputDirectory`（`.mawf/inputs/<run>/`）；Hacker 證據寫入 `run next` 指定的目錄（`.mawf/evidence/<run>/<task>/<attempt>/`），該目錄視為產品範圍之外。
+- Linux 原生 Claude 執行中的每條 Bash 命令（含子代理的命令）現在都在 Claude Code 沙箱內執行：無網路，且不能寫入 MAWF 狀態根目錄與 MAWF 套件；Edit 拒絕規則同樣禁止檔案工具寫入這兩處。只有明確列出的 Core 管理子命令在沙箱外執行；直接 `run` 與 `task dispatch` 不在例外中。使用者或管理員的額外授權仍屬於受信宿主設定。沙箱必須能夠啟動：Linux 上的原生執行需要 bubblewrap 與 socat，否則會被拒絕（`NATIVE_SANDBOX_UNAVAILABLE`）；工作區位於 MAWF 套件內時同樣會被拒絕（`NATIVE_WORKSPACE_INSIDE_PACKAGE`）。佇列規格寫入 `run prepare` 回傳的 `inputDirectory`（`.mawf/inputs/<run>/`）；Hacker 證據寫入 `run next` 指定的目錄（`.mawf/evidence/<run>/<task>/<attempt>/`），該目錄視為產品範圍之外。
 
 ### 修復
 
-- 原生 Core 管理命令固定使用解析後的 Node 絕對路徑並保護其目錄；豁免規則就是這個不帶引號的絕對前綴，因此需要 shell 引號的 Node 或套件路徑會被拒絕（`NATIVE_SANDBOX_PATH_UNSUPPORTED`）。候選擷取只向 Git 讀取 HEAD 提交（不讀索引、不列樹、不經工作區 diff），因此儲存庫設定的 diff、filter 與 fsmonitor 回呼都不會在沙箱外執行；經 PATH 找到的 Git 與 `claude` CLI 仍屬可信宿主工具。
+- Linux 原生 Core 管理命令固定使用解析後的 Node 絕對路徑並保護其目錄；豁免規則就是這個不帶引號的絕對前綴，因此需要 shell 引號的 Node 或套件路徑會被拒絕（`NATIVE_SANDBOX_PATH_UNSUPPORTED`）。候選擷取只向 Git 讀取 HEAD 提交（不讀索引、不列樹、不經工作區 diff），因此儲存庫設定的 diff、filter 與 fsmonitor 回呼都不會在沙箱外執行；經 PATH 找到的 Git 與 `claude` CLI 仍屬可信宿主工具。
 
 - 原生沙箱審查：例外收緊到管理子命令，阻止本機程序派發繼承 Core 權限。受管原生子任務必須使用 Core 擷取的完成事件，拒絕手工回執（`NATIVE_RECEIPT_REQUIRED`），保留 Hacker 證據來源約束。
 - hook 測試夾具改走 Node 的 JavaScript 目錄複製路徑，避開 Windows Node 22.18 在 Unicode 路徑上的原生複製崩潰；保留全部 hook 斷言。

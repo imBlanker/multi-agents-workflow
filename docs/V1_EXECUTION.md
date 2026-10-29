@@ -15,7 +15,7 @@ assets are materialized to the owning package's absolute Core path. The complete
 package must contain plugin, bin, src and docs together. In-place plugin loading
 has been metadata-validated; a plugin-only cache is not claimed equivalent.
 Fixed roles are top-level `mawf-fixed-*` agents with real frontmatter/tool lists.
-Native CLI uses the default built-in tool pool; each role's frontmatter narrows
+On Linux the native CLI uses the default built-in tool pool; each role's frontmatter narrows
 that pool. A global Read/Bash-only pool would also disable Implementer Write/Edit.
 The fixed main role remains mawf:mawf-fixed-orchestrator; existing permission
 rules still apply. Fixed-1 native sessions use acceptEdits so an authorized
@@ -32,7 +32,8 @@ does not widen what the first turn already had; managed/user/project deny rules
 and protected paths still apply. It does not enforce each task's owned scope:
 orchestration-only and file scope stay policy_only.
 
-Native launches enforce Claude Code's Bash sandbox. On Linux it needs bubblewrap
+Linux native launches enforce Claude Code's Bash sandbox. Windows uses the separate
+AppContainer/MCP boundary in V1_WINDOWS.md, without WSL. On Linux it needs bubblewrap
 and socat on PATH; without them the run is refused with NATIVE_SANDBOX_UNAVAILABLE
 before any reservation. `--settings` turns the sandbox on with failIfUnavailable,
 forbids the unsandboxed retry (allowUnsandboxedCommands:false), keeps the regular
@@ -302,3 +303,8 @@ registered both Hacker files unchanged. Claude Code created an empty
 commit, so live capture took the no-commit path; the committed-object path is
 covered by the fixtures above, not by this run. So is the later `db7e4cc`
 change that dropped the tree listing from the diff hash.
+
+On Windows, start the native controller at a repository/worktree root or a non-Git
+workspace, with its default authority ledger and TEMP outside that workspace.
+One controller owns a workspace at a time; its child queue still manages the
+configured concurrency. See V1_WINDOWS.md for the native tool contract.

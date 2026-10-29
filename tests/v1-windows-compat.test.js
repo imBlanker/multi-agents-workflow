@@ -67,6 +67,17 @@ test("Windows adapter offers the committed LF bytes of a CRLF checkout and nothi
   assert.deepEqual([...windows.checkoutVariants(binary)[1]], [0xff, 0x0a, 0x80, 0x0d]);
 });
 
+test('controlled Windows launch unwraps only the exact npm native-exe scaffold', { skip: !isWin }, t => {
+  const dir = tmp(t), target = path.join(dir, 'node_modules', 'fixture', 'cli.exe');
+  fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, 'fixture');
+  const shim = path.join(dir, 'fixture.cmd');
+  const source = '@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n"%dp0%\\node_modules\\fixture\\cli.exe"   %*\r\n';
+  fs.writeFileSync(shim, source);
+  assert.deepEqual(windows.nativeInvocation(shim, ['space value', 'a"b']), [target, 'space value', 'a"b']);
+  fs.writeFileSync(shim, source.replace('SETLOCAL', 'SETLOCAL\r\nSET EXTRA=custom'));
+  assert.throws(() => windows.nativeInvocation(shim), { code: 'WINDOWS_NATIVE_SHIM_UNSUPPORTED' });
+});
+
 test("Windows adapter retries only sharing violations, within a bound", () => {
   for (const code of ["EPERM", "EACCES", "EBUSY"]) {
     let calls = 0;

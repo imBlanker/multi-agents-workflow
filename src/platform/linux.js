@@ -10,6 +10,7 @@ export function findExecutable(name, { env = process.env, paths = (env.PATH || "
 }
 
 export const run = (command, args = [], options = {}) => spawnSync(command, args, options);
+export const nativeInvocation = (command, args = []) => [command, ...args];
 
 // POSIX checkouts keep the committed bytes, paths compare byte for byte, and file
 // operations report no transient sharing violations.

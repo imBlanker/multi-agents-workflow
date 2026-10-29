@@ -42,6 +42,22 @@ function nodeShimEntry(executable) {
   } catch { return null; }
 }
 
+// Async controlled launches cannot use cmd.exe shell reinterpretation. Native
+// binaries and recognized npm Node shims have an exact executable/argv mapping.
+export function nativeInvocation(command, args = []) {
+  const executable = findExecutable(command) || command;
+  if (!/\.(cmd|bat)$/i.test(executable)) return [executable, ...args];
+  const entry = nodeShimEntry(executable);
+  if (entry) return [process.execPath, entry, ...args];
+  // npm also generates a direct native-binary shim. Match its entire scaffold
+  // so custom wrapper logic is never silently dropped or interpreted as a shell.
+  const source = fs.readFileSync(executable, 'utf8').replace(/^\uFEFF/, '').replaceAll('\r\n', '\n');
+  const native = /^@ECHO off\nGOTO start\n:find_dp0\nSET dp0=%~dp0\nEXIT \/b\n:start\nSETLOCAL\nCALL :find_dp0\n"%dp0%[\\/]([^"%\n]+\.exe)"[ \t]+%\*[ \t]*\n?$/i.exec(source);
+  const target = native && path.resolve(path.dirname(executable), native[1]);
+  if (target && fs.statSync(target).isFile()) return [target, ...args];
+  throw Object.assign(new Error('Controlled Windows launches require a native executable or recognized npm shim'), { code: 'WINDOWS_NATIVE_SHIM_UNSUPPORTED' });
+}
+
 export function run(command, args = [], options = {}) {
   const env = options.env || process.env;
   const executable = findExecutable(command, { env }) || command;

@@ -40,6 +40,7 @@ export async function startCompanion(opts) {
   if (task.adapter === 'pi-plugin-cc' && ['advisor', 'researcher'].includes(task.role)) throw stateError('ROLE_PERMISSION_UNSUPPORTED', 'This Pi companion does not enforce read-only tool access; use a verified read-only adapter for this role');
   const descriptor = discoverAdapter(task.adapter, state.run.snapshot.settings, { path: opts.path });
   if (!descriptor.compatible) return { ok: false, reasonCode: descriptor.reasonCode, capability: descriptor };
+  if (process.platform === 'win32') return { ok: false, reasonCode: 'COMPANION_PROCESS_CONTROL_UNSUPPORTED', reason: 'External background companions do not expose a Windows Job Object; use the native Claude controller or a local-process task' };
   if (!opts.actorId && !task.actorId) throw stateError('ACTOR_REQUIRED', 'Use an explicit independent actor identity');
   const effort = opts.effort || 'low';
   if (!ADAPTERS[task.adapter].efforts.includes(effort) || task.adapter === 'pi-plugin-cc' && ['none', 'off'].includes(effort)) throw stateError('EFFORT_UNSUPPORTED', 'Effort must be supported by both companion and underlying runner');

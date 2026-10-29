@@ -66,6 +66,16 @@ async function optionalInit(project, settings, flags, context) {
   return stages;
 }
 
+// Only the runner's documented controls cross the optional integration boundary.
+// In particular MAWF force/tag/settings and installer locations are never forwarded.
+function trellisOptions(opts, project, command) {
+  const result = { project, command };
+  for (const key of ['dryRun', 'stdinIsTTY', 'stdoutIsTTY', 'timeoutMs', 'detection', 'runner']) {
+    if (Object.hasOwn(opts, key)) result[key] = opts[key];
+  }
+  return result;
+}
+
 export async function updateLifecycle(opts = {}, deps = {}) {
   const project = path.resolve(opts.project || process.cwd());
   workspaceLayout(project);
@@ -76,7 +86,7 @@ export async function updateLifecycle(opts = {}, deps = {}) {
   let trellis = null;
   if (!opts.mawfOnly && isEnabled(settings, 'trellis') && !workspaceLayout(project).native) {
     const adapter = deps.runTrellis ? null : await import('./trellis.js');
-    trellis = await (deps.runTrellis || adapter.runTrellisCommand)({ ...opts, project, command: 'update' }); stages.push(trellis);
+    trellis = await (deps.runTrellis || adapter.runTrellisCommand)(trellisOptions(opts, project, 'update')); stages.push(trellis);
   } else stages.push({ stage: 'trellis update', ok: true, skipped: true, reason: 'Not selected or native workspace' });
   const overlay = opts.dryRun ? { ok: true, skipped: true } : await (deps.repairOverlays || repairSelectedOverlays)(project);
   stages.push({ stage: 'mawf overlay repair', ...overlay });
@@ -91,7 +101,7 @@ export async function upgradeLifecycle(opts = {}, deps = {}) {
   if (!maw.ok) return { ok: false, project, maw, stages };
   let trellisUpgrade = null;
   if (!opts.mawfOnly && isEnabled(settings, 'trellis') && !workspaceLayout(project).native) {
-    trellisUpgrade = await (deps.runTrellis || (await import('./trellis.js')).runTrellisCommand)({ ...opts, project, command: 'upgrade' }); stages.push(trellisUpgrade);
+    trellisUpgrade = await (deps.runTrellis || (await import('./trellis.js')).runTrellisCommand)(trellisOptions(opts, project, 'upgrade')); stages.push(trellisUpgrade);
   } else stages.push({ stage: 'trellis upgrade', ok: true, skipped: true, reason: 'Not selected or native workspace' });
   const overlay = !opts.dryRun && opts.applyTemplates !== false ? await (deps.repairOverlays || repairSelectedOverlays)(project) : null;
   if (overlay) stages.push({ stage: 'mawf overlay repair', ...overlay });

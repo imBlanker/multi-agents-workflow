@@ -1,10 +1,49 @@
-# 1.0.0 local release-candidate status
+# 1.0.0 verification record
 
-Updated 2026-10-29 during release preparation. This remains an unpublished
-candidate. PRs #44 and #45 were merged into the PR #42 feature branch; PR #42 is
-still open against main. The local `chore/v1-release-prep` branch adds the retained
-suite migration, approved fixes, sandbox enforcement and review repairs. Local
-results below do not establish GitHub CI success or authorize merge/publication.
+Updated 2026-10-29. This records the scopes actually exercised for the 1.0.0
+release, including retained limitations; it is not a claim that every optional
+host or billing route has been verified. PR #42 is the release integration PR;
+#44/#45/#46 provide the earlier work and #47 the final Windows implementation.
+
+## Final release evidence
+
+Code at `b1edecf` passed all four jobs in
+[CI run 40968003000](https://github.com/imBlanker/multi-agents-workflow/actions/runs/40968003000):
+
+| Environment | Tests | Pass | Fail | Skip | TODO |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Ubuntu / Node 22 | 611 | 580 | 0 | 31 | 0 |
+| Ubuntu / Node 24 | 611 | 580 | 0 | 31 | 0 |
+| Windows / Node 22 | 611 | 602 | 0 | 9 | 0 |
+| Windows / Node 24 | 611 | 602 | 0 | 9 | 0 |
+
+The final documentation update does not change that tested implementation.
+Release operations additionally verify the merged/tagged tree, package contents,
+prepublish hook, registry version and installed CLI. CI runs remain linked from
+[PR #47](https://github.com/imBlanker/multi-agents-workflow/pull/47).
+
+Windows process and isolation tests exercise real creation identities, atomic
+Job Object assignment, descendants, deadlines, cancellation, ACL recovery and
+protected-path/network denials. The fake-host integration covers the registered
+controller, MCP broker and lease release without calling a model. Separately,
+a real official Claude Code 2.1.295 control-protocol session loaded the plugin,
+called Core and the AppContainer PowerShell tool, wrote artifact `42` and exited
+0 with zero user prompts/model calls. This is real CLI/tool integration evidence,
+not model-generated Windows acceptance. See V1_WINDOWS.md for prerequisites.
+
+Independent Standards and Spec review found and drove repairs to job lifetime,
+Core argument scoping, mutable path ancestors, helper protection and cleanup.
+No release-blocking finding remains after those repairs. Existing oversized
+modules remain documented maintenance debt.
+
+Trellis option leakage is fixed by an explicit allowlist. Candidate order is
+locale-independent; older pre-release candidates may need refreezing and fresh
+evidence. Fixture cleanup plus the suite-owned temporary tree leaves no suite
+temporary entries after successful or failed runs. The prior single TODO is now
+a passing regression. Pricing/billing behavior is unchanged; the CSV policy
+redesign is recorded separately in [V1_1_PLAN.md](V1_1_PLAN.md).
+
+## Earlier validation history
 
 ## Independently observed scopes
 
@@ -86,7 +125,7 @@ propagation, overlay error target/code, and accurate planner coverage wording.
 Profile sync keeps its environment-plus-selection double gate. Pre-0.6 `.maw`
 automatic renaming remains removed.
 
-At `db7e4cc` the final local suite contains 66 test files / 593 tests:
+Before the final Windows implementation, the local suite at `db7e4cc` contained 66 test files / 593 tests:
 
 | Native environment | Pass | Fail | Skip | TODO |
 | --- | ---: | ---: | ---: | ---: |
@@ -95,8 +134,9 @@ At `db7e4cc` the final local suite contains 66 test files / 593 tests:
 | WSL2 Arch Linux / Node 25.0.0 | 577 | 0 | 15 | 1 |
 | Arch Linux (wsz05-1, bwrap 0.13.1) / Node 24.17.0 | 577 | 0 | 15 | 1 |
 
-The single TODO is the explicitly deferred MAWF-only option isolation at the
-legacy Trellis runner boundary. It is not a passed assertion. Windows Node22
+At that historical revision the single TODO was MAWF-only option isolation at the
+legacy Trellis runner boundary. The final release changes replace it with an
+explicit runner option allowlist and a passing regression. Windows Node22
 initially crashed in the hook fixture's native directory-copy implementation
 (exit `0xC0000005`); keeping that fixture on the JavaScript copy path preserves
 Unicode coverage and all hook assertions while avoiding that crash.
@@ -106,7 +146,7 @@ credential-stripped environments and a PATH without real agent CLIs. The harness
 records no external writes, no remaining related processes, no canary calls and
 unchanged real-home npm files. Linux uses a fresh clone, isolated HOME/USERPROFILE,
 and rejecting stubs for real hosts and external installers. Node25 Linux results
-are not Ubuntu Node22/24 CI evidence. The final four GitHub CI jobs remain pending.
+are not Ubuntu Node22/24 CI evidence. The four GitHub CI jobs passed at 68eeeb1 (run 40932372789). After #46 merged, Ubuntu Node22/24 passed at 1d36fde (run 40934219914); that merge has the same file tree. These results precede the final Windows-native and cleanup scope added below.
 
 The A20 packed-install gate was migrated to assert rejection of unselected
 knowledge, then explicitly select knowledge and archify before exercising them.
@@ -114,17 +154,17 @@ At `db7e4cc` the Windows Node24 and Linux Node25 gates both passed, each auditin
 249 files and completing isolated installation and selected-feature checks;
 the earlier failure under the old implicit-selection assumption remains historical.
 
-## Remaining release gates and limits
+## Retained limits and publication procedure
 
 - The sandboxed full chain has one live sample, on one Linux host and Claude Code
   2.1.303, in a project without commits. Another Claude Code version may match
   exemptions differently; a mismatch fails closed, with Core calls returning
   EROFS rather than running outside the sandbox.
-- Push/PR/CI actions, PR #42 body refresh and a green Ubuntu/Windows Node22/24
-  matrix remain separate maintainer steps. Main merge, tag and npm publish have
-  not been performed. Existing oversized modules remain a documented review item.
-- Windows continues to refuse local-process and companion admission without a
-  verified PID start identity. Native controlled execution remains Linux-only.
+- Tag, GitHub Release and npm publication use the reviewed main-branch tree.
+  CI does not itself publish or establish registry provenance.
+- Windows local-process and native Claude execution now have a separate native
+  Job Object/AppContainer implementation (V1_WINDOWS.md). External companion and
+  Pi experiment transports remain refused until they have Windows job ownership.
 - The installed Codex custom provider lacks applicable pricing/billing evidence;
   its real companion path stays blocked. Claude OAuth does not prove quota or
   payment. Strict current measured payment telemetry is not verified.
