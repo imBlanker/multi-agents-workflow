@@ -10,7 +10,10 @@ JavaScript, but portability is not execution evidence. Linux registered local
 processes have independently exercised PID/start identity, process-group stop,
 concurrency races, recovery, and a real 32-minute heartbeat. Native controlled
 Claude execution and its inherited child bounds use this Linux process boundary.
-The native runner explicitly rejects unsupported process-control platforms.
+The native runner explicitly rejects unsupported process-control platforms. On
+Linux it also needs bubblewrap and socat, because every native session runs its
+Bash commands in Claude Code's sandbox (docs/V1_EXECUTION.md); without them it
+refuses with `NATIVE_SANDBOX_UNAVAILABLE`.
 
 A Windows 11 host check of d6be4d0 (2026-10-28; Node 20, 22 and 24 from
 PowerShell and Git Bash, compared test by test with Linux) found the retained

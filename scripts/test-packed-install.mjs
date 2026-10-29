@@ -120,6 +120,16 @@ const run = (args, cwd = tmp) => {
 step("mawf version…");
 const version = run(["version"]);
 if (version.code !== 0) fail(`mawf version failed from installed package: ${version.out.trim()}`);
+// 1.0.0 keeps every optional integration off until it is selected: a fresh user
+// is refused first, then the selected features run from the installed package.
+step("optional features stay off until selected…");
+const unselected = run(["knowledge", "status"]);
+if (unselected.code === 0 || !/knowledge is disabled/.test(unselected.out)) fail(`knowledge ran before it was selected: ${unselected.out.trim()}`);
+const select = (id, project) => {
+  const r = run(["integrations", "enable", id, "--project", project], project);
+  if (r.code !== 0) fail(`mawf integrations enable ${id} failed from installed package: ${r.out.trim()}`);
+};
+for (const id of ["knowledge", "archify"]) select(id, tmp);
 step("mawf knowledge status…");
 const knowledge = run(["knowledge", "status"]);
 if (knowledge.code !== 0) fail(`mawf knowledge status failed from installed package: ${knowledge.out.trim()}`);
@@ -133,5 +143,6 @@ if (!/not installed/.test(noEngine.out)) fail("no-engine diagnostic missing");
 step("knowledge verify on a fresh project…");
 const proj = path.join(tmp, "proj");
 fs.mkdirSync(proj, { recursive: true });
+select("knowledge", proj);
 if (run(["knowledge", "verify"], proj).code !== 0) fail("knowledge verify failed on a fresh empty project");
 console.log("A20 PASS");

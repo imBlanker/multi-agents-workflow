@@ -28,13 +28,54 @@ background Agent notification starts a new main turn. Native launches therefore
 pass the same list (read from plugin/commands/run.md) as session-level
 --allowedTools, so post-notification turns keep the first turn's permissions
 instead of auto-denying Core calls, spec-file writes or evidence reads. This
-does not widen what the first turn already had; existing deny rules and
-protected paths still apply, and Bash remains policy_only, not a sandbox.
-Managed/user/project deny rules and protected paths still apply. This does not
-grant arbitrary external directory writes or enforce each task's owned scope.
-Bash can still write files: orchestration-only
-and file scope are policy_only. This follows the Claude Code CLI and subagent
-tool contracts: https://code.claude.com/docs/en/cli-reference and
+does not widen what the first turn already had; managed/user/project deny rules
+and protected paths still apply. It does not enforce each task's owned scope:
+orchestration-only and file scope stay policy_only.
+
+Native launches enforce Claude Code's Bash sandbox. On Linux it needs bubblewrap
+and socat on PATH; without them the run is refused with NATIVE_SANDBOX_UNAVAILABLE
+before any reservation. `--settings` turns the sandbox on with failIfUnavailable,
+forbids the unsandboxed retry (allowUnsandboxedCommands:false), keeps the regular
+permission flow (autoAllowBashIfSandboxed:false) and pins the weakening switches
+off. Without additional user/managed grants, sandboxed Bash commands, including
+subagents' commands, have no network and can write the working directory and
+per-user temp directory, minus the MAWF
+state root, package and resolved Node interpreter directory (filesystem.denyWrite). `--disallowedTools` adds
+`Edit(//STATE_ROOT/**)`, `Edit(//PACKAGE/**)` and the interpreter-directory
+denial, keeping Edit, Write and NotebookEdit out of these paths. Only named management subcommands are exempt:
+`run prepare/queue/next/respec` and
+`task bind/heartbeat/result/host-complete/candidate/evidence/accept/acceptance/status/list`.
+The exceptions match one unquoted command prefix: the resolved absolute
+`process.execPath`, a space, and this package's Core entry. The controller supplies
+that prefix through `--append-system-prompt`, including for the initial prepare.
+Claude Code 2.1.303 exempted only the unquoted spelling: a quoted rule or a quoted
+command stayed sandboxed, as does bare PATH-resolved `node`. Node and package
+paths outside letters, digits and `._@+/-`, and state-root paths with wildcard or
+newline characters, are refused before reservation (`NATIVE_SANDBOX_PATH_UNSUPPORTED`). Bare `run`,
+`task add`, and `task dispatch` are not exempt: an arbitrary local command must
+never inherit Core's access to the ledger or package. A workspace
+inside the package is refused (NATIVE_WORKSPACE_INSIDE_PACKAGE). Sessions write
+queue specs under the prepare response's inputDirectory (`.mawf/inputs/RUN/`);
+Hackers write evidence under `.mawf/evidence/RUN/TASK/ATTEMPT/`, which run next
+creates and names in the dispatch. Both are in the run workspace, outside the
+state root and product scope.
+
+Limits of that boundary: adapter starts and unapproved network requests fail
+inside a native session. Sandbox arrays and directories from user or managed
+settings (excludedCommands, allowWrite, allowedDomains, additionalDirectories)
+still merge in and can widen it; repository settings cannot, because
+allowUnsandboxedCommands:false from `--settings` makes the sandbox
+admin-required. Candidate capture and revalidation ask Git only for the HEAD
+commit (`rev-parse`, with fsmonitor and transports off), never the index, a
+tree listing or a worktree diff, so no repository-configured diff, filter or
+fsmonitor callback runs; Core hashes the raw worktree bytes itself.
+Git and the `claude` authentication probe are still found through PATH, which
+must not contain a session-writable directory. The stream does not report
+sandbox status, so enforcement rests on failIfUnavailable. Hooks, MCP servers
+and other processes Claude Code itself starts run outside the sandbox. This
+follows https://code.claude.com/docs/en/sandboxing,
+https://code.claude.com/docs/en/permissions,
+https://code.claude.com/docs/en/cli-reference and
 https://code.claude.com/docs/en/sub-agents.
 
 A registered native launch writes a private schemaVersion 1 request under its
@@ -201,3 +242,63 @@ so default tool availability alone did not prove working edit permission.
 The next candidate normalizes verification queue policy and uses bounded native
 acceptEdits as described above. These follow-up changes still need independent
 interface checks and live confirmation; no acceptance is inferred from them.
+
+
+### 2026-10-29 release-preparation checks
+
+The earlier `e1ef9c5` full-chain run reached independent Hacker acceptance; it
+predates the sandbox and is not validation of the sandboxed chain. At `ef6a09a`,
+a real Claude Code 2.1.303 Linux probe refused Bash writes to runtime/package,
+refused Write there and network access, retained sandboxing on an unsandboxed
+retry request, and allowed ordinary project writes plus Core prepare. The
+separate 180-second native run reached Implementer completion and candidate
+freeze, then hit its deadline before an independent Hacker. It returned nonzero
+with its controller lease released; full-chain sandbox acceptance remains open.
+
+Subsequent independent review found two Core paths that undermined that policy:
+the broad task exemption could dispatch an arbitrary local executable, and a
+registered native child could submit a manual receipt. The management-only
+exemptions above close the first path. For the second, native children must use
+`task host-complete --native-receipt`; missing that flag or supplying
+`--receipt-file` returns `NATIVE_RECEIPT_REQUIRED` before state/receipt mutation.
+Other hosts retain their explicitly limited manual-receipt route. No-model
+regression checks cover both repairs; they do not replace a live full-chain run.
+
+The review also found that the two diff flags left Git fsmonitor and
+clean/process filters active during candidate capture, for any workspace the
+caller names. Capture no longer diffs through the worktree: the diff hash
+covers the HEAD commit, which pins the committed side, and Core's own hash of
+the candidate's raw bytes. That still distinguishes a dirty change from the
+same bytes once committed. A first version also listed the committed tree; an
+independent review noted that the listing grew with the repository and could
+overflow Git's output buffer on large tracked trees, and that the commit
+already determines it, so it was dropped. Fixtures configure each callback kind (textconv, external
+diff, clean, process, fsmonitor), confirm that a plain `git diff` runs it, and
+confirm that capture, revalidation and drift checks never do. These are
+no-model checks; the sandboxed full chain still needs its live run.
+
+A live Claude Code 2.1.303 probe on Linux (Haiku, explicit commands) then showed
+that the review's quoted prefix never left the sandbox: a quoted rule did not
+match the identically quoted command, and an unquoted rule did not match a
+quoted command; both returned EROFS from the state root. The unquoted command
+matched the unquoted rule and Core recorded the run, while `node` resolved
+through PATH stayed sandboxed. The prefix is therefore unquoted, and paths that
+would need quoting are refused before reservation.
+
+At `304ae89` one serial packed run on that host (Claude Code 2.1.303, Sonnet 4.6
+subscription, fixed-1, 600-second bound, bubblewrap 0.13.1) completed the full
+chain under the sandbox in 456.8 seconds with CLI exit 0: Implementer, candidate
+freeze, an independent native Hacker, two evidence records registered from the
+Hacker's own declarations, and acceptance with `ACCEPTANCE_REQUIREMENTS_MET`.
+greeting.txt held exactly the 25 oracle bytes, all three leases were released,
+both Core-captured receipts were intact and no process remained. The session
+made 17 Core calls: all 16 standalone calls used the supplied unquoted prefix
+and ran outside the sandbox, while one that followed a heredoc in the same Bash
+command stayed sandboxed and returned EROFS. One standalone
+`task evidence` call named the coordinator's own wrapper file instead of a
+Hacker record and was rejected with INVALID_EVIDENCE; the session then
+registered both Hacker files unchanged. Claude Code created an empty
+`.claude/.cc-writes` directory in the workspace. The temporary project had no
+commit, so live capture took the no-commit path; the committed-object path is
+covered by the fixtures above, not by this run. So is the later `db7e4cc`
+change that dropped the tree listing from the diff hash.

@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { perSessionRate, piSessionUsagePresent, costRate } from "../src/ccswitch.js";
+import * as ccswitch from "../src/ccswitch.js";
 import { report } from "../src/cost.js";
 import { readPiAsCc, piCostRateNote } from "../src/piprovider.js";
 import { makeFixtureDb } from "./fixtures/make-db.mjs";
@@ -29,13 +30,25 @@ test("piSessionUsagePresent: true on v17 fixture, false on v16 / no db", () => {
 });
 
 test("report includes pi spend in total and carries the cache-write caveat", () => {
-  const r = report(CFG(dbV17));
+  // v1 reads no usage telemetry unless cc-switch.usage is selected and its
+  // provider is supplied (commit 188298f); without that the aggregate stays
+  // null instead of silently reporting 0.
+  const unselected = report(CFG(dbV17));
+  assert.equal(unselected.impl, "usage-unavailable");
+  assert.equal(unselected.total.totalUsd, null);
+
+  const r = report({ ...CFG(dbV17), usageEnabled: true, usageProvider: ccswitch });
   const pi = costRate({ dbPath: dbV17, windowSeconds: 300, appType: "pi" });
   assert.ok(pi.totalUsd > 0);
   assert.ok(r.total.totalUsd >= pi.totalUsd, "pi spend part of the aggregate");
   assert.ok(r.caveats.some((c) => /cache-write accounting may be incomplete/.test(c)), "caveat present");
-  const r16 = report(CFG(dbV16));
-  assert.deepEqual(r16.caveats, [], "no caveat without pi rows");
+  const r16 = report({ ...CFG(dbV16), usageEnabled: true, usageProvider: ccswitch });
+  assert.ok(!r16.caveats.some((c) => /cache-write accounting may be incomplete/.test(c)), "no pi caveat without pi rows");
+  // v1 always discloses that imported cc-switch amounts are token-price-derived
+  // estimates, never exact payment (docs/V1_PRICING.md).
+  for (const caveats of [r.caveats, r16.caveats]) {
+    assert.ok(caveats.some((c) => /token-price-derived estimates/.test(c)));
+  }
 });
 
 test("perSessionRate errorCount feeds watchdog signal-d (errors/interrupted turns)", () => {
@@ -47,14 +60,24 @@ test("perSessionRate errorCount feeds watchdog signal-d (errors/interrupted turn
 });
 
 test("piCostRateNote + readPiAsCc(piSpendMeasured) switch wording", () => {
-  assert.match(piCostRateNote(false), /concurrency-only/);
-  assert.match(piCostRateNote(true), /Pi \(Session\) import/);
+  // v1 wording for the unmeasured case (commit b7bf698): the note names the
+  // missing payment telemetry and limits the guarantee to registered
+  // concurrency; the measured case still names the cc-switch import.
+  // ...and the "measured" case is still only an estimate: v1 names the
+  // cc-switch token-price log basis rather than claiming exact payment
+  // (docs/V1_PRICING.md "cc-switch amounts are always token-price-derived
+  // estimates, even when mislabeled by an importer").
+  const unmeasured = /payment telemetry unavailable.*only registered concurrency/i;
+  const fromLogs = /estimated from cc-switch token-price logs/i;
+  assert.match(piCostRateNote(false), unmeasured);
+  assert.match(piCostRateNote(true), fromLogs);
+  assert.doesNotMatch(piCostRateNote(true), /\bmeasured\b/i);
   const piDir = path.join(tmp, "pi");
   fs.mkdirSync(piDir, { recursive: true });
   fs.writeFileSync(path.join(piDir, "models.json"), JSON.stringify({ providers: { p: { models: [{ id: "m1" }] } } }));
   fs.writeFileSync(path.join(piDir, "settings.json"), "{}");
-  assert.match(readPiAsCc({ piDir }).costNote, /concurrency-only/);
-  assert.match(readPiAsCc({ piDir, piSpendMeasured: true }).costNote, /Pi \(Session\) import/);
+  assert.match(readPiAsCc({ piDir }).costNote, unmeasured);
+  assert.match(readPiAsCc({ piDir, piSpendMeasured: true }).costNote, fromLogs);
 });
 
 test.after(() => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {} });

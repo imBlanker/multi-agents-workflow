@@ -12,6 +12,7 @@ import { openIncident, loadIncident, applyEvent, saveIncident } from "../src/wat
 import { dispatchIncident } from "../src/watchdog/dispatch.js";
 import { scanOnce } from "../src/watchdog/scan.js";
 import { spendSince } from "../src/ccswitch.js";
+import { setIntegration } from "../src/integrations.js";
 import { makeFixtureDb } from "./fixtures/make-db.mjs";
 
 const now = 1787300000;
@@ -20,6 +21,29 @@ function tmpProject() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "maw-s4-"));
   fs.mkdirSync(path.join(dir, ".mawf"), { recursive: true });
   return dir;
+}
+
+// v1 is selection-first: scanOnce skips a project that has not selected
+// `watchdog`, and attributes spend only when `cc-switch.usage` is selected
+// (src/watchdog/scan.js:107,167; CHANGELOG 1.0.0 "Default all optional
+// integrations off").
+function watchedProject(ids) {
+  const dir = tmpProject();
+  for (const id of ids) setIntegration(dir, id, true);
+  return dir;
+}
+
+// v1's price valve is identity-bound and pauses on unknown prices, so a
+// dispatch fixture must offer one claude candidate with a KNOWN price inside
+// the $2/$10-per-1M gate; the fixture's own claude candidates are opus-5
+// ($5/$25) and openmodel-x (no price row), both correctly refused.
+function claudeInValve(cc) {
+  cc.modelPricing["claude-sonnet-5"] = { ...cc.modelPricing["claude-sonnet-5"], input_per_m: 2, output_per_m: 10 };
+  cc.allProviders = cc.allProviders.map((p) =>
+    p.app_type === "claude" && p.settingsConfig?.env
+      ? { ...p, settingsConfig: { ...p.settingsConfig, env: { ...p.settingsConfig.env, ANTHROPIC_MODEL: "claude-sonnet-5" } } }
+      : p);
+  return cc;
 }
 
 // --- knowledge ----------------------------------------------------------------
@@ -71,18 +95,28 @@ test("spendSince: windowed, app-typed", () => {
   const claude = spendSince({ dbPath, sinceSec: Math.floor(Date.now() / 1000) - 3600, appTypes: ["claude"] });
   const pi = spendSince({ dbPath, sinceSec: Math.floor(Date.now() / 1000) - 3600, appTypes: ["pi"] });
   assert.ok(Math.abs(total - (claude + pi)) < 1e-9, "app filter partitions the spend");
-  assert.equal(spendSince({ dbPath: "/nope.db", sinceSec: now }), 0);
+  // v1 reports an unmeasurable spend as UNKNOWN (null), never as a measured
+  // $0 — "unknown coverage rather than invented zero/measured costs"
+  // (CHANGELOG 1.0.0; src/ccswitch.js spendSince, commit b7bf698). The
+  // property is unchanged: a missing database never invents spend.
+  assert.equal(spendSince({ dbPath: "/nope.db", sinceSec: now }), null);
 });
 
 test("dispatchIncident: spend attributed to phase + budget-stop when cap reached", async () => {
   const dir = tmpProject();
   const inc = openIncident({ projectDir: dir, host: "pi", sessionId: "s1", file: "f", finding: { signal: "a", reason: "boom", evidence: "x", at: now }, budgetCapUsd: 0.001, nowSec: now });
   const { readCcSwitch } = await import("../src/ccswitch.js");
-  const cc = readCcSwitch({ dbPath });
+  const cc = claudeInValve(readCcSwitch({ dbPath }));
   // runner "fails"; the fixture db has $1.80 in the last hour — attribution
   // window covers [phaseStart, phaseEnd] which includes those rows (real now)
   const run = () => ({ status: 1, stdout: "FIX: nothing\nRESCUE-DONE outcome=failed\n", timedOut: false });
-  const r = dispatchIncident({ incident: inc, cc, run, workspace: path.join(dir, "ws"), nowSec: Math.floor(Date.now() / 1000) - 60, available: ["claude", "pi"], dbPath });
+  // v1 no longer reads cc-switch usage implicitly: dispatch attributes spend
+  // only through an injected usage provider, which scan.js supplies when the
+  // project selects `cc-switch.usage` (src/watchdog/scan.js:111-114 and
+  // dispatch.js spend attribution; commit 339d6df). Injecting the real reader
+  // keeps the property under test — measured spend reaches the phase and the
+  // cap stops the rescue.
+  const r = dispatchIncident({ incident: inc, cc, run, workspace: path.join(dir, "ws"), nowSec: Math.floor(Date.now() / 1000) - 60, available: ["claude", "pi"], dbPath, usageProvider: { spendSince } });
   assert.equal(r.reason, "budget-stop");
   assert.equal(loadIncident(dir, inc.id).state, "budget-stop");
   const reloaded = loadIncident(dir, inc.id);
@@ -97,7 +131,7 @@ test("dispatchIncident: resolved verdict writes a SUCCESS case back", async () =
   const ws = path.join(dir, "ws");
   const inc = openIncident({ projectDir: dir, host: "pi", sessionId: "s1", file: "f", finding: { signal: "a", reason: "provider 429 rate limit", evidence: "", at: now }, budgetCapUsd: 10, nowSec: now });
   const { readCcSwitch } = await import("../src/ccswitch.js");
-  const cc = readCcSwitch({ dbPath });
+  const cc = claudeInValve(readCcSwitch({ dbPath }));
   const run = () => ({ status: 0, stdout: "FIX: waited backoff\nRESCUE-DONE outcome=resolved\n", timedOut: false });
   dispatchIncident({ incident: inc, cc, run, workspace: ws, nowSec: now, available: ["pi", "claude"], dbPath: "/nope.db" });
   const sig = signature({ host: "pi", finding: { signal: "a", reason: "provider 429 rate limit", evidence: "" } });
@@ -135,7 +169,7 @@ test("reconcileSnapshot: divergence summary, never auto-merges (fake git)", () =
 // --- scan re-entry parity -----------------------------------------------------------
 
 test("scanOnce re-entry: aged phase gets late spend attribution + budget-stop", async () => {
-  const dir = tmpProject();
+  const dir = watchedProject(["watchdog", "cc-switch.usage"]);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-s4h-"));
   const inc = openIncident({ projectDir: dir, host: "pi", sessionId: "gone", file: "f", finding: { signal: "a", reason: "boom", evidence: "", at: now }, budgetCapUsd: 0.001, nowSec: now });
   applyEvent(inc, { type: "dispatch-a", nowSec: now });
@@ -164,7 +198,7 @@ test("postWebhook: POSTs JSON, never throws; scan wiring fires on incidents", as
   assert.equal(r2.ok, false);
 
   // scan wiring: incident opened -> webhook called with the summary
-  const dir = tmpProject();
+  const dir = watchedProject(["watchdog", "host.claude-code"]);
   fs.writeFileSync(path.join(dir, ".mawf", "config.yaml"), "watchdog:\n  webhookUrl: http://example.invalid/hook\n");
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "maw-s4w-"));
   const claudeSlug = process.platform === "win32" ? dir.replace(/[^a-zA-Z0-9]/g, "-") : "-" + dir.replace(/\//g, "-").replace(/^-+/, "");

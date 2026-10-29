@@ -7,7 +7,11 @@ import { execFileSync } from 'node:child_process';
 import { assertSafePath, stateError } from './atomic-state.js';
 import { comparablePath } from './platform/index.js';
 export const digest = value => crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
-const git = (root, argv) => { try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', timeout: 10000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
+// Core runs Git outside a native session's sandbox, on a repository the session
+// can write. It only resolves HEAD (no index, tree listing or worktree
+// conversion), so no repository-configured callback or transport runs.
+const GIT_READS_ONLY = ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never'];
+const git = (root, argv) => { try { return execFileSync('git', [...GIT_READS_ONLY, '-C', root, ...argv], { encoding: 'utf8', timeout: 10000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } }).trim(); } catch { return null; } };
 const EXCLUDED = new Set(['.git', '.mawf', '.trellis', 'node_modules', '.venv', '__pycache__']);
 function inside(root, relative) { const target = path.resolve(root, relative); if (target !== root && !target.startsWith(root + path.sep)) throw stateError('CANDIDATE_PATH_ESCAPE', 'Scope/artifact path escapes the candidate'); assertSafePath(path.dirname(target)); return target; }
 function inventory(root, scopes) {
@@ -37,9 +41,10 @@ export function candidateIdentity(run, opts = {}) {
   const files = inventory(workspace, [...scope, ...artifacts]);
   if (!files.length) throw stateError('EMPTY_CANDIDATE', 'Candidate scope contains no product files');
   const commitSha = git(workspace, ['rev-parse', 'HEAD']);
-  const diff = commitSha ? git(workspace, ['diff', '--binary', 'HEAD', '--', ...scope, ...artifacts]) : null;
-  if (commitSha && diff === null) throw stateError('CANDIDATE_DIFF_UNAVAILABLE', 'Cannot hash the dirty candidate diff');
-  const identity = { schemaVersion: 1, commitSha, diffHash: digest(diff || ''), contentHash: digest(files), effectiveConfigHash: run.snapshot.effectiveConfigHash, scope, artifacts };
+  // The commit pins the committed side of the scope and the raw bytes the
+  // worktree side, so together they name the dirty delta against HEAD exactly,
+  // at a cost that scales with the candidate rather than the repository.
+  const identity = { schemaVersion: 1, commitSha, diffHash: digest({ commitSha, files }), contentHash: digest(files), effectiveConfigHash: run.snapshot.effectiveConfigHash, scope, artifacts };
   return { ...identity, candidateId: digest(identity), workspace, files };
 }
 export function candidateAuthors(run) {
@@ -89,7 +94,8 @@ export function validateEvidence(run, candidate, record, ledger) {
     if (!item?.path || !/^[a-f0-9]{64}$/.test(item.sha256 || '')) throw stateError('RAW_EVIDENCE_REQUIRED', 'Each raw output needs its file path and SHA256');
     const absolute = path.resolve(item.path); assertSafePath(absolute);
     const spelled = comparablePath(absolute);
-    if (spelled.startsWith(comparablePath(candidate.workspace) + path.sep) && !spelled.startsWith(comparablePath(path.join(candidate.workspace, '.mawf', 'runtime')) + path.sep)) throw stateError('EVIDENCE_PRODUCT_OVERLAP', 'Independent evidence must be stored outside product scope');
+    const mawfData = ['runtime', 'evidence'].some(name => spelled.startsWith(comparablePath(path.join(candidate.workspace, '.mawf', name)) + path.sep));
+    if (spelled.startsWith(comparablePath(candidate.workspace) + path.sep) && !mawfData) throw stateError('EVIDENCE_PRODUCT_OVERLAP', 'Independent evidence must be stored outside product scope');
     const bytes = fs.readFileSync(absolute);
     if (!bytes.length || digest(bytes) !== item.sha256) throw stateError('RAW_EVIDENCE_DRIFT', 'Raw output is missing, empty or changed');
     return { path: absolute, sha256: item.sha256 };

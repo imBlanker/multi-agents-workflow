@@ -26,9 +26,9 @@ export function fixedVerificationHandoff(run) {
   while (Object.hasOwn(run.tasks, taskId)) taskId = `hack-candidate-${suffix++}`;
   return {
     hackerQueueExample: { tasks: [{ taskId, role: 'hacker',
-      prompt: 'Independently check the frozen candidate against the original user oracle, including counterexamples and the real user path. Read the supplied verification contract. Write raw output and evidence JSON outside product scope, then return their paths; the coordinator registers evidence after your job completes and releases.',
+      prompt: 'Independently check the frozen candidate against the original user oracle, including counterexamples and the real user path. Read the supplied verification contract. Write raw output and evidence JSON under the evidence directory your dispatch names, then return their paths; the coordinator registers evidence after your job completes and releases.',
       expectedMinutes: 1, scope: [], dependsOn: Object.values(run.tasks).filter(task => !task.verificationTarget && !task.coordinationOnly).map(task => task.taskId),
       workspace: candidate.workspace, selection: 'inherit', writesProduct: false, verificationOf: candidate.candidateId }] },
-    verificationLifecycle: 'Adapt only the concrete oracle and evidence output directory in the prompt; Core supplies the real lease at run next. Dispatch a fresh Hacker, bind actual agentId, record produced, host-complete --native-receipt, then coordinator registers returned evidence files. Do not fabricate lease tokens or submit evidence while the Hacker is active.'
+    verificationLifecycle: 'Adapt only the concrete oracle in the prompt; Core supplies the real lease and the evidence directory at run next. Dispatch a fresh Hacker, bind actual agentId, record produced, host-complete --native-receipt, then coordinator registers returned evidence files. Do not fabricate lease tokens or submit evidence while the Hacker is active.'
   };
 }

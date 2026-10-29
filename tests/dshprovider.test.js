@@ -140,6 +140,11 @@ test("readDshAsCc: cc shape, _dshModels, pricing entries, current provider from 
   const cc = readDshAsCc({
     dshHome: dir,
     pricingPath: pricing,
+    // v1 never reads the local cc-switch price export implicitly: that is the
+    // `cc-switch.pricing` selection, passed through as readLocalPricing
+    // (src/context.js; commit 188298f). Opting in keeps this test's property —
+    // that a matched model gets a price entry and unmatched ones do not.
+    readLocalPricing: true,
     dumpConfig: "- id: agent-default-model\n  config:\n    provider: zai-coding-cn\n    model: glm-5.2\n",
   });
   assert.ok(cc);

@@ -19,7 +19,7 @@ export async function repairSelectedOverlays(project, deps = {}) {
   const errors = []; let repaired = 0;
   if (isEnabled(settings, 'cross-host-advise')) {
     try { (deps.writeManagedBlocks || (await import('./injectblock.js')).writeManagedBlocks)(project); }
-    catch (error) { errors.push({ operation: 'managed blocks', message: error.message }); }
+    catch (error) { errors.push({ operation: 'managed blocks', target: project, code: error.code ?? null, message: error.message }); }
   }
   const projects = new Set([project]);
   if (isEnabled(settings, 'watchdog')) {
@@ -32,7 +32,7 @@ export async function repairSelectedOverlays(project, deps = {}) {
       const adapter = await import('./grillswap.js');
       const result = (deps.applyGrillSwap || adapter.applyGrillSwap)(dir);
       if (result.applied) repaired++;
-    } catch (error) { errors.push({ operation: 'grill overlay', target: dir, message: error.message }); }
+    } catch (error) { errors.push({ operation: 'grill overlay', target: dir, code: error.code ?? null, message: error.message }); }
   }
   return { ok: !errors.length, repaired, errors };
 }

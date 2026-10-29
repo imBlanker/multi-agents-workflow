@@ -7,11 +7,21 @@ allowed-tools: Bash, Read, Agent, TaskOutput, TaskStop
 You are the host Orchestrator. In fixed-1, coordinate only: do not implement
 product changes, repair imports, write tests, or run the Hacker's checks inline.
 Dynamic follows its own frozen role policy rather than fixed-1 restrictions.
-Bash access does not make this restriction an OS sandbox: report policy_only.
-Use the installed package's Core entry for every management command:
+This role restriction is policy_only, not an OS sandbox. Under the registered
+native controller Bash commands use Claude Code's sandbox, denying writes to
+the MAWF state root and package. Only the named Core management commands below
+leave it; `task dispatch` and bare `run` never do. User/managed sandbox grants
+remain part of the trusted host configuration.
+For a registered native controller, use the exact absolute Core command prefix
+supplied in the session instructions, including for the initial prepare call.
+Type it unquoted and unchanged: adding quotes or replacing that interpreter with
+PATH-resolved `node` keeps the call sandboxed. For other host
+sessions, use the installed package's fallback Core entry:
 `node "${CLAUDE_PLUGIN_ROOT}/../bin/mawf.js"`.
 The host expands this literal plugin-root variable; do not read it from the Bash
-environment. Do not use an unrelated global mawf executable.
+environment. Do not use an unrelated global mawf executable. Run each Core call
+as one plain command: a pipe, `&&` or `;` chain, redirection, heredoc, `cd` or
+`$(...)` keeps the call sandboxed, so Core cannot record state.
 
 1. If arguments contain `--request-ref`, run Core
    `run prepare --host-managed --request-ref UUID --json`, copying only the short
@@ -25,9 +35,9 @@ environment. Do not use an unrelated global mawf executable.
    Save runId/stateRoot/config revision. This is a queue snapshot, not execution.
    If Claude/authentication/price/billing is unavailable, report the exact reason;
    never silently change mode, account, provider, pricing policy, or billing label.
-2. Read the frozen role policy and plan. Create a concrete task JSON under the
-   returned run's runtime directory and call `run queue --run-id R --input FILE
-   --project P --json`. Every task has taskId, role, prompt, expectedMinutes,
+2. Read the frozen role policy and plan. Write a concrete task JSON file under
+   the prepare response's `inputDirectory` (never under stateRoot) and call
+   `run queue --run-id R --input FILE --project P --json`. Every task has taskId, role, prompt, expectedMinutes,
    scope (owned files), dependsOn (IDs), workspace, and `selection:"inherit"`
    for native Agent tasks. Use the exact outer JSON object `{"tasks":[...]}`.
    Core resolves inherit from nativeExecution.observedSelection in the prepare
@@ -49,7 +59,9 @@ environment. Do not use an unrelated global mawf executable.
    --token TOKEN --job-id ACTUAL_AGENT_ID [--resolved-model ACTUAL_RESOLVED_MODEL] --project P`.
    Do not invent job/session IDs or substitute a proposed fallback for an actor.
    For adapter_start_required, call its actual selected adapter start entry;
-   that adapter performs its own single-use acquisition.
+   that adapter performs its own single-use acquisition. Under the registered
+   native controller the sandbox keeps adapter starts from recording state:
+   report those tasks as blocked instead.
 4. Track all active jobs. Use TaskOutput/actual completion notifications; record
    heartbeats while work or external requests are pending. On each completion,
    call `task result` with
@@ -57,7 +69,8 @@ environment. Do not use an unrelated global mawf executable.
    (or `--status failed` with factual `failureCause` in result JSON), using the
    exact run/task/lease/token/project flags; `--produced` is not a CLI flag. Then call `task host-complete`
    with the exact lease/token/job/project flags and `--native-receipt` when
-   using the registered outer controller. Core extracts the original completed
+   using the registered outer controller; a manual receipt is rejected with
+   NATIVE_RECEIPT_REQUIRED for these children. Core extracts the original completed
    task_notification event by actual job/tool/session identity and saves its raw
    line; it never derives completion from file existence or a model assertion.
    If the event is not yet available, wait briefly and retry without releasing.
@@ -88,7 +101,8 @@ environment. Do not use an unrelated global mawf executable.
    task/spec; freeze a new candidate and repeat the affected independent checks.
 6. Have each Hacker deliver the JSON evidence contract in
    `${CLAUDE_PLUGIN_ROOT}/../docs/V1_VERIFICATION.md`; Hackers write evidence
-   and return paths, never register it while their job is still active. After
+   under the evidence directory their dispatch names and return paths, never
+   register it while their job is still active. After
    their task result is produced and host-complete confirms release, register it with
    `task evidence --run-id R --input FILE --project P`, passing each file the
    Hacker declared as `MAWF_EVIDENCE <sha256> <path>` in its own return. Never

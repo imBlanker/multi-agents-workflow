@@ -1,9 +1,10 @@
 # 1.0.0 local release-candidate status
 
-This is a local candidate, not a published release and not a claim that every
-capability is accepted. The delivered manifest names the exact source commit,
-package SHA256 and independent evidence paths. No push/tag/merge/npm publish was
-performed; existing tests and prepublishOnly were preserved.
+Updated 2026-10-29 during release preparation. This remains an unpublished
+candidate. PRs #44 and #45 were merged into the PR #42 feature branch; PR #42 is
+still open against main. The local `chore/v1-release-prep` branch adds the retained
+suite migration, approved fixes, sandbox enforcement and review repairs. Local
+results below do not establish GitHub CI success or authorize merge/publication.
 
 ## Independently observed scopes
 
@@ -34,72 +35,101 @@ performed; existing tests and prepublishOnly were preserved.
   separately reached a real Implementer Agent and created the requested artifact;
   it did not reach independent Hacker acceptance before its deadline.
 
-## Remaining limits
+## Native-chain validation and review
 
-The installed Codex custom provider lacks an applicable current pricing/billing
-record, so its real companion path remains blocked. Claude OAuth login does not
-prove subscription quota or payment coverage. Its default policy pauses. An
-explicit optional bounded unknown-coverage route is implemented for a managed
-native controller and bound children. The original d25dddd 180-second run failed
-before Agent dispatch because an empty queue selection masked parent inheritance.
-A later separately authorized run on 9da6fe1 passed prepare, inherited selection,
-queueing and real Agent dispatch, and produced an artifact. It stopped at the
-180-second deadline with both leases released and a nonzero CLI exit; no Hacker
-or end-to-end acceptance occurred. The raw failed traces remain preserved.
-The next local repair uses a validated short request reference, the default
-built-in tool pool with role-specific restrictions, exact result CLI instructions,
-and original correlated native completion events as receipts. Those changes
-passed 15 independent no-model checks, followed by an a506fda live run with a
-4.378-second prepare, actual artifact, exact raw receipt and candidate freeze.
-That run ended at its deadline before Hacker execution after two queue errors
-from omitted writesProduct:false. Write was available but denied under dontAsk.
-A subsequent local candidate normalizes fixed verification queue policy, emits
-an exact Hacker handoff, and selects per-launch acceptEdits for fixed-1 ordinary
-workspace edits while preserving existing deny rules and main role restrictions.
-Those changes passed 15 independent no-model checks. Serial live Claude Code runs
-(Sonnet 4.6 subscription, one main invocation each) then found and fixed, in turn:
-Core calls denied after the background-notification turn (session-level Core
-and run.md allowed-tools grants), a normalized `plugin/..` allow rule, Hacker
-identity fields it cannot know at start (Core now fills omitted or null
-hackerActorId/sessionId/adapter/model from the bound job; supplied mismatches are
-rejected), and a coordinator that edited Hacker evidence before registration
-(a native Hacker now declares `MAWF_EVIDENCE <sha256> <path>` in its own return,
-and Core registers only those exact bytes). The e1ef9c5 live run completed the
-full chain: Implementer, candidate freeze, independent native Hacker, two
-evidence records registered unmodified on first attempt, and acceptance with
-ACCEPTANCE_REQUIREMENTS_MET and CLI exit 0, with no stray processes or active
-leases. Those fixes were written by the same Claude Code session that ran the
-checks; the code still needs independent review. Ordinary already-open Slash sessions lack the observed
-parent-model binding and cannot silently acquire it from caller labels.
+The earlier `e1ef9c5` serial live run completed Implementer, candidate freeze,
+independent native Hacker, two unmodified evidence registrations and acceptance
+with `ACCEPTANCE_REQUIREMENTS_MET`, CLI exit 0 and no active leases. This predates
+the sandbox. Earlier failed traces remain preserved and are not relabelled passes.
 
-The Windows host check of d6be4d0 is recorded in docs/CROSS_PLATFORM.md: Windows
-refuses local-process, companion and Pi autoresearch launches at admission (no PID
-start identity), native controlled execution stays Linux-only, and the Windows-only
-path, checkout and file-sharing defects it found are fixed through the platform
-facade. Strict current measured payment telemetry is not verified. Some planned W09 negative checks were stopped by the
-tool's automatic content review; their absent results remain unverified. No test
-content was transferred or self-accepted to fill that gap.
+At `ef6a09a`, a real Linux Claude Code 2.1.303 probe confirmed refused Bash writes
+to the state root and package, a refused Write tool there, refused network access,
+an ineffective unsandboxed retry request, a successful ordinary workspace write,
+and successful Core prepare. A separate 180-second native run reached candidate
+freeze but timed out before an independent Hacker; its controller lease was
+released and CLI returned nonzero. It did not establish sandboxed acceptance.
+
+The subsequent independent review found and repaired these paths:
+
+- Broad Core exemptions allowed local-process dispatch outside the sandbox.
+  Exemptions now name only the management subcommands required by `/mawf:run`.
+- Native children could choose a manual receipt. They now require Core-captured
+  completion events and reject manual/omitted receipts before mutation.
+- A bare `node` exemption depended on PATH. Exemptions and initial/subsequent
+  command instructions now pin the resolved interpreter; its directory is sealed.
+  A live probe then showed that the review's quoted prefix never matched in
+  Claude Code 2.1.303, which would have kept every Core call sandboxed. The
+  prefix is now unquoted, and Node/package paths that would need quoting are
+  refused (`NATIVE_SANDBOX_PATH_UNSUPPORTED`).
+- Candidate capture diffed through the worktree, where repository-configured Git
+  callbacks (external diff, textconv, clean/process filters, fsmonitor) ran
+  outside the sandbox. Capture now asks Git only for the HEAD commit; fixtures
+  confirm a plain diff runs each callback and capture/revalidation never do.
+
+No-model regressions cover these repairs, including real shell quoting and
+unchanged raw completion bytes. At `304ae89` a live probe confirmed the final
+prefix matching, and one serial packed full-chain run (Claude Code 2.1.303,
+Sonnet 4.6 subscription, fixed-1) reached `ACCEPTANCE_REQUIREMENTS_MET` under the
+sandbox with CLI exit 0 in 456.8 seconds; `V1_EXECUTION.md` records its details
+and the two model errors Core rejected on the way. Git and
+the `claude` CLI are found through PATH and remain trusted host tools; consult
+`V1_EXECUTION.md` for that boundary. Sandboxing does not constrain Claude
+hooks or other host extensions.
 
 ## Retained automated checks
 
-The full retained npm test invocation ran 62 test files: 33 passed, 29 failed.
-The original sandbox run took 551.5 seconds. Its native-workspace child was stopped
-after a six-minute hang; only that recorded test process was terminated. Detailed
-per-file reruns retained the original assertions and imposed a diagnostic time
-bound. Outside the sandbox, platform, component archive registry, upgrade and SSH
-transport checks passed, distinguishing their process EPERM environment failures.
-Independent read-only review classified most remaining assertions as v0.8
-implicit-selection, old API/CLI shape or estimated-versus-measured assumptions.
-It also identified two real compatibility/order defects: cc-switch decimal-string
-prices were dropped, and marker validation happened after lifecycle side effects.
-Both were corrected without editing tests; the existing string-price case now
-passes. Two bridge/runtime groups still have incomplete timeout evidence and
-remain unresolved, not blanket labelled harmless. The configuration generator's five old failures include
-implicit Pi activation and treating token-price data as exact payment.
+The historical 124 common failures under the v1 rewrite were triaged against
+explicit selection, frozen policies, the v1 CLI and removed v0.8 behavior.
+The retained suite now selects the optional features its fixtures exercise and
+checks the v1 contracts. Approved product fixes restore watchdog provider/policy
+propagation, overlay error target/code, and accurate planner coverage wording.
+Profile sync keeps its environment-plus-selection double gate. Pre-0.6 `.maw`
+automatic renaming remains removed.
 
-The existing packed-install gate packed/audited 245 files, installed the package
-into a temporary prefix and ran its version command successfully. It then failed
-at knowledge status because the old gate assumes an unselected optional feature
-is active. Its real exit 1 and output are retained; assertions were not changed. Independent final-package checks use explicitly enabled
-capabilities and isolated installer/host state. A passing scoped package check
-will not erase the retained legacy gate result or authorize publication.
+At `db7e4cc` the final local suite contains 66 test files / 593 tests:
+
+| Native environment | Pass | Fail | Skip | TODO |
+| --- | ---: | ---: | ---: | ---: |
+| Windows 11 / PowerShell / Node 24.16.0 | 584 | 0 | 8 | 1 |
+| Windows 11 / PowerShell / Node 22.18.0 | 584 | 0 | 8 | 1 |
+| WSL2 Arch Linux / Node 25.0.0 | 577 | 0 | 15 | 1 |
+| Arch Linux (wsz05-1, bwrap 0.13.1) / Node 24.17.0 | 577 | 0 | 15 | 1 |
+
+The single TODO is the explicitly deferred MAWF-only option isolation at the
+legacy Trellis runner boundary. It is not a passed assertion. Windows Node22
+initially crashed in the hook fixture's native directory-copy implementation
+(exit `0xC0000005`); keeping that fixture on the JavaScript copy path preserves
+Unicode coverage and all hook assertions while avoiding that crash.
+
+Windows runs use isolated HOME/USERPROFILE, temporary configuration/cache paths,
+credential-stripped environments and a PATH without real agent CLIs. The harness
+records no external writes, no remaining related processes, no canary calls and
+unchanged real-home npm files. Linux uses a fresh clone, isolated HOME/USERPROFILE,
+and rejecting stubs for real hosts and external installers. Node25 Linux results
+are not Ubuntu Node22/24 CI evidence. The final four GitHub CI jobs remain pending.
+
+The A20 packed-install gate was migrated to assert rejection of unselected
+knowledge, then explicitly select knowledge and archify before exercising them.
+At `db7e4cc` the Windows Node24 and Linux Node25 gates both passed, each auditing
+249 files and completing isolated installation and selected-feature checks;
+the earlier failure under the old implicit-selection assumption remains historical.
+
+## Remaining release gates and limits
+
+- The sandboxed full chain has one live sample, on one Linux host and Claude Code
+  2.1.303, in a project without commits. Another Claude Code version may match
+  exemptions differently; a mismatch fails closed, with Core calls returning
+  EROFS rather than running outside the sandbox.
+- Push/PR/CI actions, PR #42 body refresh and a green Ubuntu/Windows Node22/24
+  matrix remain separate maintainer steps. Main merge, tag and npm publish have
+  not been performed. Existing oversized modules remain a documented review item.
+- Windows continues to refuse local-process and companion admission without a
+  verified PID start identity. Native controlled execution remains Linux-only.
+- The installed Codex custom provider lacks applicable pricing/billing evidence;
+  its real companion path stays blocked. Claude OAuth does not prove quota or
+  payment. Strict current measured payment telemetry is not verified.
+- Ordinary already-open Slash sessions lack registered parent-model binding.
+  Role ownership/file scope remains policy_only. User/managed sandbox arrays can
+  widen host permissions; hooks and other host processes run outside Bash isolation.
+- Earlier W09 negative checks stopped by automatic content review remain unverified;
+  no absent evidence was transferred or self-accepted to fill those gaps.

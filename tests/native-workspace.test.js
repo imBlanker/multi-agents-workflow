@@ -11,6 +11,7 @@ import { workspaceLayout } from "../src/workspace/backend.js";
 import { recordSession } from "../src/workspace/sessions.js";
 import { createProviders, RUNTIME_POLL_MS } from "../src/workspace/providers.js";
 import { main, runUpdateLifecycle, runUpgradeLifecycle, repairMawOverlays } from "../src/index.js";
+import { setIntegration } from "../src/integrations.js";
 import { applyGrillSwap } from "../src/grillswap.js";
 import { buildPhaseBPrompt } from "../src/watchdog/dispatch.js";
 
@@ -22,12 +23,20 @@ function fixture(t, native = true) {
   if (native) fs.writeFileSync(path.join(root, ".mawf/workspace.json"), JSON.stringify({ version: 1, backend: "mawf", trellis: false }));
   return root;
 }
+/** Core commands emit one JSON object on stdout; capture it around `fn`. */
+async function captureStdout(fn) {
+  const chunks = [];
+  const original = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => { chunks.push(String(chunk)); return true; };
+  try { return { value: await fn(), text: chunks.join("") }; }
+  finally { process.stdout.write = original; }
+}
 function write(root, rel, value) {
   fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
   fs.writeFileSync(path.join(root, rel), typeof value === "string" ? value : JSON.stringify(value));
 }
 
-test("marker is explicit, wins over leftover Trellis and fails closed", (t) => {
+test("marker is explicit, wins over leftover Trellis and fails closed", async (t) => {
   const root = fixture(t);
   fs.mkdirSync(path.join(root, ".trellis"));
   assert.equal(workspaceLayout(root).native, true);
@@ -35,33 +44,39 @@ test("marker is explicit, wins over leftover Trellis and fails closed", (t) => {
     write(root, ".mawf/workspace.json", content);
     assert.throws(() => workspaceLayout(root), /workspace marker/);
     let called = false;
-    assert.throws(() => runUpdateLifecycle({ project: root }, { updateMaw: () => { called = true; } }), /workspace marker/);
+    // the lifecycle seams return promises in v1, so the refusal is a rejection
+    await assert.rejects(runUpdateLifecycle({ project: root }, { updateMaw: () => { called = true; } }), /workspace marker/);
     assert.equal(called, false);
   }
   fs.unlinkSync(path.join(root, ".mawf/workspace.json"));
   assert.equal(workspaceLayout(root).native, false);
 });
 
-test("native lifecycle cannot invoke Trellis, including upgrade without templates", (t) => {
+test("native lifecycle cannot invoke Trellis, including upgrade without templates", async (t) => {
   const root = fixture(t);
   fs.mkdirSync(path.join(root, ".trellis"));
+  // the native marker keeps its lifecycle opt-out even against a conflicting
+  // Trellis selection (docs/V1_CORE.md), so both are selected here.
+  for (const id of ["trellis", "grill", "cross-host-advise"]) setIntegration(root, id, true);
   let repairs = 0;
   const deps = {
     updateMaw: () => ({}), upgradeMaw: () => ({ ok: true }),
     repairOverlays: () => { repairs++; return { ok: true }; },
     runTrellis: () => assert.fail("must not invoke/download Trellis"),
   };
-  assert.equal(runUpdateLifecycle({ project: root }, deps).ok, true);
+  assert.equal((await runUpdateLifecycle({ project: root }, deps)).ok, true);
   for (const opts of [{}, { dryRun: true }, { applyTemplates: false }]) {
-    const result = runUpgradeLifecycle({ project: root, ...opts }, deps);
+    const result = await runUpgradeLifecycle({ project: root, ...opts }, deps);
     assert.equal(result.ok, true);
-    assert.equal(result.trellisUpgrade.skipped, true);
+    // v1 records the skip as a stage and fabricates no Trellis result
+    assert.equal(result.stages.find((s) => s.stage === "trellis upgrade").skipped, true);
+    assert.equal(result.trellisUpgrade, null);
   }
   assert.equal(repairs, 2);
   assert.equal(applyGrillSwap(root).applied, false);
-  const repair = repairMawOverlays(root, {
+  const repair = await repairMawOverlays(root, {
     writeManagedBlocks() {}, readRegistry: () => ({}), resolveWatchList: () => [{ dir: root }],
-    grillSwapStatus: () => assert.fail("must not inspect native grill wrapper"),
+    applyGrillSwap: () => assert.fail("must not inspect native grill wrapper"),
   });
   assert.equal(repair.ok, true);
   const prompt = buildPhaseBPrompt({ incident: { projectDir: root }, trellis: true });
@@ -145,6 +160,9 @@ test("native storage rejects symlink escapes", { skip: process.platform === "win
 
 test("bridge hello accepts native marker without .trellis and refuses malformed marker", (t) => {
   const root = fixture(t);
+  // a workspace chosen at handshake rechecks its own selection, so the
+  // transport must be selected for that root (docs/V1_CORE.md).
+  setIntegration(root, "workspace-bridge", true);
   write(root, "docs/plans/t/task.json", { title: "native task" });
   const hello = { type: "hello", v: 1, clientId: "native-test", capabilities: ["project.read"], workspaces: [{ refVersion: 1, endpoint: { kind: "ssh", host: "fixture" }, root }] };
   const request = { type: "request", id: "tasks", method: "project.tasks", params: {} };
@@ -160,19 +178,22 @@ test("bridge hello accepts native marker without .trellis and refuses malformed 
   assert.equal(frames[0].accepted, false);
 });
 
-test("native upgrade CLI reports skip rather than upgraded Trellis", (t) => {
+test("native upgrade CLI reports skip rather than upgraded Trellis", async (t) => {
   const root = fixture(t);
-  const lines = [];
-  const codeBefore = process.exitCode;
-  try {
-    main(["upgrade", "--project", root], {
-      migrateLegacyMawDirs: () => [], out: text => lines.push(text),
-      runUpgradeLifecycle: () => ({ ok: true, maw: { ok: true, mode: "test" }, trellisUpgrade: { ok: true, skipped: true } }),
-    });
-    assert.match(lines.join("\n"), /Trellis lifecycle disabled/);
-    assert.doesNotMatch(lines.join("\n"), /trellis CLI: upgraded|partially succeeded/);
-    assert.equal(process.exitCode, codeBefore);
-  } finally { process.exitCode = codeBefore; }
+  setIntegration(root, "trellis", true);
+  const { value, text } = await captureStdout(() => main(["upgrade", "--project", root], {
+    migrateLegacyMawDirs: () => [],
+    upgradeMaw: () => ({ ok: true, output: [], mode: "test" }),
+    repairOverlays: () => ({ ok: true, repaired: 0 }),
+    runTrellis: () => assert.fail("must not invoke Trellis in a native workspace"),
+  }));
+  assert.equal(value, 0);
+  const report = JSON.parse(text);
+  const stage = report.stages.find((s) => s.stage === "trellis upgrade");
+  assert.equal(stage.skipped, true);
+  assert.match(stage.reason, /Not selected or native workspace/);
+  assert.equal(report.trellisUpgrade, null, "no Trellis result is fabricated");
+  assert.doesNotMatch(text, /trellis CLI: upgraded|partially succeeded/);
 });
 
 
@@ -182,14 +203,20 @@ test("native init honors marker without --no-trellis and doctor does not request
   const db = path.join(home, "fixture.db");
   makeFixtureDb(db);
   const env = fixtureEnv(home, { CC_SWITCH_DB: db, TRELLIS_BIN: process.execPath });
-  const result = spawnSync(process.execPath, [BIN, "init", "--project", root, "-u", "fixture", "--allow-pricey", "--no-watchdog"], { env, encoding: "utf8", timeout: 15000 });
+  // TRELLIS_BIN points at a real executable: even a discoverable Trellis must
+  // not be chained, because the native marker is the authority.
+  const result = spawnSync(process.execPath, [BIN, "init", "--project", root, "-u", "fixture", "--no-watchdog"], { env, encoding: "utf8", timeout: 15000 });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /native MAWF workspace: initialized/);
-  assert.doesNotMatch(result.stdout, /chained automatically|trellis init:/);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.ok, true);
+  assert.equal(report.project, root);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, ".mawf/workspace.json"), "utf8")).trellis, false);
+  assert.ok(!report.stages.some((s) => s.integration === "trellis"), "no Trellis stage ran");
   assert.equal(fs.existsSync(path.join(root, ".trellis")), false);
   const logDir = path.join(root, ".mawf/logs");
   assert.ok(!fs.existsSync(logDir) || !fs.readdirSync(logDir).some(f => f.startsWith("trellis-init-")));
-  const doctor = spawnSync(process.execPath, [BIN, "doctor", "--project", root], { env, encoding: "utf8", timeout: 15000 });
-  assert.match(doctor.stdout, /native MAWF; Trellis lifecycle disabled/);
-  assert.doesNotMatch(doctor.stdout, /trellis \(next-step init\)|trellis-brainstorm/);
+  const doctor = JSON.parse(spawnSync(process.execPath, [BIN, "doctor", "--project", root], { env, encoding: "utf8", timeout: 15000 }).stdout);
+  assert.equal(doctor.checks.find((c) => c.name === "storage").detail, "native MAWF");
+  assert.ok(!doctor.capabilities.some((c) => c.id === "trellis" && c.selected), "Trellis is not requested");
+  assert.ok(!doctor.checks.some((c) => /trellis/i.test(c.name)));
 });

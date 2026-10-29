@@ -24,9 +24,25 @@ import { KnowledgeStore, contentHash } from "../src/knowledge/store.js";
 import { CAPABILITIES, PROTOCOL_VERSION } from "../src/workspace/protocol.js";
 import { createProviders, KNOWLEDGE_BODY_MAX_BYTES } from "../src/workspace/providers.js";
 import { machineIdPath } from "../src/workspace/cli.js";
+import { defaultSettings } from "../src/settings.js";
 
 const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "bin", "mawf.js");
 const MACHINE_ID = "0123456789abcdef-fixture-machine";
+
+/**
+ * v1 is selection-first: every integration defaults disabled and must be
+ * selected explicitly per project (docs/V1_CORE.md "All integrations default
+ * disabled, including detected hosts"; commit 339d6df). Select exactly the
+ * integrations whose capabilities a fixture exercises.
+ * @param {string} projectDir @param {string[]} ids
+ */
+function selectIntegrations(projectDir, ids) {
+  const settings = defaultSettings();
+  for (const id of ids) settings.integrations[id] = { enabled: true, options: {} };
+  fs.mkdirSync(path.join(projectDir, ".mawf"), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, ".mawf", "settings.json"), JSON.stringify(settings, null, 2) + "\n");
+  return projectDir;
+}
 
 // ----------------------------------------------------------------- fixture
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "maw-bridge-serve-"));
@@ -91,6 +107,12 @@ fs.symlinkSync(outsideSecret, path.join(fixture, "docs", "architecture", "evil.h
 // Pre-provision the stable machine id so the handshake assertion is exact.
 fs.mkdirSync(path.dirname(machineIdPath(homeDir)), { recursive: true });
 fs.writeFileSync(machineIdPath(homeDir), MACHINE_ID + "\n", { mode: 0o600 });
+
+// The served workspace selects the transport plus the knowledge/terminal
+// capabilities these tests assert on. `bridge serve` rechecks this selection
+// both at startup (--project) and at handshake time (lazy hello, V1_CORE.md:
+// "A bridge workspace chosen at handshake rechecks its own selection").
+selectIntegrations(fixture, ["workspace-bridge", "knowledge", "workspace-runtime-tmux"]);
 
 // ------------------------------------------------------------- stdio client
 
@@ -314,7 +336,10 @@ test("serve: escapes are rejected with workspace_unauthorized and NO content", a
 
 test("bridge machine-id subcommand: stable across calls, provisions the file", () => {
   const freshHome = fs.mkdtempSync(path.join(os.tmpdir(), "maw-bridge-id-"));
-  const run = () => execFileSync(process.execPath, [BIN, "bridge", "machine-id"], {
+  // `bridge` is an optional integration, so every subcommand resolves the
+  // project selection first; machine-id itself still writes only to <home>.
+  const idProject = selectIntegrations(path.join(freshHome, "proj"), ["workspace-bridge"]);
+  const run = () => execFileSync(process.execPath, [BIN, "bridge", "machine-id", "--project", idProject], {
     env: fixtureEnv(freshHome), encoding: "utf8",
   });
   const first = run().trim();
