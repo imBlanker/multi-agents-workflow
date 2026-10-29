@@ -281,3 +281,19 @@ quoted command; both returned EROFS from the state root. The unquoted command
 matched the unquoted rule and Core recorded the run, while `node` resolved
 through PATH stayed sandboxed. The prefix is therefore unquoted, and paths that
 would need quoting are refused before reservation.
+
+At `304ae89` one serial packed run on that host (Claude Code 2.1.303, Sonnet 4.6
+subscription, fixed-1, 600-second bound, bubblewrap 0.13.1) completed the full
+chain under the sandbox in 456.8 seconds with CLI exit 0: Implementer, candidate
+freeze, an independent native Hacker, two evidence records registered from the
+Hacker's own declarations, and acceptance with `ACCEPTANCE_REQUIREMENTS_MET`.
+greeting.txt held exactly the 25 oracle bytes, all three leases were released,
+both Core-captured receipts were intact and no process remained. All 15 Core
+calls used the supplied unquoted prefix. One call that wrote its input with a
+heredoc in the same Bash command stayed sandboxed and returned EROFS, and one
+`task evidence` call named the coordinator's own wrapper file instead of a
+Hacker record and was rejected with INVALID_EVIDENCE; the session then
+registered both Hacker files unchanged. Claude Code created an empty
+`.claude/.cc-writes` directory in the workspace. The temporary project had no
+commit, so live capture took the no-commit path; the committed-object path is
+covered by the fixtures above, not by this run.

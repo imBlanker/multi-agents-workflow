@@ -67,8 +67,11 @@ The subsequent independent review found and repaired these paths:
   confirm a plain diff runs each callback and capture/revalidation never do.
 
 No-model regressions cover these repairs, including real shell quoting and
-unchanged raw completion bytes. Live host matching of the final command prefix
-and a fresh packed full-chain acceptance run still need verification. Git and
+unchanged raw completion bytes. At `304ae89` a live probe confirmed the final
+prefix matching, and one serial packed full-chain run (Claude Code 2.1.303,
+Sonnet 4.6 subscription, fixed-1) reached `ACCEPTANCE_REQUIREMENTS_MET` under the
+sandbox with CLI exit 0 in 456.8 seconds; `V1_EXECUTION.md` records its details
+and the two model errors Core rejected on the way. Git and
 the `claude` CLI are found through PATH and remain trusted host tools; consult
 `V1_EXECUTION.md` for that boundary. Sandboxing does not constrain Claude
 hooks or other host extensions.
@@ -83,13 +86,14 @@ propagation, overlay error target/code, and accurate planner coverage wording.
 Profile sync keeps its environment-plus-selection double gate. Pre-0.6 `.maw`
 automatic renaming remains removed.
 
-The 2026-10-29 final local suite contains 66 test files / 589 tests:
+At `304ae89` the final local suite contains 66 test files / 593 tests:
 
 | Native environment | Pass | Fail | Skip | TODO |
 | --- | ---: | ---: | ---: | ---: |
-| Windows 11 / PowerShell / Node 24.16.0 | 580 | 0 | 8 | 1 |
-| Windows 11 / PowerShell / Node 22.18.0 | 580 | 0 | 8 | 1 |
-| WSL2 Arch Linux / Node 25.0.0 | 573 | 0 | 15 | 1 |
+| Windows 11 / PowerShell / Node 24.16.0 | 584 | 0 | 8 | 1 |
+| Windows 11 / PowerShell / Node 22.18.0 | 584 | 0 | 8 | 1 |
+| WSL2 Arch Linux / Node 25.0.0 | 577 | 0 | 15 | 1 |
+| Arch Linux (wsz05-1, bwrap 0.13.1) / Node 24.17.0 | 577 | 0 | 15 | 1 |
 
 The single TODO is the explicitly deferred MAWF-only option isolation at the
 legacy Trellis runner boundary. It is not a passed assertion. Windows Node22
@@ -106,16 +110,16 @@ are not Ubuntu Node22/24 CI evidence. The final four GitHub CI jobs remain pendi
 
 The A20 packed-install gate was migrated to assert rejection of unselected
 knowledge, then explicitly select knowledge and archify before exercising them.
-The final Windows Node24 and Linux Node25 gates both passed, each auditing
+At `304ae89` the Windows Node24 and Linux Node25 gates both passed, each auditing
 249 files and completing isolated installation and selected-feature checks;
 the earlier failure under the old implicit-selection assumption remains historical.
 
 ## Remaining release gates and limits
 
-- Verify the final native sandbox command prefix and complete one bounded packed
-  Implementer -> candidate -> independent Hacker -> evidence -> acceptance run.
-  The Claude session exhausted quota before that run; a prior unsandboxed pass
-  does not satisfy this gate.
+- The sandboxed full chain has one live sample, on one Linux host and Claude Code
+  2.1.303, in a project without commits. Another Claude Code version may match
+  exemptions differently; a mismatch fails closed, with Core calls returning
+  EROFS rather than running outside the sandbox.
 - Push/PR/CI actions, PR #42 body refresh and a green Ubuntu/Windows Node22/24
   matrix remain separate maintainer steps. Main merge, tag and npm publish have
   not been performed. Existing oversized modules remain a documented review item.
