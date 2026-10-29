@@ -6,23 +6,6 @@ coding agents operating this repo). Human narrative: [`../CHANGELOG.md`](../CHAN
 
 Package: `multi-agents-workflow` · CLI: `mawf` · Node ≥ 20.17 · zero runtime deps.
 
-## 1.0.1 (2026-10-26; local candidate, unpublished)
-
-```yaml
-version: 1.0.1
-semver_impact: patch
-status: local_candidate_not_published
-issue: https://github.com/imBlanker/multi-agents-workflow/issues/43
-fixed:
-  - "windows archive operations (components install, cc-switch backup, cc-switch snapshot restore) use the system bsdtar (System32 tar.exe) via platform tarCommand regardless of PATH order; under git bash MSYS GNU tar made installs and restores fail and backups silently become copies"
-  - "windows extraction never falls back to GNU tar: MSYS GNU tar writes a symlink to an existing file as a copy of it, bypassing the symlink-escape scan"
-  - "A20 packed-install gate on windows: CRLF tar listing, --prefix install inside its temp dir, tarball and npm/compile caches kept in temp, cleanup on failure, smoke runs with an isolated HOME"
-  - "generic batch test fixture is ASCII-only, so code page 936 cannot garble it"
-added:
-  - "tests: existing-target symlink escape rejected with nothing copied; .tar.gz backup->restore round trip; per-adapter tar selection"
-publication: not_authorized
-```
-
 ## 1.0.0 (2026-10-14; local candidate, unpublished)
 
 ```yaml
@@ -36,7 +19,32 @@ migration: explicit_or_first_plan_reversible_legacy_import
 runtime: canonical_fenced_ledger_no_age_based_eviction
 acceptance: independent_evidence_bound_to_candidate_and_frozen_policy
 cost: unknown_is_not_zero_or_measured; explicit_bounded_native_subscription_risk_optional
-limits: [windows_execution_unverified, current_measured_payment_unsupported, claude_real_flow_failed_then_locally_repaired_without_live_recheck]
+native_sandbox: claude_code_bash_sandbox_required; failIfUnavailable; allowUnsandboxedCommands_false; deny_write_state_root_package_and_node_directory; edit_deny_rules; excluded_only_named_core_management; no_network_without_additional_host_grants
+limits: [windows_process_control_refused_at_admission, native_controlled_execution_linux_only, native_sandbox_needs_bwrap_and_socat, native_sessions_have_no_network, native_sessions_cannot_start_external_adapters, user_or_managed_sandbox_arrays_merge_in, current_measured_payment_unsupported, codex_companion_pricing_record_missing, trellis_runner_receives_mawf_only_options]
+issues: [https://github.com/imBlanker/multi-agents-workflow/issues/43]
+prs: [https://github.com/imBlanker/multi-agents-workflow/pull/44, https://github.com/imBlanker/multi-agents-workflow/pull/45]
+fixed:
+  - "native Core exemptions pin the resolved Node interpreter and protect its directory; candidate diffs disable external diff/textconv callbacks"
+  - "native sandbox exemptions exclude local-process dispatch and recursive native launches; native children reject manual receipts with NATIVE_RECEIPT_REQUIRED"
+  - "Node22 Windows hook fixture avoids the crashing native directory-copy path while retaining Unicode coverage and all assertions"
+  - "windows archive operations (components install, cc-switch backup, cc-switch snapshot restore) use the system bsdtar (System32 tar.exe) via platform tarCommand regardless of PATH order; under git bash MSYS GNU tar made installs and restores fail and backups silently become copies"
+  - "windows extraction never falls back to GNU tar: MSYS GNU tar writes a symlink to an existing file as a copy of it, bypassing the symlink-escape scan"
+  - "A20 packed-install gate on windows: CRLF tar listing, --prefix install inside its temp dir, tarball and npm/compile caches kept in temp, cleanup on failure, smoke runs with an isolated HOME"
+  - "lazy bridge handshakes accept server-native windows absolute workspace paths; handshake tests clean up children when an assertion fails"
+  - "windows v1 core: paths compare by on-disk spelling (drive/segment case, 8.3) via platform realpath/comparablePath, so one project has one ledger and evidence inside the product is refused under every spelling; pinned companions match CRLF checkouts (checkoutVariants); the claude host probe starts npm claude.cmd through the facade; lock-claim and ledger writes retry EPERM/EACCES/EBUSY sharing violations (retryTransient)"
+  - "watchdog rescue price valve passes candidate providerId and project pricing settings to checkPriceGate; previously every candidate was UNKNOWN_PROVIDER and no rescue was ever dispatched"
+  - "overlay-repair error records keep target and code"
+  - "planner reasons no longer claim ChatGPT-plan coverage for a codex role whose price gate is blocked"
+changed:
+  - "retained test suite migrated to v1 contracts: fixtures select their integrations/hosts explicitly, v1 JSON output and reason codes, admission-time price gate; removed v0.8 behaviours are asserted as their v1 replacements"
+  - "A20 packed-install gate asserts knowledge is refused while unselected, then selects knowledge and archify before using them"
+  - "native claude runs: --settings enables the Bash sandbox (enabled, failIfUnavailable, allowUnsandboxedCommands:false, autoAllowBashIfSandboxed:false, weakening switches pinned off) with filesystem.denyWrite [stateRoot, package] and --disallowedTools Edit(//stateRoot/**) Edit(//package/**); excludedCommands name management subcommands only; bare run and task dispatch stay sandboxed; subagents share the sandbox"
+  - "native launch refuses before reservation: NATIVE_SANDBOX_UNAVAILABLE (bwrap or socat missing on PATH), NATIVE_WORKSPACE_INSIDE_PACKAGE"
+  - "session-written files leave the state root: run prepare returns inputDirectory (.mawf/inputs/<run>/) for queue specs; run next creates and names the Hacker evidence directory .mawf/evidence/<run>/<task>/<attempt>/, treated like .mawf/runtime as outside product scope"
+removed:
+  - "automatic .maw -> .mawf project-directory rename (0.6-0.8); rename by hand or open once with 0.8.x before upgrading"
+added:
+  - "tests: existing-target symlink escape rejected with nothing copied; .tar.gz backup->restore round trip; per-adapter tar selection; v1 core on windows (path spellings, CRLF pins, cmd launchers, file sharing, junctions)"
 checks: retained_npm_test_and_packed_install_results_reported_in_V1_RELEASE_STATUS
 publication: not_authorized
 ```

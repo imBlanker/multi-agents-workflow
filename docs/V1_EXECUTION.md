@@ -37,26 +37,36 @@ and socat on PATH; without them the run is refused with NATIVE_SANDBOX_UNAVAILAB
 before any reservation. `--settings` turns the sandbox on with failIfUnavailable,
 forbids the unsandboxed retry (allowUnsandboxedCommands:false), keeps the regular
 permission flow (autoAllowBashIfSandboxed:false) and pins the weakening switches
-off. Every Bash command, subagents' included, then runs without network and can
-write only the working directory and the per-user temp directory, minus the MAWF
-state root and package (filesystem.denyWrite). `--disallowedTools` adds
-`Edit(//STATE_ROOT/**)` and `Edit(//PACKAGE/**)`, which keep Edit, Write and
-NotebookEdit out of both. The only excludedCommands are plain calls of this
-package's Core entry with `run` or `task`, so Core alone writes the ledger,
-receipts and events, and a session cannot rewrite the Core it runs. A workspace
+off. Without additional user/managed grants, sandboxed Bash commands, including
+subagents' commands, have no network and can write the working directory and
+per-user temp directory, minus the MAWF
+state root, package and resolved Node interpreter directory (filesystem.denyWrite). `--disallowedTools` adds
+`Edit(//STATE_ROOT/**)`, `Edit(//PACKAGE/**)` and the interpreter-directory
+denial, keeping Edit, Write and NotebookEdit out of these paths. Only named management subcommands are exempt:
+`run prepare/queue/next/respec` and
+`task bind/heartbeat/result/host-complete/candidate/evidence/accept/acceptance/status/list`.
+The exceptions match a single literal command prefix containing the resolved
+absolute `process.execPath` and this package's Core entry. The controller supplies
+that prefix through `--append-system-prompt`, including for the initial prepare.
+Bare PATH-resolved `node` is not exempt. Wildcard/newline characters in rule paths
+are refused before reservation (`NATIVE_SANDBOX_PATH_UNSUPPORTED`). Bare `run`,
+`task add`, and `task dispatch` are not exempt: an arbitrary local command must
+never inherit Core's access to the ledger or package. A workspace
 inside the package is refused (NATIVE_WORKSPACE_INSIDE_PACKAGE). Sessions write
 queue specs under the prepare response's inputDirectory (`.mawf/inputs/RUN/`);
 Hackers write evidence under `.mawf/evidence/RUN/TASK/ATTEMPT/`, which run next
 creates and names in the dispatch. Both are in the run workspace, outside the
 state root and product scope.
 
-Limits of that boundary: adapter starts and anything that needs network fail
+Limits of that boundary: adapter starts and unapproved network requests fail
 inside a native session. Sandbox arrays and directories from user or managed
 settings (excludedCommands, allowWrite, allowedDomains, additionalDirectories)
 still merge in and can widen it; repository settings cannot, because
 allowUnsandboxedCommands:false from `--settings` makes the sandbox
-admin-required. `node` in a Core call resolves through the session PATH, which
-must not contain a session-writable directory. The stream does not report
+admin-required. Other external tools that Core invokes, such as Git and the
+Claude authentication probe, still require trusted executable/configuration
+paths. Candidate diffs disable external diff and textconv callbacks; this is
+not a claim that every possible host-side helper is sandboxed. The stream does not report
 sandbox status, so enforcement rests on failIfUnavailable. Hooks, MCP servers
 and other processes Claude Code itself starts run outside the sandbox. This
 follows https://code.claude.com/docs/en/sandboxing,
@@ -228,3 +238,31 @@ so default tool availability alone did not prove working edit permission.
 The next candidate normalizes verification queue policy and uses bounded native
 acceptEdits as described above. These follow-up changes still need independent
 interface checks and live confirmation; no acceptance is inferred from them.
+
+
+### 2026-10-29 release-preparation checks
+
+The earlier `e1ef9c5` full-chain run reached independent Hacker acceptance; it
+predates the sandbox and is not validation of the sandboxed chain. At `ef6a09a`,
+a real Claude Code 2.1.303 Linux probe refused Bash writes to runtime/package,
+refused Write there and network access, retained sandboxing on an unsandboxed
+retry request, and allowed ordinary project writes plus Core prepare. The
+separate 180-second native run reached Implementer completion and candidate
+freeze, then hit its deadline before an independent Hacker. It returned nonzero
+with its controller lease released; full-chain sandbox acceptance remains open.
+
+Subsequent independent review found two Core paths that undermined that policy:
+the broad task exemption could dispatch an arbitrary local executable, and a
+registered native child could submit a manual receipt. The management-only
+exemptions above close the first path. For the second, native children must use
+`task host-complete --native-receipt`; missing that flag or supplying
+`--receipt-file` returns `NATIVE_RECEIPT_REQUIRED` before state/receipt mutation.
+Other hosts retain their explicitly limited manual-receipt route. No-model
+regression checks cover both repairs; they do not replace a live full-chain run.
+
+Remaining release blocker: Git fsmonitor and clean/process filters are not
+isolated by the two diff flags. A callback script writable by the session can
+still execute outside Bash isolation; candidate --workspace also requires
+review for nested/temporary repository configuration. The trusted-host caveat
+is not an enforced prerequisite. Do not claim full sandbox integrity until this
+boundary has been closed and independently checked.

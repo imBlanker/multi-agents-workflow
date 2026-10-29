@@ -82,7 +82,9 @@ Hacker's evidence only when FILE is declared there and its bytes still hash to
 the declared value (`HACKER_EVIDENCE_UNDECLARED` / `HACKER_EVIDENCE_MODIFIED`
 otherwise). The coordinator never edits Hacker evidence; a rejected record goes
 to a new Hacker task. For a `--receipt-file` host the binding is only as strong
-as that saved return.
+as that saved return. Registered native children cannot choose that route:
+`task host-complete` requires `--native-receipt` and refuses caller-provided
+receipt files with `NATIVE_RECEIPT_REQUIRED` before changing the ledger.
 
 A Hacker may submit both evidence kinds. The minimum counts distinct actors,
 not records; actual session reuse is rejected. Existence probes, exit code,

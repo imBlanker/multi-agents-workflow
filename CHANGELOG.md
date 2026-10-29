@@ -4,17 +4,6 @@ All notable changes to **multi-agents-workflow (MAW)** are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/). Agent-oriented summary: [`docs/AGENT_CHANGELOG.md`](docs/AGENT_CHANGELOG.md).
 
-## [1.0.1] — 2026-10-26 (local candidate; unpublished)
-
-### Fixed
-
-- Windows archive operations use the system bsdtar (`%SystemRoot%\System32\tar.exe`) whatever the PATH order. Under Git Bash, MSYS GNU tar came first: `mawf components install --from-file` failed, cc-switch backups silently fell back to a plain copy, and `.tar.gz` snapshot restores failed. Extraction never falls back to GNU tar on Windows, because it writes a symlink to an existing file as a copy of that file and so bypasses the symlink-escape check. The choice lives in the platform facade (`tarCommand`). ([#43](https://github.com/imBlanker/multi-agents-workflow/issues/43))
-- Windows release checks: the A20 packed-install gate reads bsdtar's CRLF listing, installs with `--prefix` inside its own temp dir instead of walking up to an ancestor `package.json`, keeps the tarball and npm cache there, and cleans up on failure. The generic batch test fixture no longer breaks under code page 936.
-
-### Added
-
-- Regression tests: an archive symlink to an existing file outside the destination is rejected with nothing copied; a `.tar.gz` cc-switch snapshot round-trips through backup and restore; tar selection per platform adapter.
-
 ## [1.0.0] — 2026-10-14 (local candidate; unpublished)
 
 - Default all optional integrations off; explicit settings, mode registry and reversible legacy import.
@@ -30,8 +19,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 - Explicit native workspace storage and persistent Trellis lifecycle opt-out; legacy workspaces remain supported.
 - Native task/spec/artifact providers, standalone session hooks with serialized state transitions, and a framework-independent brainstorm skill.
 - Migration boundary tests and packed-install checks excluding private workspace assets.
+- Regression tests: an archive symlink to an existing file outside the destination is rejected with nothing copied; a `.tar.gz` cc-switch snapshot round-trips through backup and restore; tar selection per platform adapter.
+- Windows compatibility tests for the v1 core: path spellings, CRLF checkouts of pinned companions, npm and custom `claude.cmd` launchers, file sharing during atomic writes, and junction escapes. ([#45](https://github.com/imBlanker/multi-agents-workflow/pull/45))
 
+### Changed
+
+- The retained test suite follows the v1 contracts. Fixtures select the integrations and hosts they exercise; assertions expect the v1 JSON output and reason codes; price-gate checks happen at admission. Tests of behaviour that v1 removed (the measured USD/min guard, the batch guidance from `mawf run`, the routing line in `mawf help`) assert the v1 replacement instead. The A20 packed-install gate checks that `knowledge` is refused while unselected, then selects `knowledge` and `archify` before using them.
+- Native Claude runs execute every Bash command, subagents' included, inside Claude Code's sandbox, with no network and no write access to the MAWF state root or package; Edit deny rules keep the file tools out of both. Only explicitly listed Core management subcommands leave the sandbox; bare `run` and `task dispatch` do not. Additional user/managed grants remain part of the trusted host configuration. The sandbox must start: on Linux a native run needs bubblewrap and socat and is otherwise refused (`NATIVE_SANDBOX_UNAVAILABLE`), as is a workspace inside the MAWF package (`NATIVE_WORKSPACE_INSIDE_PACKAGE`). Queue specs go to the `inputDirectory` that `run prepare` returns (`.mawf/inputs/<run>/`); Hacker evidence goes to the directory that `run next` names (`.mawf/evidence/<run>/<task>/<attempt>/`), which counts as outside product scope.
+
+### Fixed
+
+- Native Core management commands pin the resolved Node executable and protect its directory. Candidate diffs disable external diff and textconv callbacks; trusted host tools/configuration remain a prerequisite.
+
+- Native sandbox review: restrict exemptions to management subcommands so local-process dispatch cannot inherit Core access. Registered native children require Core-captured completion events and reject manual receipts (`NATIVE_RECEIPT_REQUIRED`), preserving Hacker evidence provenance.
+- Keep the hook fixture on Node's JavaScript directory-copy path to avoid a Windows Node 22.18 native-copy crash on Unicode paths; preserve all hook assertions.
+
+- Windows archive operations use the system bsdtar (`%SystemRoot%\System32\tar.exe`) whatever the PATH order. Under Git Bash, MSYS GNU tar came first: `mawf components install --from-file` failed, cc-switch backups silently fell back to a plain copy, and `.tar.gz` snapshot restores failed. Extraction never falls back to GNU tar on Windows, because it writes a symlink to an existing file as a copy of that file and so bypasses the symlink-escape check. The choice lives in the platform facade (`tarCommand`). ([#43](https://github.com/imBlanker/multi-agents-workflow/issues/43))
+- Windows release checks: the A20 packed-install gate reads bsdtar's CRLF listing, installs with `--prefix` inside its own temp dir instead of walking up to an ancestor `package.json`, keeps the tarball and npm cache there, and cleans up on failure. The generic batch test fixture no longer breaks under code page 936.
+- Windows: the v1 core compares paths by their on-disk spelling, including drive-letter and segment case and 8.3 names. The same project no longer reads its runtime ledger as malformed, and evidence inside the product is refused under any spelling of its path. A pinned Codex/Pi companion that Git for Windows checked out with CRLF verifies; the Claude host probe starts npm's `claude.cmd`; and lock-claim and ledger writes retry the brief sharing violations Windows reports. ([#45](https://github.com/imBlanker/multi-agents-workflow/pull/45))
 - Accept server-native Windows absolute workspace paths during lazy bridge handshakes; clean up test children even when a handshake assertion fails.
+- The watchdog's rescue price valve now passes the candidate's provider identity and the project's pricing policy to the price gate. Without them every candidate was refused as `UNKNOWN_PROVIDER`, so no rescue was ever dispatched.
+- Overlay-repair error records from `mawf update` and `mawf upgrade` keep the failing `target` and the error `code` again.
+- The planner no longer writes that a ChatGPT plan covers a codex role whose price gate is blocked. A login is configuration evidence only.
+
+### Removed
+
+- The automatic rename of a pre-0.6 `.maw` project directory to `.mawf` (present in 0.6–0.8). Rename the directory by hand, or open the project once with 0.8.x, before upgrading.
 
 ## [0.8.4] - 2026-10-10
 
