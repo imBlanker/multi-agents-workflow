@@ -47,25 +47,32 @@ export function selectRescueHosts(args) {
 
 /**
  * mawf-recommended model for a rescue host, not exceeding the price valve.
- * First candidate (current provider first) within the gate wins; unknown
- * price is allowed (gate policy: not blocked) but tagged.
+ * First candidate (current provider first) within the gate wins. The v1 cost
+ * policy is identity-bound, so the candidate's provider identity and the
+ * project's own pricing policy must both reach the gate: without a providerId
+ * EVERY candidate is refused UNKNOWN_PROVIDER, and without the settings the
+ * project's thresholds, bounded unknown-price policy and recorded approvals
+ * are ignored. Unknown price is a pause by default and stays a gate-passing
+ * fallback only under an explicitly bounded policy.
  * @param {any} cc cc-switch ctx (readCcSwitch result)
  * @param {string} host rescue host
+ * @param {any} [settings] project settings (pricing policy + approvals)
  * @returns {{ model: string, providerName: string, estimated: boolean } | null}
  */
-export function pickRescueModel(cc, host) {
+export function pickRescueModel(cc, host, settings) {
   const appType = APP_TYPE[host];
   if (!appType) return null;
   const cands = candidatesForAppType(cc, appType);
+  const policy = settings ?? cc?.pricingContext?.settings;
   /** @type {any} */
   let unknownPriceFallback = null;
   for (const c of cands) {
     const price = resolvePrice(c.model, { modelPricing: cc.modelPricing });
-    const gate = checkPriceGate(c.model, price);
+    const gate = checkPriceGate(c.model, price, { providerId: c.providerId, settings: policy });
     if (gate.blocked) continue;
     const pick = { model: c.model, providerName: c.providerName || c.providerId || "", estimated: !!(price && price.estimated) };
     if (gate.priceKnown) return pick; // known + within gate wins immediately
-    if (!unknownPriceFallback) unknownPriceFallback = pick; // unknown price = gate-passing fallback only
+    if (!unknownPriceFallback) unknownPriceFallback = pick; // unknown price: only under a bounded policy
   }
   return unknownPriceFallback;
 }
@@ -282,7 +289,7 @@ export function dispatchIncident(args) {
     return { dispatched: false, reason: "hosts-exhausted" };
   }
   const host = hosts[0];
-  const modelPick = pickRescueModel(args.cc, host);
+  const modelPick = pickRescueModel(args.cc, host, args.selection);
   if (!modelPick && (host === "claude" || host === "codex")) {
     // claude/codex support per-run models — no candidate within the valve is
     // a real stop for them; pi/dsh run their configured defaults regardless
