@@ -77,8 +77,9 @@ test("runReview binds the review to the task's selected workspace and never laun
   const added = addTask({ project, stateRoot, runId: "r1", taskId: "review-1", adapter: "codex-plugin-cc", role: "reviewer", actorId: "reviewer-1", providerId: "openai", modelId: "gpt-5.2-codex", billingMode: "api" });
   assert.equal(added.ok, true);
   // the child cwd is the task's recorded workspace, taken from the run
-  // snapshot rather than a caller-supplied option
-  assert.equal(added.task.workspace, fs.realpathSync(workspace));
+  // snapshot rather than a caller-supplied option, in its on-disk spelling
+  // (Windows runners spell TEMP with 8.3 short names)
+  assert.equal(added.task.workspace, fs.realpathSync.native(workspace));
 
   // codex-plugin-cc is not selected in this project, so the review reports the
   // disabled capability instead of spawning anything

@@ -18,8 +18,10 @@ const PACKAGE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const isWin = process.platform === "win32";
 const packageRoot = "/opt/mawf", stateRoot = "/work/app/.mawf/runtime", nodePath = "/usr/bin/node";
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+// Core canonicalizes to the on-disk spelling, which expands the 8.3 short names
+// Windows runners use for TEMP; the fixtures' expected paths must do the same.
 const tmp = (t) => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mawf-sandbox-")));
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "mawf-sandbox-")));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 };
