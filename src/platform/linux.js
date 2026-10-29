@@ -43,3 +43,6 @@ export function pythonCommand(args, find = findExecutable) {
   const interpreter = find("python3") || find("python") || "python3";
   return commandText(interpreter, args);
 }
+
+// POSIX keeps the plain PATH lookup; only the Windows adapter chooses a tar.
+export const tarCommand = () => "tar";

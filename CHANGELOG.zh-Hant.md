@@ -4,6 +4,17 @@
 格式：[Keep a Changelog](https://keepachangelog.com/)；版本遵循
 [SemVer](https://semver.org/)。
 
+## [1.0.1] — 2026-10-26（本機候選，未發佈）
+
+### 修復
+
+- Windows 上的封存操作改用系統內建的 bsdtar（`%SystemRoot%\System32\tar.exe`），不再取決於 PATH 順序。此前在 Git Bash 中會先找到 MSYS GNU tar，導致 `mawf components install --from-file` 失敗、cc-switch 備份靜默退化為一般複製、`.tar.gz` 快照無法還原。Windows 上解壓縮絕不退回 GNU tar：它會把指向既有檔案的符號連結寫成該檔案的副本，從而繞過符號連結逃逸檢查。選擇邏輯位於平台門面（`tarCommand`）。（[#43](https://github.com/imBlanker/multi-agents-workflow/issues/43)）
+- Windows 發佈檢查：A20 打包安裝閘門可正確讀取 bsdtar 的 CRLF 清單，在自身暫存目錄內以 `--prefix` 安裝，不再向上落到祖先目錄的 `package.json`；封存檔與 npm 快取都留在該目錄，失敗時也會清理。通用批次檔測試夾具在字碼頁 936 下不再出錯。
+
+### 新增
+
+- 迴歸測試：指向目標目錄外既有檔案的封存符號連結會被拒絕，且不複製任何內容；`.tar.gz` cc-switch 快照可完成備份到還原的往返；各平台配接器的 tar 選擇。
+
 ## [1.0.0] — 2026-10-14（本機候選，未發佈）
 
 - 所有可選整合預設關閉，增加明確設定、模式登錄與可回復舊設定遷移。

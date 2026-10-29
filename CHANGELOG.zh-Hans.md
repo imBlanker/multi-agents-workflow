@@ -4,6 +4,17 @@
 格式：[Keep a Changelog](https://keepachangelog.com/)；版本遵循
 [SemVer](https://semver.org/)。
 
+## [1.0.1] — 2026-10-26（本地候选，未发布）
+
+### 修复
+
+- Windows 上的归档操作改用系统自带的 bsdtar（`%SystemRoot%\System32\tar.exe`），不再取决于 PATH 顺序。此前在 Git Bash 中会先找到 MSYS GNU tar，导致 `mawf components install --from-file` 失败、cc-switch 备份静默退化为普通复制、`.tar.gz` 快照无法恢复。Windows 上解压绝不回退到 GNU tar：它会把指向已有文件的符号链接写成该文件的副本，从而绕过符号链接逃逸检查。选择逻辑位于平台门面（`tarCommand`）。（[#43](https://github.com/imBlanker/multi-agents-workflow/issues/43)）
+- Windows 发布检查：A20 打包安装门禁可正确读取 bsdtar 的 CRLF 列表，在自身临时目录内用 `--prefix` 安装，不再向上落到祖先目录的 `package.json`；压缩包与 npm 缓存都留在该目录，失败时也会清理。通用批处理测试夹具在代码页 936 下不再出错。
+
+### 新增
+
+- 回归测试：指向目标目录外已有文件的归档符号链接会被拒绝，且不复制任何内容；`.tar.gz` cc-switch 快照可完成备份到恢复的往返；各平台适配器的 tar 选择。
+
 ## [1.0.0] — 2026-10-14（本地候选，未发布）
 
 - 全部可选集成默认关闭，增加显式设置、模式注册与可回滚旧配置迁移。

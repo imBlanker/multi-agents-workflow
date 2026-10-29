@@ -99,3 +99,19 @@ export function pythonCommand(args, find = findExecutable) {
   const launcher = find("py");
   return launcher ? commandText(launcher, ["-3", ...args]) : commandText("python", args);
 }
+
+// Windows ships bsdtar as %SystemRoot%\System32\tar.exe; prefer it to PATH
+// order. Git Bash puts MSYS GNU tar first, which cannot read zip, takes the
+// "C:" of an archive path for a remote host, and extracts a symlink to an
+// existing file as a copy of that file, which a symlink scan of the extracted
+// tree cannot see. Without the system tar, extraction refuses GNU tar.
+export function tarCommand({ extract = false, env = process.env, exists = fs.existsSync, runner = run } = {}) {
+  const bsdtar = path.win32.join(envValue(env, "SystemRoot") || "C:\\Windows", "System32", "tar.exe");
+  if (exists(bsdtar)) return bsdtar;
+  const fallback = findExecutable("tar", { env });
+  if (!fallback) return "tar";
+  if (extract && /GNU tar/.test(runner(fallback, ["--version"], { encoding: "utf8", env }).stdout ?? "")) {
+    throw new Error(`${bsdtar} not found, and ${fallback} is GNU tar, which is not used to extract on Windows`);
+  }
+  return fallback;
+}

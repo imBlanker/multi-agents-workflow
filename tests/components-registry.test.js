@@ -13,6 +13,12 @@ function fakeHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "maw-components-"));
 }
 
+// Run tar from the archive's own folder with a relative name: GNU tar (first
+// on PATH in Git Bash) reads the "C:" of an absolute Windows path as a remote host.
+function packTgz(archive, srcDir) {
+  execSync(`tar -czf "${path.basename(archive)}" -C "${srcDir}" .`, { cwd: path.dirname(archive) });
+}
+
 test("loadLock pins the four integration components with exact commits", () => {
   const lock = loadLock();
   const names = lock.components.map((c) => c.name);
@@ -80,7 +86,7 @@ test("install verifies digest, records state, marks development/source honestly 
     fs.writeFileSync(path.join(payloadDir, f), "// payload\n");
   }
   const tgz = path.join(home, "archify-real.tgz");
-  execSync(`tar -czf "${tgz}" -C "${payloadDir}" .`);
+  packTgz(tgz, payloadDir);
   const r2 = installComponent(archify, tgz, { home });
   assert.equal(r2.ok, true, JSON.stringify(r2));
   assert.equal(r2.state.entryValidated, true);
@@ -91,7 +97,7 @@ test("install verifies digest, records state, marks development/source honestly 
   fs.mkdirSync(path.join(badDir, "archify", "bin"), { recursive: true });
   fs.writeFileSync(path.join(badDir, "archify", "bin", "archify.mjs"), "// only entry, no closure\n");
   const badTgz = path.join(home, "archify-bad.tgz");
-  execSync(`tar -czf "${badTgz}" -C "${badDir}" .`);
+  packTgz(badTgz, badDir);
   const before = fs.readdirSync(path.join(home, ".mawf", "components", "archify")).length;
   const r3 = installComponent(archify, badTgz, { home });
   assert.equal(r3.ok, false);
@@ -142,11 +148,36 @@ test("symlink escape inside an archive is rejected and cleaned up (§14, §12.1)
   // symlink pointing OUTSIDE the extraction root
   fs.symlinkSync(path.join(home, "outside-secret"), path.join(src, "archify", "assets", "escape.lnk"));
   const tgz = path.join(home, "evil.tgz");
-  execSync(`tar -czf "${tgz}" -C "${src}" .`);
+  packTgz(tgz, src);
   const r = installComponent(archify, tgz, { home });
   assert.equal(r.ok, false, "symlink escape must fail the install");
   assert.ok((r.violations ?? []).some((v) => v.includes("symlink escape")), JSON.stringify(r));
   assert.ok(!fs.existsSync(path.join(home, ".mawf", "components", "archify")), "no component dir left behind");
+});
+
+test("symlink escape to an EXISTING outside file is rejected and nothing is copied (§14)", () => {
+  // MSYS GNU tar extracts such a link as a copy of its target, which the
+  // symlink scan cannot see; the system tar must keep it a link.
+  const lock = loadLock();
+  const home = fakeHome();
+  const archify = lock.components.find((c) => c.name === "archify");
+  const secret = path.join(home, "outside-secret");
+  fs.writeFileSync(secret, "SECRET-CONTENT");
+  const src = path.join(home, "evil-src");
+  fs.mkdirSync(path.join(src, "archify", "bin"), { recursive: true });
+  fs.mkdirSync(path.join(src, "archify", "renderers", "shared"), { recursive: true });
+  fs.mkdirSync(path.join(src, "archify", "assets"), { recursive: true });
+  fs.mkdirSync(path.join(src, "archify", "scripts"), { recursive: true });
+  for (const f of ["archify/bin/archify.mjs", "archify/renderers/x.mjs", "archify/renderers/shared/geometry.mjs", "archify/assets/template.html", "archify/assets/JetBrainsMono-OFL.txt", "archify/scripts/check-render-output.mjs", "archify/LICENSE", "archify/THIRD_PARTY_NOTICES.md"]) {
+    fs.writeFileSync(path.join(src, f), "// x\n");
+  }
+  fs.symlinkSync(secret, path.join(src, "archify", "assets", "escape.lnk"));
+  const tgz = path.join(home, "evil.tgz");
+  packTgz(tgz, src);
+  const r = installComponent(archify, tgz, { home });
+  assert.equal(r.ok, false, "symlink escape must fail the install");
+  assert.ok((r.violations ?? []).some((v) => v.includes("symlink escape")), JSON.stringify(r));
+  assert.ok(!fs.existsSync(path.join(home, ".mawf", "components", "archify")), "nothing from the archive is kept");
 });
 
 test("verifyComponent promotes only after a real doctor pass; rollback restores (§14)", () => {
@@ -165,7 +196,7 @@ test("verifyComponent promotes only after a real doctor pass; rollback restores 
   }
   fs.writeFileSync(path.join(src, "archify", "bin", "archify.mjs"), "process.exit(process.argv.includes('--fail-doctor') ? 1 : 0);\n");
   const tgz = path.join(home, "archify.tgz");
-  execSync(`tar -czf "${tgz}" -C "${src}" .`);
+  packTgz(tgz, src);
 
   assert.equal(verifyComponent(archify, { home }).ok, false, "verify before install fails");
   installComponent(archify, tgz, { home });
