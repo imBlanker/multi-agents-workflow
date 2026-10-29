@@ -35,7 +35,7 @@ export function windowsStartIdentity(pid) {
   if (pid === process.pid && selfIdentity) return selfIdentity;
   try { const value = invoke(['identity', String(pid)]); if (!/^\d+$/.test(value)) return null; if (pid === process.pid) selfIdentity = value; return value; } catch { return null; }
 }
-export function spawnWindowsJob(command, { cwd, directory, maxDurationMs, env = process.env, sandbox }) {
+export function spawnWindowsJob(command, { cwd, directory, maxDurationMs, env = process.env, sandbox, stdin = 'ignore' }) {
   const helper = jobHelper();
   const parentStart = windowsStartIdentity(process.pid);
   if (!parentStart) throw new Error('Windows controller start identity unavailable');
@@ -43,7 +43,7 @@ export function spawnWindowsJob(command, { cwd, directory, maxDurationMs, env = 
   const request = path.join(directory, `job-${crypto.randomUUID()}.json`);
   const invocation = nativeInvocation(command[0], command.slice(1));
   fs.writeFileSync(request, JSON.stringify({ command: invocation, cwd, jobName, parentPid: process.pid, parentStart, deadlineUnixMs: Date.now() + maxDurationMs, ...(sandbox ? { sandbox, childEnv: env } : {}) }), { flag: 'wx' });
-  const child = spawn(helper, ['run', request], { cwd, env: sandbox ? process.env : env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(helper, ['run', request], { cwd, env: sandbox ? process.env : env, windowsHide: true, stdio: [stdin, 'pipe', 'pipe'] });
   launches.set(child, { command: [...command], jobName });
   child.once('close', () => { try { fs.unlinkSync(request); } catch {} });
   return child;

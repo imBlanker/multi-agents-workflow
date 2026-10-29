@@ -7,7 +7,7 @@ import { updateSettings } from '../src/settings.js';
 import { createRun, addTask, runtimeStatus } from '../src/runtime.js';
 import { executeNative } from '../src/native-host.js';
 
-test('Windows native controller uses the broker, captures actual host events and releases its job', { skip: process.platform !== 'win32' }, async t => {
+async function fixture(t, maxDurationMs = 60000) {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mawf-win-host-')));
   const home = path.join(root, 'home'), bin = path.join(root, 'bin'), project = path.join(root, 'project');
   for (const dir of [home, bin, project]) fs.mkdirSync(dir);
@@ -21,6 +21,7 @@ test('Windows native controller uses the broker, captures actual host events and
   fs.writeFileSync(path.join(bin, 'fixture.cjs'), `
     const {spawn}=require('child_process');
     if(process.argv[2]==='auth'){console.log(JSON.stringify({loggedIn:true,authMethod:'oauth',apiProvider:'firstParty'}));process.exit(0);}
+    require('fs').writeFileSync(${JSON.stringify(path.join(project, 'host-started'))},'started');
     const args=process.argv.slice(2);
     if(args[args.indexOf('--tools')+1]!=='Agent,TaskOutput,TaskStop')process.exit(2);
     console.log(JSON.stringify({type:'system',subtype:'init',session_id:'fixture-host-session',model:'fixture-model'}));
@@ -46,7 +47,12 @@ test('Windows native controller uses the broker, captures actual host events and
     draft.verification.requiredCapabilities = [];
   });
   await createRun({ project, runId: 'native-windows' });
-  addTask({ project, runId: 'native-windows', taskId: 'controller', adapter: 'claude-native', coordinationOnly: true, role: 'orchestrator', providerId: 'anthropic', modelId: 'fixture-model', billingMode: 'subscription', maxDurationMs: 60000 });
+  addTask({ project, runId: 'native-windows', taskId: 'controller', adapter: 'claude-native', coordinationOnly: true, role: 'orchestrator', providerId: 'anthropic', modelId: 'fixture-model', billingMode: 'subscription', maxDurationMs });
+  return { project, runId: 'native-windows', taskId: 'controller', description: 'No-model broker integration fixture' };
+}
+
+test('Windows native controller uses the broker, captures actual host events and releases its job', { skip: process.platform !== 'win32' }, async t => {
+  const opts = await fixture(t); const { project } = opts;
   const result = await executeNative({ project, runId: 'native-windows', taskId: 'controller', description: 'No-model broker integration fixture' });
   assert.equal(result.ok, true, JSON.stringify(result));
   const state = runtimeStatus({ project, runId: 'native-windows', taskId: 'controller' });
@@ -54,4 +60,13 @@ test('Windows native controller uses the broker, captures actual host events and
   assert.equal(state.task.adapterState.sessionId, 'fixture-host-session');
   assert.equal(state.task.adapterState.selectionGate.allowed, true);
   assert.equal(fs.readFileSync(path.join(project, 'artifact.txt'), 'utf8'), 'sandboxed native tool');
+});
+
+test('failed Windows preflight restores placeholders and never starts a model host', { skip: process.platform !== 'win32' }, async t => {
+  const opts = await fixture(t, 1);
+  const result = await executeNative(opts);
+  assert.equal(result.ok, false);
+  assert.equal(result.modelCallMade, false);
+  assert.equal(runtimeStatus(opts).leases[0].status, 'released');
+  for (const file of ['.git', '.claude', 'host-started']) assert.equal(fs.existsSync(path.join(opts.project, file)), false, file);
 });

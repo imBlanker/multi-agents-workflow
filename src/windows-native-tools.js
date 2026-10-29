@@ -2,12 +2,16 @@
 // Model commands enter AppContainer; only named Core management argv leave it.
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { spawnWindowsJob } from './platform/index.js';
+import { spawnWindowsJob, jobHelper } from './platform/index.js';
 import { comparablePath } from './platform/index.js';
 
 export const CORE_ACTIONS = new Set(['run prepare', 'run queue', 'run next', 'run respec', 'task bind', 'task heartbeat', 'task result', 'task host-complete', 'task candidate', 'task evidence', 'task accept', 'task acceptance', 'task status', 'task list']);
 const within = (root, file) => { const r = comparablePath(root), f = comparablePath(file); return f === r || f.startsWith(r + path.sep); };
+export function assertWindowsToolLocations(workspace) {
+  if (within(workspace, os.tmpdir()) || within(workspace, path.dirname(jobHelper()))) throw new Error('Native Windows TEMP and privileged helper storage must be outside the writable workspace');
+}
 export function validateCoreArgs(args, policy) {
   if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string' || arg.includes('\0')) || !CORE_ACTIONS.has(args.slice(0, 2).join(' '))) throw new Error('Only named Core management operations are allowed');
   const flags = new Set(['project', 'state-root', 'run-id', 'json', 'task-id', 'lease-id', 'token', 'actor-id', 'attempt', 'job-id', 'session-id', 'resolved-model', 'progress', 'waiting-external', 'status', 'result-json', 'native-receipt', 'workspace', 'scope-json', 'artifacts-json', 'input', 'request-ref', 'host-managed']);
@@ -30,7 +34,7 @@ export function validateCoreArgs(args, policy) {
 export function shellEnvironment(policy) {
   const env = {};
   for (const key of ['SystemRoot', 'SystemDrive', 'WINDIR', 'COMSPEC', 'PATHEXT', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA']) if (process.env[key]) env[key] = process.env[key];
-  return { ...env, HOME: policy.workspace, TEMP: policy.temp, TMP: policy.temp, PATH: policy.commandPaths.join(path.delimiter), MSYS_NO_PATHCONV: '1' };
+  return { ...env, HOME: policy.workspace, TEMP: policy.temp, TMP: policy.temp, PATH: policy.commandPaths.join(path.delimiter), NODE_OPTIONS: '--preserve-symlinks --preserve-symlinks-main' };
 }
 function collect(child) {
   return new Promise((resolve, reject) => {
@@ -46,6 +50,7 @@ function collect(child) {
   });
 }
 export async function runWindowsTool(name, input, policy) {
+  assertWindowsToolLocations(policy.workspace);
   if (name === 'core') {
     const args = validateCoreArgs(input.args, policy);
     return collect(spawn(policy.nodePath, [policy.entry, ...args], { cwd: policy.workspace, env: { ...process.env, MAWF_NATIVE_RUN_CONTEXT: JSON.stringify(policy.context) }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 }));

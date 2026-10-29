@@ -27,6 +27,13 @@ authorized workspace as `mawf:`. Use relative paths with file cmdlets, or
 `(Get-Location).ProviderPath` with .NET file APIs. OS-provided AppContainer storage
 is also available. Access to arbitrary installed developer tools is not implied.
 
+TEMP and all privileged helper storage must be outside the writable workspace;
+this is checked before model launch and independently by both broker tools.
+Missing .git metadata gets a temporary protected reference that preserves an
+ancestor repository HEAD; only owned, unchanged placeholders are removed on
+success/failure. Windows shell Node processes preserve symlink paths for module
+loading so they need no additional drive-root metadata grant.
+
 The helper uses inbox 64-bit .NET Framework's C# compiler and Windows PowerShell.
 Failure to compile, establish identity, create an AppContainer, apply ACLs, or
 assign a job fails the operation; it never retries without isolation. Shell
@@ -54,7 +61,10 @@ Real Windows tests exercise argument fidelity, fast exits, detached grandchildre
 deadlines, local task completion/release, protected and outside writes, denied TCP,
 PowerShell file operations, and exact ACL restoration after killing the helper.
 The controller/MCP integration test uses a fake Claude CLI and real Windows jobs;
-it makes no model call and is not a Windows live acceptance claim. See
+it makes no model call and is not a Windows model-generated acceptance claim.
+A separate real Claude Code 2.1.295 control-protocol probe loaded this plugin and
+MCP tools, called Core task list and an AppContainer PowerShell tool that wrote
+the expected artifact, then exited 0. It sent no user prompt or model request. See
 V1_RELEASE_STATUS.md for final CI and any live evidence.
 
 External Pi/Codex background companions and Pi Autoresearch still lack their own

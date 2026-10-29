@@ -12,8 +12,9 @@ import { processIdentity, stateError, assertSafePath, writeAtomic } from './atom
 import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed } from './runtime.js';
 import { signalKnownBackend } from './local-runtime.js';
 import { storeNativeRequest, validateNativeDescription } from './native-request.js';
-import { windowsNativePrerequisites, prepareWindowsNative, windowsNativeArgs, verifyWindowsBoundary } from './windows-native.js';
-import { spawnWindowsJob, windowsLaunch, recoverWindowsSandbox } from './platform/index.js';
+import { windowsNativePrerequisites, prepareWindowsNative, windowsNativeArgs, verifyWindowsBoundary, cleanupWindowsNative } from './windows-native.js';
+import { assertWindowsToolLocations } from './windows-native-tools.js';
+import { spawnWindowsJob, windowsLaunch } from './platform/index.js';
 export function nativeHostCapability(settings, project) {
   const selected = isEnabled(settings, 'host.claude-code');
   const base = { host: 'claude-code', selected, installed: false, authenticated: 'unknown', compatible: 'unknown', ready: false, verificationStatus: 'unverified', actualBillingMode: 'unknown', actualProvider: null };
@@ -90,6 +91,7 @@ export async function executeNative(opts) {
   const state = runtimeStatus(opts), task = state.task;
   if (workspaceInsidePackage(task.workspace)) return { ok: false, reasonCode: 'NATIVE_WORKSPACE_INSIDE_PACKAGE', reason: 'The native sandbox keeps the MAWF package read-only, so the workspace cannot be inside it; run an installed MAWF package outside the workspace' };
   if (windows && (workspaceInsidePackage(PACKAGE_ROOT, task.workspace) || workspaceInsidePackage(fs.realpathSync.native(process.execPath), task.workspace))) return { ok: false, reasonCode: 'NATIVE_SANDBOX_INSTALL_INSIDE_WORKSPACE', reason: 'Native Windows Core and Node must be installed outside the writable workspace' };
+  if (windows) { try { assertWindowsToolLocations(task.workspace); } catch (error) { return { ok: false, reasonCode: 'NATIVE_SANDBOX_HELPER_IN_WORKSPACE', reason: error.message, modelCallMade: false }; } }
   // Validate host rule paths before consuming a lease.
   if (!windows) nativeSandboxPolicy({ packageRoot: PACKAGE_ROOT, stateRoot: state.stateRoot });
   const capability = nativeHostCapability(state.run.snapshot.settings, task.workspace);
@@ -113,6 +115,10 @@ export async function executeNative(opts) {
       windowPolicy = prepareWindowsNative({ state, identity, packageRoot: PACKAGE_ROOT, shell: windows.shell, deadlineAt, requestRef });
       recordAdapterState(identity, { windowsPreflight: await verifyWindowsBoundary(windowPolicy.policy, PACKAGE_ROOT) });
     } catch (error) {
+      if (windowPolicy) {
+        try { cleanupWindowsNative(windowPolicy.policy); }
+        catch (cleanupError) { return { ok: false, reasonCode: 'SANDBOX_CLEANUP_UNCONFIRMED', reason: cleanupError.message, modelCallMade: false, resourcesMayRemainReserved: true }; }
+      }
       return { ...markLaunchFailed({ ...identity, error: { code: 'NATIVE_SANDBOX_UNAVAILABLE', message: error.message } }), ok: false, reasonCode: 'NATIVE_SANDBOX_UNAVAILABLE', reason: error.message, modelCallMade: false };
     }
   }
@@ -143,7 +149,7 @@ export async function executeNative(opts) {
     interval = setInterval(() => { try { const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); if (lease.cancelRequestedAt) void cancel(); else heartbeat(identity); } catch { void cancel(); } }, 1000); deadline = setTimeout(() => { void cancel(); }, Math.max(1, deadlineAt - Date.now())); });
   const exit = await new Promise(resolve => { child.once('error', error => resolve({ code: null, error: error.message })); child.once('close', (code, signal) => resolve({ code, signal })); });
   clearInterval(interval); clearTimeout(deadline); process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
-  if (windowPolicy) recoverWindowsSandbox(windowPolicy.policy.recoveryFile);
+  if (windowPolicy) cleanupWindowsNative(windowPolicy.policy);
   if (exit.error && !child.pid) return { ...markLaunchFailed({ ...identity, error: { code: 'NATIVE_SPAWN_FAILED', message: exit.error } }), ok: false, produced: false, reasonCode: 'NATIVE_SPAWN_FAILED' };
   if (runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId)?.status === 'released') return { ok: false, reasonCode: 'NATIVE_CANCELLED_OR_DEADLINE', outputPath, resourcesReleased: true };
   const produced = exit.code === 0 && resultEvent && resultEvent.is_error !== true;

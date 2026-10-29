@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { jobHelper, spawnWindowsJob } from './platform/index.js';
+import { jobHelper, spawnWindowsJob, recoverWindowsSandbox, execFile } from './platform/index.js';
 import { assertSafePath, writeAtomic } from './atomic-state.js';
 import crypto from 'node:crypto';
 import net from 'node:net';
@@ -21,18 +21,28 @@ export function prepareWindowsNative({ state, identity, packageRoot, shell, dead
   assertSafePath(temp); fs.mkdirSync(temp, { recursive: true });
   // Host settings and repository execution hooks must not be editable by a shell.
   const protectedPaths = [path.join(workspace, '.claude'), path.join(workspace, '.git')];
-  const createdProtectedDirectories = [];
-  for (const dir of protectedPaths) { assertSafePath(dir); if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); createdProtectedDirectories.push(dir); } }
+  const createdProtectedDirectories = [], createdProtectedFiles = [];
   const nodePath = fs.realpathSync.native(process.execPath);
   // The broker executes trusted Core outside the sandbox. Its installed paths
   // are not granted to shell commands and need no WRITE_DAC permissions.
   const toolsDirectory = path.join(controlDirectory, 'tools');
   assertSafePath(toolsDirectory); fs.mkdirSync(toolsDirectory, { recursive: true });
   fs.copyFileSync(nodePath, path.join(toolsDirectory, 'node.exe'));
+  try {
+    for (const file of protectedPaths) {
+      assertSafePath(file); if (fs.existsSync(file)) continue;
+      if (path.basename(file) === '.git') {
+        let gitDir = null;
+        try { gitDir = execFile('git', ['-c', 'core.fsmonitor=false', '-c', 'protocol.allow=never', '-C', workspace, 'rev-parse', '--absolute-git-dir'], { encoding: 'utf8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } }).trim(); } catch {}
+        if (gitDir && /[\r\n]/.test(gitDir)) throw new Error('Git metadata path contains a newline');
+        const contents = gitDir ? `gitdir: ${gitDir.replaceAll('\\', '/')}\n` : '# MAWF temporary protected non-repository marker\n';
+        fs.writeFileSync(file, contents, { flag: 'wx' }); createdProtectedFiles.push({ file, contents });
+      } else { fs.mkdirSync(file); createdProtectedDirectories.push(file); }
+    }
   const readPaths = [toolsDirectory];
   const context = { project: state.run.snapshot.authorityProject, runId: state.task.runId, stateRoot: identity.stateRoot, controllerLeaseId: identity.leaseId };
   const policy = { project: context.project, workspace, stateRoot: identity.stateRoot, runId: state.task.runId, controlDirectory, nodePath, entry: path.join(packageRoot, 'bin', 'mawf.js'), shell, temp, readPaths,
-    sealed: [...new Set([identity.stateRoot, ...protectedPaths])], deadlineAt, context, requestRef, createdProtectedDirectories };
+    sealed: [...new Set([identity.stateRoot, ...protectedPaths])], deadlineAt, context, requestRef, createdProtectedDirectories, createdProtectedFiles };
   policy.commandPaths = [toolsDirectory, path.dirname(shell), path.join(process.env.SystemRoot, 'System32')];
   const journalDirectory = path.join(identity.stateRoot, 'windows-acl');
   assertSafePath(journalDirectory); fs.mkdirSync(journalDirectory, { recursive: true });
@@ -41,6 +51,23 @@ export function prepareWindowsNative({ state, identity, packageRoot, shell, dead
   const policyFile = path.join(controlDirectory, 'policy.json'); writeAtomic(policyFile, policy);
   const server = fileURLToPath(new URL('./windows-native-server.js', import.meta.url));
   return { policy, mcpConfig: { mcpServers: { mawf_windows: { command: nodePath, args: [server, policyFile] } } } };
+  } catch (error) { cleanupWindowsPlaceholders({ createdProtectedDirectories, createdProtectedFiles }); throw error; }
+}
+function cleanupWindowsPlaceholders(policy) {
+  for (const { file, contents } of policy.createdProtectedFiles || []) {
+    assertSafePath(file);
+    if (!fs.existsSync(file)) continue;
+    if (fs.readFileSync(file, 'utf8') !== contents) throw new Error('Temporary Git protection changed; refusing to remove it');
+    fs.unlinkSync(file);
+  }
+  for (const dir of policy.createdProtectedDirectories || []) {
+    assertSafePath(dir);
+    try { fs.rmdirSync(dir); } catch (error) { if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error; }
+  }
+}
+export function cleanupWindowsNative(policy) {
+  recoverWindowsSandbox(policy.recoveryFile);
+  cleanupWindowsPlaceholders(policy);
 }
 export function windowsNativeArgs({ requestRef, packageRoot, modeId, modelId, mcpConfig }) {
   const instructions = 'Registered native Windows MAWF run. Use mcp__mawf_windows__core for EVERY Core management call, with an args array beginning with run/task and the subcommand (never a shell prefix). Begin with run prepare --host-managed --request-ref ' + requestRef + '. Use mcp__mawf_windows__shell for all reading, writing, editing, searching and tests. Its command is Windows PowerShell syntax inside Windows AppContainer with no network. The workspace uses the mawf: PowerShell drive; use PowerShell file cmdlets with relative paths, or (Get-Location).ProviderPath for .NET paths. Native Bash/PowerShell/Read/Edit/Write tools are intentionally absent. Pass this tool contract to every child Agent. Protected ledger/package/interpreter/.claude/.git paths are read-only. Follow the original role and independent evidence requirements.';
