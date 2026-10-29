@@ -288,9 +288,10 @@ chain under the sandbox in 456.8 seconds with CLI exit 0: Implementer, candidate
 freeze, an independent native Hacker, two evidence records registered from the
 Hacker's own declarations, and acceptance with `ACCEPTANCE_REQUIREMENTS_MET`.
 greeting.txt held exactly the 25 oracle bytes, all three leases were released,
-both Core-captured receipts were intact and no process remained. All 15 Core
-calls used the supplied unquoted prefix. One call that wrote its input with a
-heredoc in the same Bash command stayed sandboxed and returned EROFS, and one
+both Core-captured receipts were intact and no process remained. The session
+made 17 Core calls: all 16 standalone calls used the supplied unquoted prefix
+and ran outside the sandbox, while one that followed a heredoc in the same Bash
+command stayed sandboxed and returned EROFS. One standalone
 `task evidence` call named the coordinator's own wrapper file instead of a
 Hacker record and was rejected with INVALID_EVIDENCE; the session then
 registered both Hacker files unchanged. Claude Code created an empty
