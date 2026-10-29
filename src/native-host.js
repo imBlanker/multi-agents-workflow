@@ -145,7 +145,7 @@ export async function executeNative(opts) {
   process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
   child.once('spawn', () => { bindJob({ ...identity, process: processIdentity(child.pid), processGroup: windows ? null : child.pid, windowsJob: windowsLaunch(child)?.jobName, jobId: `claude-process:${child.pid}` });
     const keeperFile = path.join(directory, 'deadline.json'); writeAtomic(keeperFile, { identity, deadlineAt });
-    const keeper = spawn(process.execPath, [fileURLToPath(new URL('./native-deadline.js', import.meta.url)), keeperFile], { detached: true, stdio: 'ignore' }); keeper.unref();
+    const keeper = spawn(process.execPath, [fileURLToPath(new URL('./native-deadline.js', import.meta.url)), keeperFile], { detached: true, stdio: 'ignore', windowsHide: true }); keeper.unref();
     recordAdapterState(identity, { deadlineAt: new Date(deadlineAt).toISOString(), deadlineKeeperPid: keeper.pid, deadlineKeeper: 'independent_of_cli_controller', ...(windowPolicy ? { windowsRecoveryFile: windowPolicy.policy.recoveryFile } : {}) });
     interval = setInterval(() => { try { const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); if (lease.cancelRequestedAt) void cancel(); else heartbeat(identity); } catch { void cancel(); } }, 1000); deadline = setTimeout(() => { void cancel(); }, Math.max(1, deadlineAt - Date.now())); });
   const exit = await new Promise(resolve => { child.once('error', error => resolve({ code: null, error: error.message })); child.once('close', (code, signal) => resolve({ code, signal })); });

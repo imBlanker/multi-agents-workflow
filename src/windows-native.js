@@ -60,10 +60,11 @@ export function prepareWindowsNative({ state, identity, packageRoot, shell, dead
 }
 function cleanupWindowsPlaceholders(policy) {
   for (const { file, contents } of policy.createdProtectedFiles || []) {
-    assertSafePath(file);
-    if (!fs.existsSync(file)) continue;
-    if (fs.readFileSync(file, 'utf8') !== contents) throw new Error('Temporary Git protection changed; refusing to remove it');
-    fs.unlinkSync(file);
+    try {
+      assertSafePath(file);
+      if (fs.readFileSync(file, 'utf8') !== contents) throw new Error('Temporary Git protection changed; refusing to remove it');
+      fs.unlinkSync(file);
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   for (const dir of policy.createdProtectedDirectories || []) {
     assertSafePath(dir);

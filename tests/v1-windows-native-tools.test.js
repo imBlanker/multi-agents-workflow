@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runWindowsTool, validateCoreArgs, assertWindowsToolLocations } from '../src/windows-native-tools.js';
-import { windowsNativeArgs, prepareWindowsNative } from '../src/windows-native.js';
+import { windowsNativeArgs, prepareWindowsNative, cleanupWindowsNative } from '../src/windows-native.js';
 import { execFileSync } from 'node:child_process';
 
 test('Windows native host exposes only broker tools and keeps Core argv scoped', () => {
@@ -64,4 +64,25 @@ test('nested Git workspace is refused without changing repository discovery', { 
   assert.equal(fs.existsSync(path.join(workspace, '.git')), false);
   assert.equal(fs.existsSync(path.join(workspace, '.claude')), false);
   assert.equal(git(['-C', workspace, 'rev-parse', 'HEAD']), before);
+});
+
+test('simultaneous native cleanup tolerates a placeholder removed after path checking', { skip: process.platform !== 'win32' }, t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mawf-win-clean-race-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 }));
+  const file = path.join(root, '.git'), recoveryFile = path.join(root, 'recovery.json');
+  fs.writeFileSync(file, 'owned-marker');
+  fs.writeFileSync(recoveryFile, JSON.stringify({ write: [root], journalDirectory: root }));
+  const policy = { recoveryFile, createdProtectedFiles: [{ file, contents: 'owned-marker' }] };
+  const original = fs.readFileSync; let raced = false;
+  fs.readFileSync = function (target, ...args) {
+    if (target === file && !raced) { raced = true; fs.unlinkSync(file); }
+    return original.call(this, target, ...args);
+  };
+  try { assert.doesNotThrow(() => cleanupWindowsNative(policy)); }
+  finally { fs.readFileSync = original; }
+  assert.equal(raced, true);
+  assert.doesNotThrow(() => cleanupWindowsNative(policy));
+  fs.writeFileSync(file, 'user-changed');
+  assert.throws(() => cleanupWindowsNative(policy), /changed/);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'user-changed');
 });
