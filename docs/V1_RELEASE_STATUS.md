@@ -100,8 +100,8 @@ are not Ubuntu Node22/24 CI evidence. The final four GitHub CI jobs remain pendi
 
 The A20 packed-install gate was migrated to assert rejection of unselected
 knowledge, then explicitly select knowledge and archify before exercising them.
-The final Windows Node24 gate passed, auditing 249 files; Linux results are
-recorded with the package verification evidence;
+The final Windows Node24 and Linux Node25 gates both passed, each auditing
+249 files and completing isolated installation and selected-feature checks;
 the earlier failure under the old implicit-selection assumption remains historical.
 
 ## Remaining release gates and limits
