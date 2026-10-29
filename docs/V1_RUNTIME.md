@@ -78,9 +78,9 @@ and process-group tracking are not an OS security sandbox. Model reservations
 consume the shared W03 selection gate. Host-managed bindings currently lack an
 adapter-confirmed stop/resume protocol, so cancellation/recovery is unsupported
 where the backend cannot be verified, and bounds-dependent unknown-price model
-execution is denied until a capable adapter is connected. Windows process-tree
-identity/cancellation remains unsupported/unverified; no Unix claim is projected
-onto that platform.
+execution is denied until a capable adapter is connected. Windows local-process and native Claude controllers use creation identities and
+non-breakaway Job Objects with empty-job verification before release. External
+companion and Pi experiment transports remain unsupported on Windows. See V1_WINDOWS.md.
 
 Old top-level acquire/release/guard use the same ledger. `--id` can alias an
 existing task only with explicit run identity; releasing also requires the exact

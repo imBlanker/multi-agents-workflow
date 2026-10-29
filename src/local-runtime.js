@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { spawnWindowsJob, windowsLaunch, stopWindowsJob } from './platform/windows-process.js';
 import { processIdentity, processAlive, stateError, assertSafePath } from './atomic-state.js';
 import { acquireTask, claimLocalLaunch, bindJob, heartbeat, reportResult, releaseLease, markCancelPending, markLaunchFailed, runtimeStatus, linuxProcess, backendStopped, observeLocalExit } from './runtime.js';
 
@@ -13,6 +14,7 @@ function currentLease(opts) {
 }
 export function signalKnownBackend(lease, signal) {
   if (!lease.ownerProcess) return { sent: false, reason: 'No backend binding; launch may be running elsewhere' };
+  if (process.platform === 'win32') return stopWindowsJob(lease);
   if (process.platform !== 'linux') return { sent: false, reason: 'Identity-safe process-tree signaling is unsupported on this platform' };
   const actual = linuxProcess(lease.ownerProcess.pid);
   if (actual && actual.startIdentity !== lease.ownerProcess.startIdentity) return { sent: false, reason: 'PID was reused; the new process must not be signaled' };
@@ -64,7 +66,9 @@ export async function dispatchLocal(opts) {
   const maxOutputBytes = 8 * 1024 * 1024;
   const counts = { stdout: 0, stderr: 0, truncated: false };
   let child;
-  try { child = spawn(task.command[0], task.command.slice(1), { cwd: task.workspace, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], shell: false }); }
+  try { child = process.platform === 'win32'
+    ? spawnWindowsJob(task.command, { cwd: task.workspace, directory, maxDurationMs: task.maxDurationMs })
+    : spawn(task.command[0], task.command.slice(1), { cwd: task.workspace, detached: true, stdio: ['ignore', 'pipe', 'pipe'], shell: false }); }
   catch (error) { fs.closeSync(outFd); fs.closeSync(errFd); markLaunchFailed({ ...identity, error: { code: error.code, message: error.message } }); throw error; }
   const capture = (channel, fd) => chunk => { const bytes = Math.min(chunk.length, Math.max(0, maxOutputBytes - counts[channel])); if (bytes) fs.writeSync(fd, chunk.subarray(0, bytes)); counts[channel] += bytes; if (bytes < chunk.length) counts.truncated = true; };
   child.stdout.on('data', capture('stdout', outFd)); child.stderr.on('data', capture('stderr', errFd));
@@ -74,7 +78,7 @@ export async function dispatchLocal(opts) {
     child.once('spawn', () => {
       try {
         const process = processIdentity(child.pid);
-        bindJob({ ...identity, process, processGroup: process.platform === 'linux' ? child.pid : null });
+        bindJob({ ...identity, process, processGroup: process.platform === 'linux' ? child.pid : null, windowsJob: windowsLaunch(child)?.jobName });
         interval = setInterval(() => {
           try {
             const lease = currentLease(identity);
@@ -84,7 +88,7 @@ export async function dispatchLocal(opts) {
         }, 1000);
         deadline = setTimeout(() => { void cancel(); }, task.maxDurationMs);
       } catch (error) {
-        if (linuxProcess(child.pid)) { spawnError = error; void cancel(); }
+        if (processAlive(processIdentity(child.pid)) === true) { spawnError = error; void cancel(); }
         // A very fast child can exit before /proc binding. Its actual close
         // event below supplies a scoped exit receipt; it is not 'not started'.
       }

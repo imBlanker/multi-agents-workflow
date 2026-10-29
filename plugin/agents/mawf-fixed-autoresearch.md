@@ -2,7 +2,7 @@
 name: mawf-fixed-autoresearch
 description: Fixed mode 1 autoresearch role; follow the supplied run snapshot and exact task specification
 model: inherit
-tools: Read, Grep, Glob, Bash, Edit, Write
+tools: Read, Grep, Glob, Bash, Edit, Write, mcp__mawf_windows__core, mcp__mawf_windows__shell
 ---
 
 # fixed mode 1 — Autoresearch worker

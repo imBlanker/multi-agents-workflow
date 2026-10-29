@@ -141,10 +141,7 @@ test("upgrade orders MAWF, Trellis CLI, then overlay repair", async (t) => {
   assert.equal(order[0][1].tag, "beta");
 });
 
-// Known 1.0.0 gap, kept visible instead of deleted: both lifecycles hand their
-// whole option object (MAWF-only --force/--tag and the resolved settings
-// included) to the Trellis runner. Today's runner reads none of those keys.
-test("MAWF-only lifecycle flags stay out of the Trellis runner", { todo: "1.0.0 passes the full option object to the Trellis runner; isolating it is tracked for 1.0.x" }, async (t) => {
+test("MAWF-only lifecycle flags stay out of the Trellis runner", async (t) => {
   const dir = project(t);
   const seen = [];
   const deps = {
@@ -153,10 +150,12 @@ test("MAWF-only lifecycle flags stay out of the Trellis runner", { todo: "1.0.0 
     runTrellis: (opts) => { seen.push(opts); return { stage: `trellis ${opts.command}`, ok: true }; },
     repairOverlays: () => ({ repaired: 0 }),
   };
-  await runUpdateLifecycle({ project: dir, force: true }, deps);
-  await runUpgradeLifecycle({ project: dir, tag: "beta" }, deps);
+  const controls = { dryRun: true, stdinIsTTY: false, stdoutIsTTY: false, timeoutMs: 1000 };
+  await runUpdateLifecycle({ project: dir, force: true, settings: {}, installStateDir: 'private', futureFlag: true, ...controls }, deps);
+  await runUpgradeLifecycle({ project: dir, tag: "beta", applyTemplates: false, settings: {}, ...controls }, deps);
   assert.equal("force" in seen[0], false, "MAWF --force must not cross into Trellis");
   assert.equal("tag" in seen[1], false, "MAWF --tag must not cross into Trellis");
+  assert.deepEqual(seen, [{ project: dir, command: 'update', ...controls }, { project: dir, command: 'upgrade', ...controls }]);
 });
 
 test("MAWF upgrade failure prevents every Trellis stage", async (t) => {

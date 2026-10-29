@@ -32,7 +32,9 @@ function inventory(root, scopes) {
     if (path.relative(root, target).split(path.sep).some(name => EXCLUDED.has(name))) throw stateError('EXCLUDED_CANDIDATE_SCOPE', 'Runtime/evidence/dependency caches are not product scope');
     visit(target, true);
   }
-  return [...files.values()].sort((a, b) => a.path.localeCompare(b.path));
+  // Use the same UTF-16 code-unit order as scope/artifact sorting. ICU locale
+  // collation differs across hosts, which would change the frozen candidate hash.
+  return [...files.values()].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 }
 export function candidateIdentity(run, opts = {}) {
   const workspace = fs.realpathSync(path.resolve(opts.workspace || run.snapshot.workspace));

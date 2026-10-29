@@ -4,7 +4,12 @@
 格式：[Keep a Changelog](https://keepachangelog.com/)；版本遵循
 [SemVer](https://semver.org/)。
 
-## [1.0.0] — 2026-10-14（本機候選，未發佈）
+## [1.0.0] — 2026-10-29
+
+- 新增純原生 Windows Job Object 程序控制和 AppContainer MCP 工具，不需 WSL；先決條件和驗證範圍見 docs/V1_WINDOWS.md。
+- Trellis runner 使用明確參數白名單，不再接收 MAWF 專屬參數。
+- 候選清單使用固定 UTF-16 字元順序；舊候選可能漂移，需重新凍結並產生證據。
+- advise/archify 夾具逐項清理；標準套件擁有並回收整棵暫存目錄，失敗時也清理。
 
 - 所有可選整合預設關閉，增加明確設定、模式登錄與可回復舊設定遷移。
 - 分離 dynamic/fixed-1 計畫，保護使用者覆寫與產生檔案所有權，凍結主任務政策快照。

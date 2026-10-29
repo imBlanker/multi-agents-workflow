@@ -106,7 +106,7 @@ credential-stripped environments and a PATH without real agent CLIs. The harness
 records no external writes, no remaining related processes, no canary calls and
 unchanged real-home npm files. Linux uses a fresh clone, isolated HOME/USERPROFILE,
 and rejecting stubs for real hosts and external installers. Node25 Linux results
-are not Ubuntu Node22/24 CI evidence. The final four GitHub CI jobs remain pending.
+are not Ubuntu Node22/24 CI evidence. The four GitHub CI jobs passed at 68eeeb1 (run 40932372789). After #46 merged, Ubuntu Node22/24 passed at 1d36fde (run 40934219914); that merge has the same file tree. These results precede the final Windows-native and cleanup scope added below.
 
 The A20 packed-install gate was migrated to assert rejection of unselected
 knowledge, then explicitly select knowledge and archify before exercising them.
@@ -120,9 +120,7 @@ the earlier failure under the old implicit-selection assumption remains historic
   2.1.303, in a project without commits. Another Claude Code version may match
   exemptions differently; a mismatch fails closed, with Core calls returning
   EROFS rather than running outside the sandbox.
-- Push/PR/CI actions, PR #42 body refresh and a green Ubuntu/Windows Node22/24
-  matrix remain separate maintainer steps. Main merge, tag and npm publish have
-  not been performed. Existing oversized modules remain a documented review item.
+- PRs #44, #45 and #46 are merged into #42, and its body and CI are current at 1d36fde. The maintainer authorized final fixes, review and publication on 2026-10-29. Main merge, tag and npm publish still await completion of those checks. Existing oversized modules remain a documented review item.
 - Windows continues to refuse local-process and companion admission without a
   verified PID start identity. Native controlled execution remains Linux-only.
 - The installed Codex custom provider lacks applicable pricing/billing evidence;
@@ -133,3 +131,7 @@ the earlier failure under the old implicit-selection assumption remains historic
   widen host permissions; hooks and other host processes run outside Bash isolation.
 - Earlier W09 negative checks stopped by automatic content review remain unverified;
   no absent evidence was transferred or self-accepted to fill those gaps.
+
+## Final release scope added 2026-10-29
+
+Pure native Windows controlled execution and process control, Trellis option isolation, deterministic inventory ordering, and temporary fixture cleanup are now required for 1.0.0. Their implementation and validation are pending; earlier test evidence does not certify them. Pricing behavior is unchanged. A CSV model/reasoning-effort authorization redesign is planned for 1.0.1.

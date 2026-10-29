@@ -6,12 +6,14 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { findExecutable, execFile } from './platform/index.js';
+import { findExecutable, execFile, nativeInvocation } from './platform/index.js';
 import { isEnabled } from './integrations.js';
 import { processIdentity, stateError, assertSafePath, writeAtomic } from './atomic-state.js';
 import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed } from './runtime.js';
 import { signalKnownBackend } from './local-runtime.js';
 import { storeNativeRequest, validateNativeDescription } from './native-request.js';
+import { windowsNativePrerequisites, prepareWindowsNative, windowsNativeArgs } from './windows-native.js';
+import { spawnWindowsJob, windowsLaunch, recoverWindowsSandbox } from './platform/windows-process.js';
 export function nativeHostCapability(settings, project) {
   const selected = isEnabled(settings, 'host.claude-code');
   const base = { host: 'claude-code', selected, installed: false, authenticated: 'unknown', compatible: 'unknown', ready: false, verificationStatus: 'unverified', actualBillingMode: 'unknown', actualProvider: null };
@@ -79,16 +81,19 @@ export function nativeLaunchArgs({ requestRef, packageRoot, stateRoot, modeId, a
   return ['-p', `/mawf:run --request-ref ${requestRef}`, '--plugin-dir', path.join(packageRoot, 'plugin'), '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--forward-subagent-text', '--include-hook-events', '--permission-mode', modeId === 'fixed-1' ? 'acceptEdits' : 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--tools', 'default', '--append-system-prompt', coreInstruction, '--settings', JSON.stringify(sandbox.settings), '--allowedTools', ...allowedTools, '--disallowedTools', ...sandbox.disallowedTools, ...(modeId === 'fixed-1' ? ['--agent', 'mawf:mawf-fixed-orchestrator'] : []), '--model', modelId];
 }
 export async function executeNative(opts) {
-  if (process.platform !== 'linux') return { ok: false, reasonCode: 'NATIVE_PROCESS_CONTROL_UNSUPPORTED', reason: 'This native process-tree controller is verified only for Linux' };
-  const missing = NATIVE_SANDBOX_TOOLS.filter(name => !findExecutable(name));
+  if (!['linux', 'win32'].includes(process.platform)) return { ok: false, reasonCode: 'NATIVE_PROCESS_CONTROL_UNSUPPORTED', reason: 'Native execution requires Linux or Windows' };
+  const windows = process.platform === 'win32' ? windowsNativePrerequisites() : null;
+  if (windows && !windows.ok) return windows;
+  const missing = process.platform === 'linux' ? NATIVE_SANDBOX_TOOLS.filter(name => !findExecutable(name)) : [];
   if (missing.length) return { ok: false, reasonCode: 'NATIVE_SANDBOX_UNAVAILABLE', reason: `Native runs need the Claude Code Bash sandbox, which needs bubblewrap and socat; missing: ${missing.join(', ')}` };
   validateNativeDescription(opts.description || '');
   const state = runtimeStatus(opts), task = state.task;
   if (workspaceInsidePackage(task.workspace)) return { ok: false, reasonCode: 'NATIVE_WORKSPACE_INSIDE_PACKAGE', reason: 'The native sandbox keeps the MAWF package read-only, so the workspace cannot be inside it; run an installed MAWF package outside the workspace' };
   // Validate host rule paths before consuming a lease.
-  nativeSandboxPolicy({ packageRoot: PACKAGE_ROOT, stateRoot: state.stateRoot });
+  if (!windows) nativeSandboxPolicy({ packageRoot: PACKAGE_ROOT, stateRoot: state.stateRoot });
   const capability = nativeHostCapability(state.run.snapshot.settings, task.workspace);
   enforceNativeBilling(capability, task.selection);
+  const invocation = windows ? nativeInvocation(capability.binary) : null;
   recordNativeBilling(opts, capability);
   const reserved = acquireTask({ ...opts, controllerProcess: processIdentity() });
   if (!reserved.allowed || reserved.action !== 'start') return { ...reserved, capability };
@@ -101,8 +106,11 @@ export async function executeNative(opts) {
   // main turn. Re-grant exactly run.md's allowed-tools for the session so later turns match the first.
   const allowedTools = fs.readFileSync(path.join(PACKAGE_ROOT, 'plugin', 'commands', 'run.md'), 'utf8').match(/^allowed-tools:\s*(.+)$/m)?.[1].split(',').map(tool => tool.trim()).filter(Boolean) || [];
   if (!allowedTools.length) throw stateError('NATIVE_COMMAND_TOOLS_MISSING', 'plugin/commands/run.md must declare allowed-tools');
-  const argv = nativeLaunchArgs({ requestRef, packageRoot: PACKAGE_ROOT, stateRoot: identity.stateRoot, modeId: state.run.snapshot.modeId, allowedTools, modelId: task.selection.modelId });
-  const child = spawn(capability.binary, argv, { cwd: task.workspace, detached: true, stdio: ['ignore', 'pipe', 'pipe'], shell: false, env: { ...process.env, MAWF_NATIVE_RUN_CONTEXT: JSON.stringify({ project: state.run.snapshot.authorityProject, runId: task.runId, stateRoot: identity.stateRoot, controllerLeaseId: identity.leaseId }) } });
+  const windowPolicy = windows ? prepareWindowsNative({ state, identity, packageRoot: PACKAGE_ROOT, shell: windows.shell, deadlineAt }) : null;
+  const launchOpts = { requestRef, packageRoot: PACKAGE_ROOT, stateRoot: identity.stateRoot, modeId: state.run.snapshot.modeId, allowedTools, modelId: task.selection.modelId };
+  const argv = windows ? windowsNativeArgs({ ...launchOpts, mcpConfig: windowPolicy.mcpConfig }) : nativeLaunchArgs(launchOpts);
+  const env = { ...process.env, MAWF_NATIVE_RUN_CONTEXT: JSON.stringify({ project: state.run.snapshot.authorityProject, runId: task.runId, stateRoot: identity.stateRoot, controllerLeaseId: identity.leaseId }) };
+  const child = windows ? spawnWindowsJob([...invocation, ...argv], { cwd: task.workspace, directory, maxDurationMs: Math.max(1, deadlineAt - Date.now()), env }) : spawn(capability.binary, argv, { cwd: task.workspace, detached: true, stdio: ['ignore', 'pipe', 'pipe'], shell: false, env });
   const outputPath = path.join(directory, 'host-events.jsonl');
   let buffer = '', total = 0, interval, deadline, resultEvent = null, mainSessionId = null, cancelling = false;
   const cancel = async () => { if (cancelling) return; cancelling = true; markCancelPending(identity); const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); signalKnownBackend(lease, 'SIGTERM'); await delay(1000); if (!backendStopped(lease).stopped) signalKnownBackend(lease, 'SIGKILL'); };
@@ -119,13 +127,14 @@ export async function executeNative(opts) {
   });
   child.stderr.on('data', chunk => { if (total < 32 * 1024 * 1024) fs.appendFileSync(path.join(directory, 'stderr.log'), chunk.toString().replace(/(?:Bearer\s+|api[_-]?key\s*[:=]\s*)[^\s"']+/gi, '[REDACTED]').slice(0, 8192), { mode: 0o600 }); });
   process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
-  child.once('spawn', () => { bindJob({ ...identity, process: processIdentity(child.pid), processGroup: child.pid, jobId: `claude-process:${child.pid}` });
+  child.once('spawn', () => { bindJob({ ...identity, process: processIdentity(child.pid), processGroup: windows ? null : child.pid, windowsJob: windowsLaunch(child)?.jobName, jobId: `claude-process:${child.pid}` });
     const keeperFile = path.join(directory, 'deadline.json'); writeAtomic(keeperFile, { identity, deadlineAt });
     const keeper = spawn(process.execPath, [fileURLToPath(new URL('./native-deadline.js', import.meta.url)), keeperFile], { detached: true, stdio: 'ignore' }); keeper.unref();
-    recordAdapterState(identity, { deadlineAt: new Date(deadlineAt).toISOString(), deadlineKeeperPid: keeper.pid, deadlineKeeper: 'independent_of_cli_controller' });
+    recordAdapterState(identity, { deadlineAt: new Date(deadlineAt).toISOString(), deadlineKeeperPid: keeper.pid, deadlineKeeper: 'independent_of_cli_controller', ...(windowPolicy ? { windowsRecoveryFile: windowPolicy.policy.recoveryFile } : {}) });
     interval = setInterval(() => { try { const lease = runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId); if (lease.cancelRequestedAt) void cancel(); else heartbeat(identity); } catch { void cancel(); } }, 1000); deadline = setTimeout(() => { void cancel(); }, Math.max(1, deadlineAt - Date.now())); });
   const exit = await new Promise(resolve => { child.once('error', error => resolve({ code: null, error: error.message })); child.once('close', (code, signal) => resolve({ code, signal })); });
   clearInterval(interval); clearTimeout(deadline); process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
+  if (windowPolicy) recoverWindowsSandbox(windowPolicy.policy.recoveryFile);
   if (exit.error && !child.pid) return { ...markLaunchFailed({ ...identity, error: { code: 'NATIVE_SPAWN_FAILED', message: exit.error } }), ok: false, produced: false, reasonCode: 'NATIVE_SPAWN_FAILED' };
   if (runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId)?.status === 'released') return { ok: false, reasonCode: 'NATIVE_CANCELLED_OR_DEADLINE', outputPath, resourcesReleased: true };
   const produced = exit.code === 0 && resultEvent && resultEvent.is_error !== true;

@@ -3,8 +3,8 @@
 # MAWF 1.0.0
 
 MAWF provides explicit workflow selection, a shared task ledger, optional host
-adapters, and independent candidate acceptance. This tree is a **local release
-candidate**, not a published npm release.
+adapters, and independent candidate acceptance. This is the 1.0.0 source tree;
+publication status and exact validation evidence are in docs/V1_RELEASE_STATUS.md.
 
 The npm package is `multi-agents-workflow`; the executable is `mawf`. The similarly
 named singular package is unrelated. Core requires Node >=20.17 and has no npm
@@ -109,8 +109,10 @@ Independent Linux evidence covers configuration/install boundaries, a real
 32-minute local process, mode isolation, the Pi companion's verified canonical
 model path, a real Pi optimization/keep/stop chain, and ordinary independent
 mode-control handoff. These scopes do not prove every platform or optional host.
-Windows v1 process-tree execution, live measured payments, and a complete real
-Claude Slash-to-acceptance flow remain unverified/blocked where documented.
+Windows local tasks use native Job Objects and creation identities. Native Claude
+uses AppContainer tools without WSL; see docs/V1_WINDOWS.md for prerequisites and
+evidence limits. Live payment telemetry remains unverified. Linux live acceptance
+and Windows no-model controller tests cover different scopes.
 Historical automated checks are retained; failing legacy assumptions and
 unresolved failures are reported, not rewritten into green results.
 

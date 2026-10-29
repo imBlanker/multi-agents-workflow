@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { retryTransient } from './platform/index.js';
+import { windowsStartIdentity } from './platform/windows-process.js';
 
 export function stateError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -17,6 +18,7 @@ export function processIdentity(pid = process.pid) {
       startIdentity = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
     } catch {}
   }
+  if (process.platform === 'win32') startIdentity = windowsStartIdentity(pid);
   return { pid, startIdentity, hostname: os.hostname(), platform: process.platform };
 }
 

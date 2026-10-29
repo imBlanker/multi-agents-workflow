@@ -4,7 +4,12 @@ All notable changes to **multi-agents-workflow (MAW)** are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/). Agent-oriented summary: [`docs/AGENT_CHANGELOG.md`](docs/AGENT_CHANGELOG.md).
 
-## [1.0.0] — 2026-10-14 (local candidate; unpublished)
+## [1.0.0] — 2026-10-29
+
+- Native Windows Job Object process control and AppContainer MCP tools, without WSL; see docs/V1_WINDOWS.md for prerequisites and evidence limits.
+- Trellis runner receives an explicit option allowlist; MAWF-only flags stay private.
+- Candidate inventories use fixed UTF-16 code-unit ordering; pre-release candidates may drift and require refreezing with new evidence.
+- Advise/archify fixture cleanup and suite-owned temporary trees, removed on success and failure.
 
 - Default all optional integrations off; explicit settings, mode registry and reversible legacy import.
 - Separate dynamic/fixed-1 planning, owned generated projections, frozen run policies and role overrides.

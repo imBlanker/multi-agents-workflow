@@ -6,7 +6,7 @@ coding agents operating this repo). Human narrative: [`../CHANGELOG.md`](../CHAN
 
 Package: `multi-agents-workflow` · CLI: `mawf` · Node ≥ 20.17 · zero runtime deps.
 
-## 1.0.0 (2026-10-14; local candidate, unpublished)
+## 1.0.0 (2026-10-29; publication pending final gates)
 
 ```yaml
 version: 1.0.0
@@ -20,7 +20,7 @@ runtime: canonical_fenced_ledger_no_age_based_eviction
 acceptance: independent_evidence_bound_to_candidate_and_frozen_policy
 cost: unknown_is_not_zero_or_measured; explicit_bounded_native_subscription_risk_optional
 native_sandbox: claude_code_bash_sandbox_required; failIfUnavailable; allowUnsandboxedCommands_false; deny_write_state_root_package_and_node_directory; edit_deny_rules; excluded_only_named_core_management; no_network_without_additional_host_grants
-limits: [windows_process_control_refused_at_admission, native_controlled_execution_linux_only, native_sandbox_needs_bwrap_and_socat, native_sessions_have_no_network, native_sessions_cannot_start_external_adapters, user_or_managed_sandbox_arrays_merge_in, core_git_and_claude_cli_resolve_via_trusted_path, native_node_and_package_paths_must_be_shell_safe, current_measured_payment_unsupported, codex_companion_pricing_record_missing, trellis_runner_receives_mawf_only_options]
+limits: [windows_external_companions_and_pi_experiments_refused, native_sandbox_needs_bwrap_and_socat, native_sessions_have_no_network, native_sessions_cannot_start_external_adapters, user_or_managed_sandbox_arrays_merge_in, core_git_and_claude_cli_resolve_via_trusted_path, native_node_and_package_paths_must_be_shell_safe, current_measured_payment_unsupported, codex_companion_pricing_record_missing]
 issues: [https://github.com/imBlanker/multi-agents-workflow/issues/43]
 prs: [https://github.com/imBlanker/multi-agents-workflow/pull/44, https://github.com/imBlanker/multi-agents-workflow/pull/45]
 fixed:
@@ -46,7 +46,7 @@ removed:
 added:
   - "tests: existing-target symlink escape rejected with nothing copied; .tar.gz backup->restore round trip; per-adapter tar selection; v1 core on windows (path spellings, CRLF pins, cmd launchers, file sharing, junctions)"
 checks: retained_npm_test_and_packed_install_results_reported_in_V1_RELEASE_STATUS
-publication: not_authorized
+publication: authorized_pending_final_release_gates
 ```
 
 ## 0.8.4 (2026-10-10)

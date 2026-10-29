@@ -37,6 +37,7 @@ function owned(opts) {
 export async function startCompanion(opts) {
   const state = snapshot(opts), task = state.task;
   if (!task || !ADAPTERS[task.adapter]) throw stateError('ADAPTER_TASK_REQUIRED', 'Create a model task with the explicit companion adapter first');
+  if (process.platform === 'win32') return { ok: false, reasonCode: 'COMPANION_PROCESS_CONTROL_UNSUPPORTED', reason: 'External background companions do not expose a Windows Job Object; use the native Claude controller or a local-process task' };
   if (task.adapter === 'pi-plugin-cc' && ['advisor', 'researcher'].includes(task.role)) throw stateError('ROLE_PERMISSION_UNSUPPORTED', 'This Pi companion does not enforce read-only tool access; use a verified read-only adapter for this role');
   const descriptor = discoverAdapter(task.adapter, state.run.snapshot.settings, { path: opts.path });
   if (!descriptor.compatible) return { ok: false, reasonCode: descriptor.reasonCode, capability: descriptor };

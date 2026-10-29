@@ -2,16 +2,25 @@ import "./fixtures/test-env.mjs";
 // @ts-check
 // Tests for the deterministic cross-host advising engine (src/advise.js).
 // All host data is injected via `inventory` opts — no real ~ access, no exec.
-import { test } from "node:test";
+import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { adviseTask, checkFreshness, renderAdvise, tokenize, resolveDshPid } from "../src/advise.js";
 
+const ownedProjects = new Set();
 function tmpProject() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "maw-advise-"));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), "maw-advise-"));
+  ownedProjects.add(project);
+  return project;
 }
+afterEach(() => {
+  for (const project of ownedProjects) {
+    fs.rmSync(project, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    ownedProjects.delete(project);
+  }
+});
 
 /** Crafted inventory: pi has matching skills; codex has better models+price. */
 function fixtureInventory() {

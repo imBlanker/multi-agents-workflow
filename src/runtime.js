@@ -2,6 +2,7 @@ import { fixedVerificationHandoff } from './run-queue-policy.js';
 import { captureNativeReceipt } from './native-receipt.js';
 import { candidateIdentity, candidateAuthors, checkCandidateCurrent, validateEvidence, acceptanceDecision, bindDeclaredEvidence } from './verification.js';
 import { ChildProcess } from 'node:child_process';
+import { windowsLaunch, windowsJobStopped } from './platform/windows-process.js';
 // Shared, fenced runtime ledger. A reservation is permission to start once,
 // never evidence that an unbound backend did not start.
 import fs from 'node:fs';
@@ -259,7 +260,8 @@ function controlledHost(run, task, ledger) {
   const controller = run.tasks[task.controllerTaskId];
   const lease = controller && ledger.leases[controller.currentLeaseId];
   const remaining = lease ? Date.parse(lease.startedAt) + controller.maxDurationMs - Date.now() : 0;
-  if (!controller?.coordinationOnly || controller.adapter !== 'claude-native' || !lease || task.controllerLeaseId && task.controllerLeaseId !== lease.leaseId || !ACTIVE.has(lease.status) || lease.cancelRequestedAt || !lease.ownerProcess || processAlive(lease.ownerProcess) !== true || lease.processGroup !== lease.ownerProcess.pid || remaining <= 0 || task.maxDurationMs + 1000 < remaining || controller.adapterState?.selectionGate?.allowed !== true || !controller.adapterState?.actualModel || task.selection.modelId !== controller.adapterState.actualModel || task.selection.providerId !== controller.adapterState.actualProvider || task.selection.billingMode !== controller.billingObservation?.billingMode) return null;
+  const groupBound = lease?.windowsJob ? windowsJobStopped(lease).active === true : lease?.ownerProcess && lease.processGroup === lease.ownerProcess.pid;
+  if (!controller?.coordinationOnly || controller.adapter !== 'claude-native' || !lease || task.controllerLeaseId && task.controllerLeaseId !== lease.leaseId || !ACTIVE.has(lease.status) || lease.cancelRequestedAt || !lease.ownerProcess || processAlive(lease.ownerProcess) !== true || !groupBound || remaining <= 0 || task.maxDurationMs + 1000 < remaining || controller.adapterState?.selectionGate?.allowed !== true || !controller.adapterState?.actualModel || task.selection.modelId !== controller.adapterState.actualModel || task.selection.providerId !== controller.adapterState.actualProvider || task.selection.billingMode !== controller.billingObservation?.billingMode) return null;
   return lease;
 }
 function admission(task, run, root, ledger) {
@@ -369,6 +371,10 @@ export function bindJob(opts) {
       if (opts.processGroup !== identity.pid || observed && observed.processGroup !== opts.processGroup) throw stateError('UNSAFE_PROCESS_GROUP', 'Only the backend-created process group may be tracked');
     }
     lease.ownerProcess = { ...actual, startIdentity: identity.startIdentity ?? null };
+    if (opts.windowsJob !== undefined) {
+      if (process.platform !== 'win32' || !/^Local\\mawf-[0-9a-f-]{36}$/.test(opts.windowsJob)) throw stateError('UNSAFE_PROCESS_GROUP', 'Invalid Windows Job Object binding');
+      lease.windowsJob = opts.windowsJob;
+    }
     lease.processGroup = opts.processGroup ?? (linuxProcess(identity.pid)?.processGroup === identity.pid ? identity.pid : null); lease.jobId = opts.jobId || `process:${identity.pid}:${identity.startIdentity}`; lease.sessionId = opts.sessionId ?? null;
     lease.status = task.status = lease.cancelRequestedAt ? 'cancel_pending' : 'running'; lease.launchState = 'bound'; lease.heartbeatAt = now();
     event(ledger, 'job_bound', { leaseId: lease.leaseId, jobId: lease.jobId });
@@ -405,6 +411,7 @@ export function reportResult(opts) {
   });
 }
 export function backendStopped(lease) {
+  if (lease.windowsJob) return windowsJobStopped(lease);
   if (lease.adapter === 'host-managed' && lease.hostCompletion?.jobId === lease.jobId && lease.hostCompletion?.sessionId === lease.sessionId) return { stopped: true, reason: 'Registered native Agent/Task invocation returned; detached/unregistered descendants are outside this host-managed receipt' };
   if (!lease.ownerProcess) return { stopped: lease.launchState === 'confirmed_not_started', reason: 'Unbound launch may have started; controller exit is not backend evidence' };
   const alive = processAlive(lease.ownerProcess);
@@ -529,10 +536,12 @@ export function observeLocalExit(opts, child) {
   if (!(child instanceof ChildProcess) || !Number.isSafeInteger(child.pid) || child.exitCode === null && child.signalCode === null) throw stateError('EXIT_RECEIPT_REQUIRED', 'The local adapter needs an actual ChildProcess terminal event');
   return transaction(opts, ledger => {
     const { task, lease } = fenced(ledger, opts, true);
-    if (task.adapter !== 'local-process' || lease.controllerProcess?.pid !== process.pid || processAlive(lease.controllerProcess) !== true || JSON.stringify(child.spawnargs) !== JSON.stringify(task.command)) throw stateError('EXIT_RECEIPT_MISMATCH', 'Exit event does not identify this controlled launch');
+    const launch = windowsLaunch(child);
+    if (task.adapter !== 'local-process' || lease.controllerProcess?.pid !== process.pid || processAlive(lease.controllerProcess) !== true || JSON.stringify(launch?.command || child.spawnargs) !== JSON.stringify(task.command)) throw stateError('EXIT_RECEIPT_MISMATCH', 'Exit event does not identify this controlled launch');
     if (lease.status === 'released') return { lease, alreadyReleased: true };
     if (lease.ownerProcess && lease.ownerProcess.pid !== child.pid) throw stateError('EXIT_RECEIPT_MISMATCH', 'Exit PID differs from the bound backend');
     lease.ownerProcess ??= { ...processIdentity(child.pid), startIdentity: null };
+    if (launch) lease.windowsJob = launch.jobName;
     lease.processGroup ??= process.platform === 'linux' ? child.pid : null;
     lease.jobId ??= `process:${child.pid}:observed-exit`;
     lease.exitReceipt = { source: 'core-local-child-exit', pid: child.pid, at: now(), exitCode: child.exitCode, signal: child.signalCode };

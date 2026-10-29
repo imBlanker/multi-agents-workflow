@@ -15,7 +15,7 @@ assets are materialized to the owning package's absolute Core path. The complete
 package must contain plugin, bin, src and docs together. In-place plugin loading
 has been metadata-validated; a plugin-only cache is not claimed equivalent.
 Fixed roles are top-level `mawf-fixed-*` agents with real frontmatter/tool lists.
-Native CLI uses the default built-in tool pool; each role's frontmatter narrows
+On Linux the native CLI uses the default built-in tool pool; each role's frontmatter narrows
 that pool. A global Read/Bash-only pool would also disable Implementer Write/Edit.
 The fixed main role remains mawf:mawf-fixed-orchestrator; existing permission
 rules still apply. Fixed-1 native sessions use acceptEdits so an authorized
@@ -32,7 +32,8 @@ does not widen what the first turn already had; managed/user/project deny rules
 and protected paths still apply. It does not enforce each task's owned scope:
 orchestration-only and file scope stay policy_only.
 
-Native launches enforce Claude Code's Bash sandbox. On Linux it needs bubblewrap
+Linux native launches enforce Claude Code's Bash sandbox. Windows uses the separate
+AppContainer/MCP boundary in V1_WINDOWS.md, without WSL. On Linux it needs bubblewrap
 and socat on PATH; without them the run is refused with NATIVE_SANDBOX_UNAVAILABLE
 before any reservation. `--settings` turns the sandbox on with failIfUnavailable,
 forbids the unsandboxed retry (allowUnsandboxedCommands:false), keeps the regular

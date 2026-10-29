@@ -2,8 +2,8 @@
 
 Package identity is `multi-agents-workflow`, CLI `mawf`, repository
 https://github.com/imBlanker/multi-agents-workflow. Do not install the unrelated
-singular npm name. This candidate is not published; use the supplied source or
-verified local tarball. Core Node >=20.17; optional Pi Autoresearch >=22.
+singular npm name. Before registry publication, use source or a verified tarball.
+After publication, install `multi-agents-workflow@1.0.0` explicitly. Core Node >=20.17; optional Pi Autoresearch >=22.
 
 ## Explicit selection
 

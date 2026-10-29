@@ -121,7 +121,7 @@ test("native launch refuses without bubblewrap and socat before touching run sta
   assert.deepEqual(fs.readdirSync(dir), []);
 });
 
-test("native launch stays refused outside Linux", { skip: process.platform === "linux" }, async () => {
+test("native launch stays refused on unsupported operating systems", { skip: ['linux', 'win32'].includes(process.platform) }, async () => {
   assert.equal((await executeNative({ project: os.tmpdir(), runId: "run-1", taskId: "task-1" })).reasonCode, "NATIVE_PROCESS_CONTROL_UNSUPPORTED");
 });
 

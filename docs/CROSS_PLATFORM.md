@@ -15,19 +15,12 @@ Linux it also needs bubblewrap and socat, because every native session runs its
 Bash commands in Claude Code's sandbox (docs/V1_EXECUTION.md); without them it
 refuses with `NATIVE_SANDBOX_UNAVAILABLE`.
 
-A Windows 11 host check of d6be4d0 (2026-10-28; Node 20, 22 and 24 from
-PowerShell and Git Bash, compared test by test with Linux) found the retained
-suite identical to Linux apart from fixtures tracked separately (console code
-page, GNU tar under Git Bash). Windows exposes no PID start identity, so
-local-process dispatch, companion adapters and Pi autoresearch are refused at
-admission with `OWNER_IDENTITY_UNVERIFIED` before any child starts, and native
-controlled Claude execution returns `NATIVE_PROCESS_CONTROL_UNSUPPORTED`. Windows
-process-tree cancellation, companion/native model execution and live payment
-telemetry therefore remain unsupported, not passed; report them that way rather
-than from a CI matrix definition. Configuration/plan source compatibility and
-prior platform tests are different scopes. Authentication, host installation and
-real request success remain separate on every platform. Role prompts/worktrees
-are not an OS sandbox.
+Windows local tasks use native creation identities and non-breakaway Job Objects.
+Native Claude operations use dedicated AppContainer MCP tools rather than the
+unsupported built-in Windows Bash sandbox. Tests cover actual process trees,
+file/network isolation, cancellation, deadlines and ACL recovery. The controller
+integration fixture makes no model calls. External companions and Pi experiment
+transports remain refused on Windows; price policy is unchanged. See V1_WINDOWS.md.
 
 The v1 core reaches Windows conventions only through the platform facade.
 `realpath` and `comparablePath` give one on-disk, case-folded spelling of a path

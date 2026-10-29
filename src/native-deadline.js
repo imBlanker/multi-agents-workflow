@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { runtimeStatus, markCancelPending, backendStopped, settleControlledHostChildren, releaseLease } from './runtime.js';
 import { signalKnownBackend } from './local-runtime.js';
+import { recoverWindowsSandbox } from './platform/windows-process.js';
 const { identity, deadlineAt } = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 if (!Number.isFinite(deadlineAt)) throw new Error('Invalid native deadline');
 const lease = () => runtimeStatus(identity).leases.find(item => item.leaseId === identity.leaseId);
@@ -19,5 +20,7 @@ try {
     for (let wait = 0; wait < 15 && !backendStopped(lease()).stopped; wait++) await delay(100);
   }
   settleControlledHostChildren({ ...identity, controllerLeaseId: identity.leaseId });
+  const recovery = runtimeStatus(identity).task?.adapterState?.windowsRecoveryFile;
+  if (recovery && backendStopped(lease()).stopped) recoverWindowsSandbox(recovery);
   releaseLease(identity);
 } catch { /* Preserve reservations for manual identity-safe reconciliation. */ }

@@ -3,16 +3,25 @@
 // raw argv must reach the locked engine verbatim — flags, values, order.
 // Spawn is injected; no real engine spawn happens in these tests except the
 // explicit live test guarded by MAWF_ARCHIFY_SRC.
-import { test } from "node:test";
+import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { runArchify, resolveEngine } from "../src/archify.js";
 
+const ownedEngines = new Set();
+afterEach(() => {
+  for (const engine of ownedEngines) {
+    fs.rmSync(engine, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    ownedEngines.delete(engine);
+  }
+});
+
 /** Capture spawn args; configurable exit status. Engine file faked in tmpdir. */
 function capturingSpawn(status = 0) {
   const src = fs.mkdtempSync(path.join(os.tmpdir(), "maw-archify-"));
+  ownedEngines.add(src);
   fs.mkdirSync(path.join(src, "archify", "bin"), { recursive: true });
   fs.writeFileSync(path.join(src, "archify", "bin", "archify.mjs"), "// fake engine entry\n");
   const env = { MAWF_ARCHIFY_SRC: src };

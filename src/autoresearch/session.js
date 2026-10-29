@@ -62,6 +62,7 @@ function logEntries(workspace) {
   return raw.split('\n').filter(Boolean).map(line => JSON.parse(line));
 }
 export async function startExperiment(opts) {
+  if (process.platform === 'win32') return { ok: false, reasonCode: 'AUTORESEARCH_PROCESS_CONTROL_UNSUPPORTED', reason: 'The external Pi experiment adapter has no Windows Job Object backend' };
   const state = current(opts), task = state.task;
   if (!isEnabled(state.run.snapshot.settings, 'autoresearch.pi')) throw stateError('INTEGRATION_DISABLED', 'autoresearch.pi is disabled in the run snapshot');
   const contract = validateContract(readStrict(path.resolve(opts.contractFile)));
