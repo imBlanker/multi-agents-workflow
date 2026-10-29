@@ -17,7 +17,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/); versions follow
 - One atomic fenced ledger, real Linux process identity/cancellation, no age-based lease eviction, native ready queues and Agent receipts.
 - Pinned Pi/Codex companions, no-prompt model/provider resolution, persistent bounded Pi experiments and independent acceptance evidence.
 - Correct `/mawf:mode`, `/mawf:run`, inherited native Agent model definitions, packaged execution/evidence contracts and isolated installer state directory.
-- Scope evidence and unresolved release checks are reported in docs/V1_RELEASE_STATUS.md. Existing tests and prepublishOnly remain; no publication was performed.
+- Scope evidence and unresolved release checks are reported in docs/V1_RELEASE_STATUS.md. Existing tests and prepublishOnly remain required release gates.
 
 ### Added
 
