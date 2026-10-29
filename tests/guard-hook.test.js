@@ -56,7 +56,9 @@ test("bundled and copied hook launchers locate shipped guard without plugin shel
   fs.copyFileSync(path.join(repo, "bin", "guard.mjs"), path.join(root, "bin", "guard.mjs"));
   // v1's guard reads the project's own integration selection, so the fixture
   // mirrors a real package layout (`bin/` beside `src/`) instead of a lone file.
-  fs.cpSync(path.join(repo, "src"), path.join(root, "src"), { recursive: true });
+  // A filter keeps Node 22.18 on the JS copy path: its native directory-copy
+  // fast path crashes on this Windows Unicode fixture before any hook assertion.
+  fs.cpSync(path.join(repo, "src"), path.join(root, "src"), { recursive: true, filter: () => true });
   fs.writeFileSync(path.join(root, "package.json"), '{"type":"module","version":"0.0.0-fixture"}');
   fs.writeFileSync(path.join(root, "bin", "mawf.js"), "console.log(process.env.MAWF_TEST_VERDICT || 'ALLOW spawn')");
   const hook = path.join(root, "plugin", "hooks", "hooks.json");

@@ -642,8 +642,10 @@ export function completeHostTask(opts) {
     const { task, lease } = fenced(ledger, opts, true);
     if (lease.status === 'released') return { alreadyReleased: true, lease, task };
     if (task.adapter !== 'host-managed' || !lease.jobId || opts.jobId !== lease.jobId || (opts.sessionId || null) !== (lease.sessionId || null)) throw stateError('HOST_RECEIPT_IDENTITY_MISMATCH', 'A host receipt must identify the bound native Agent instance; an unexposed session stays null');
+    const controller = ledger.runs[task.runId].tasks[task.controllerTaskId];
+    if (controller?.adapter === 'claude-native' && (opts.receiptFile !== undefined || opts.nativeReceipt !== true)) throw stateError('NATIVE_RECEIPT_REQUIRED', 'Registered native children require --native-receipt; caller receipt files are not accepted');
     if (opts.nativeReceipt && opts.receiptFile) throw stateError('INVALID_HOST_RECEIPT', 'Choose --native-receipt or --receipt-file, not both');
-    const receiptFile = opts.nativeReceipt ? captureNativeReceipt({ stateRoot: ledger.stateRoot, runId: task.runId, lease, controller: ledger.runs[task.runId].tasks[task.controllerTaskId] }) : opts.receiptFile;
+    const receiptFile = opts.nativeReceipt ? captureNativeReceipt({ stateRoot: ledger.stateRoot, runId: task.runId, lease, controller }) : opts.receiptFile;
     if (!receiptFile) throw stateError('HOST_RECEIPT_REQUIRED', 'Save the actual Agent/Task tool return outside product scope and pass --receipt-file');
     const receiptPath = assertSafePath(path.resolve(receiptFile));
     const bytes = fs.readFileSync(receiptPath);

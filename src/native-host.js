@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { findExecutable, execFile } from './platform/index.js';
+import { findExecutable, execFile, platformFor } from './platform/index.js';
 import { isEnabled } from './integrations.js';
 import { processIdentity, stateError, assertSafePath, writeAtomic } from './atomic-state.js';
 import { runtimeStatus, acquireTask, claimLocalLaunch, bindJob, heartbeat, recordAdapterState, reportResult, releaseLease, markCancelPending, backendStopped, acceptCandidate, evaluateObservedSelection, recordNativeBilling, settleControlledHostChildren, markLaunchFailed } from './runtime.js';
@@ -34,14 +34,30 @@ const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 // A native session runs every Bash command, its subagents' included, in Claude
 // Code's sandbox: no network, no unsandboxed retry, and no writes to the MAWF
 // state root or package. Edit deny rules keep the file tools out of both. Only
-// Core's own run/task calls leave the sandbox, so Core alone writes the ledger,
+// Explicit Core management calls leave the sandbox, so Core alone writes the ledger,
 // receipts and events, and the session cannot rewrite the Core it runs. The
 // boolean keys pin the sandbox's weakening switches against user settings.
 export const NATIVE_SANDBOX_TOOLS = Object.freeze(['bwrap', 'socat']);
-export function nativeSandboxPolicy({ packageRoot, stateRoot }) {
-  const entries = [`${packageRoot}/plugin/../bin/mawf.js`, `${packageRoot}/bin/mawf.js`];
-  const core = entries.flatMap(file => ['run', 'task'].flatMap(command => [`node "${file}" ${command} *`, `node '${file}' ${command} *`, `node ${file} ${command} *`]));
-  const sealed = [stateRoot, packageRoot];
+// Never exempt task dispatch or bare run: both can launch arbitrary subprocesses.
+// Keep this list aligned with the management-only calls in plugin/commands/run.md.
+const NATIVE_CORE_ACTIONS = Object.freeze([
+  'run prepare', 'run queue', 'run next', 'run respec',
+  'task bind', 'task heartbeat', 'task result', 'task host-complete',
+  'task candidate', 'task evidence', 'task accept', 'task acceptance',
+  'task status', 'task list',
+]);
+export function nativeCoreCommand({ packageRoot, nodePath = fs.realpathSync(process.execPath) }) {
+  // These paths become host wildcard rules as well as shell text. Refuse rule
+  // metacharacters rather than accidentally widening an exemption.
+  for (const root of [packageRoot, nodePath]) if (/[\*?\[\]\r\n]/.test(root)) throw stateError('NATIVE_SANDBOX_PATH_UNSUPPORTED', 'Native sandbox command paths cannot contain wildcard or newline characters');
+  return platformFor('linux').commandText(nodePath, [`${packageRoot}/bin/mawf.js`]);
+}
+export function nativeSandboxPolicy({ packageRoot, stateRoot, nodePath = fs.realpathSync(process.execPath) }) {
+  if (/[\*?\[\]\r\n]/.test(stateRoot)) throw stateError('NATIVE_SANDBOX_PATH_UNSUPPORTED', 'Native sandbox state paths cannot contain wildcard or newline characters');
+  const prefix = nativeCoreCommand({ packageRoot, nodePath });
+  const core = NATIVE_CORE_ACTIONS.map(command => `${prefix} ${command} *`);
+  // Seal the interpreter directory too: replacing its binary must not replace Core.
+  const sealed = [...new Set([stateRoot, packageRoot, path.dirname(nodePath)])];
   return {
     settings: { sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: false, enableWeakerNestedSandbox: false, allowNestedUserNamespaces: false, excludedCommands: core, filesystem: { disabled: false, denyWrite: sealed }, network: { allowAllUnixSockets: false } } },
     // Claude Code checks file tools against Edit(path) rules only; `//` anchors an absolute path.
@@ -52,9 +68,11 @@ export function workspaceInsidePackage(workspace, packageRoot = PACKAGE_ROOT) {
   const relative = path.relative(path.resolve(packageRoot), path.resolve(workspace));
   return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
-export function nativeLaunchArgs({ requestRef, packageRoot, stateRoot, modeId, allowedTools, modelId }) {
-  const sandbox = nativeSandboxPolicy({ packageRoot, stateRoot });
-  return ['-p', `/mawf:run --request-ref ${requestRef}`, '--plugin-dir', path.join(packageRoot, 'plugin'), '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--forward-subagent-text', '--include-hook-events', '--permission-mode', modeId === 'fixed-1' ? 'acceptEdits' : 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--tools', 'default', '--settings', JSON.stringify(sandbox.settings), '--allowedTools', ...allowedTools, '--disallowedTools', ...sandbox.disallowedTools, ...(modeId === 'fixed-1' ? ['--agent', 'mawf:mawf-fixed-orchestrator'] : []), '--model', modelId];
+export function nativeLaunchArgs({ requestRef, packageRoot, stateRoot, modeId, allowedTools, modelId, nodePath = fs.realpathSync(process.execPath) }) {
+  const sandbox = nativeSandboxPolicy({ packageRoot, stateRoot, nodePath });
+  const coreCommand = nativeCoreCommand({ packageRoot, nodePath });
+  const coreInstruction = `Registered MAWF native controller: use this exact literal Core command prefix for EVERY management call, starting with run prepare: ${coreCommand}. Append the management subcommand and arguments. This replaces the fallback node command in /mawf:run. Do not substitute another interpreter or package path.`;
+  return ['-p', `/mawf:run --request-ref ${requestRef}`, '--plugin-dir', path.join(packageRoot, 'plugin'), '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--forward-subagent-text', '--include-hook-events', '--permission-mode', modeId === 'fixed-1' ? 'acceptEdits' : 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--tools', 'default', '--append-system-prompt', coreInstruction, '--settings', JSON.stringify(sandbox.settings), '--allowedTools', ...allowedTools, '--disallowedTools', ...sandbox.disallowedTools, ...(modeId === 'fixed-1' ? ['--agent', 'mawf:mawf-fixed-orchestrator'] : []), '--model', modelId];
 }
 export async function executeNative(opts) {
   if (process.platform !== 'linux') return { ok: false, reasonCode: 'NATIVE_PROCESS_CONTROL_UNSUPPORTED', reason: 'This native process-tree controller is verified only for Linux' };
@@ -63,6 +81,8 @@ export async function executeNative(opts) {
   validateNativeDescription(opts.description || '');
   const state = runtimeStatus(opts), task = state.task;
   if (workspaceInsidePackage(task.workspace)) return { ok: false, reasonCode: 'NATIVE_WORKSPACE_INSIDE_PACKAGE', reason: 'The native sandbox keeps the MAWF package read-only, so the workspace cannot be inside it; run an installed MAWF package outside the workspace' };
+  // Validate host rule paths before consuming a lease.
+  nativeSandboxPolicy({ packageRoot: PACKAGE_ROOT, stateRoot: state.stateRoot });
   const capability = nativeHostCapability(state.run.snapshot.settings, task.workspace);
   enforceNativeBilling(capability, task.selection);
   recordNativeBilling(opts, capability);

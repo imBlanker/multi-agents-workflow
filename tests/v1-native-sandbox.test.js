@@ -7,15 +7,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { nativeSandboxPolicy, nativeLaunchArgs, workspaceInsidePackage, executeNative } from "../src/native-host.js";
+import { nativeSandboxPolicy, nativeCoreCommand, nativeLaunchArgs, workspaceInsidePackage, executeNative } from "../src/native-host.js";
 import { validateEvidence } from "../src/verification.js";
 import { runExecution } from "../src/run-cli.js";
 import { setIntegration } from "../src/integrations.js";
 
 const PACKAGE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
-const packageRoot = "/opt/mawf", stateRoot = "/work/app/.mawf/runtime";
+const packageRoot = "/opt/mawf", stateRoot = "/work/app/.mawf/runtime", nodePath = "/usr/bin/node";
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const tmp = (t) => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mawf-sandbox-")));
@@ -34,7 +35,7 @@ const flagValues = (argv, flag) => {
 };
 
 test("the native sandbox fails closed and keeps the state root and package read-only", () => {
-  const { settings, disallowedTools } = nativeSandboxPolicy({ packageRoot, stateRoot });
+  const { settings, disallowedTools } = nativeSandboxPolicy({ packageRoot, stateRoot, nodePath });
   const sandbox = settings.sandbox;
   assert.equal(sandbox.enabled, true);
   assert.equal(sandbox.failIfUnavailable, true, "a missing sandbox stops the session instead of running Bash unsandboxed");
@@ -43,38 +44,56 @@ test("the native sandbox fails closed and keeps the state root and package read-
   for (const weakening of ["enableWeakerNestedSandbox", "allowNestedUserNamespaces"]) assert.equal(sandbox[weakening], false, weakening);
   assert.equal(sandbox.filesystem.disabled, false);
   assert.equal(sandbox.network.allowAllUnixSockets, false);
-  assert.deepEqual(sandbox.filesystem.denyWrite, [stateRoot, packageRoot]);
+  assert.deepEqual(sandbox.filesystem.denyWrite, [stateRoot, packageRoot, "/usr/bin"]);
   assert.equal(sandbox.filesystem.allowWrite, undefined, "MAWF widens no write path");
   assert.equal(sandbox.network.allowedDomains, undefined, "MAWF opens no network domain");
   // Claude Code matches file tools against Edit(path) rules only; `//` anchors at the filesystem root.
-  assert.deepEqual(disallowedTools, [`Edit(/${stateRoot}/**)`, `Edit(/${packageRoot}/**)`]);
+  assert.deepEqual(disallowedTools, [`Edit(/${stateRoot}/**)`, `Edit(/${packageRoot}/**)`, "Edit(//usr/bin/**)"]);
   assert.ok(disallowedTools.every((rule) => rule.startsWith("Edit(//")));
 });
 
-test("only Core run and task calls of the package entry leave the sandbox", () => {
-  const excluded = nativeSandboxPolicy({ packageRoot, stateRoot }).settings.sandbox.excludedCommands;
-  assert.equal(excluded.length, 12, "two entry spellings, two commands, three quotings");
-  for (const pattern of excluded) assert.match(pattern, /^node (["']?)\/opt\/mawf\/(?:plugin\/\.\.\/)?bin\/mawf\.js\1 (?:run|task) \*$/);
-  // run.md's Core entry, as the host expands it, is covered for both commands.
+test("only management calls leave the sandbox; process launchers are never exempt", () => {
+  const excluded = nativeSandboxPolicy({ packageRoot, stateRoot, nodePath }).settings.sandbox.excludedCommands;
   const runMd = fs.readFileSync(path.join(PACKAGE, "plugin", "commands", "run.md"), "utf8");
   assert.ok(runMd.includes('`node "${CLAUDE_PLUGIN_ROOT}/../bin/mawf.js"`'));
-  for (const command of ["run", "task"]) assert.ok(excluded.includes(`node "${packageRoot}/plugin/../bin/mawf.js" ${command} *`), command);
-  // run.md asks for no other Core command, which would stay sandboxed and fail to record state.
-  const other = /^(?:mode|integrations|config|adapter|autoresearch|install|uninstall|update|upgrade|init|advise|components|knowledge|bridge|companion|session|archify|plan|doctor|inventory|cost)\s/;
-  assert.deepEqual([...runMd.matchAll(/`([^`]+)`/g)].map((match) => match[1]).filter((span) => other.test(span)), []);
+  // Exercise the policy boundary, not just the number/shape of generated rules.
+  const matches = command => excluded.some(pattern => command.startsWith(pattern.slice(0, -1)));
+  const entry = nativeCoreCommand({ packageRoot, nodePath });
+  assert.equal(entry, "'/usr/bin/node' '/opt/mawf/bin/mawf.js'");
+  assert.equal(matches(`node "${packageRoot}/bin/mawf.js" task status --json`), false, "PATH-resolved node is not exempt");
+  for (const management of [
+    'run prepare --host-managed --request-ref ref --json',
+    'run queue --input tasks.json', 'run next --run-id run-1', 'run respec --input task.json',
+    'task bind --job-id agent-1', 'task heartbeat --run-id run-1',
+    'task result --status produced', 'task host-complete --native-receipt',
+    'task candidate --run-id run-1', 'task evidence --input evidence.json',
+    'task acceptance --run-id run-1', 'task accept --run-id run-1',
+    'task status --run-id run-1', 'task list --project /work/app',
+  ]) assert.ok(matches(`${entry} ${management}`), management);
+  for (const launcher of [
+    'task add --adapter local-process --command-json ["node","worker.js"]',
+    'task dispatch --run-id run-1 --task-id worker',
+    'run --task "start a new model"', 'run execute --task "start a new model"',
+    'adapter start --run-id run-1', 'autoresearch start --project /work/app',
+  ]) assert.equal(matches(`${entry} ${launcher}`), false, launcher);
+  for (const pattern of excluded) {
+    assert.ok(pattern.endsWith(' *'));
+    assert.equal(pattern.endsWith(' run *') || pattern.endsWith(' task *'), false, pattern);
+  }
 });
 
 test("launch arguments hand Claude Code the sandbox settings and Edit denials", () => {
-  const { settings, disallowedTools } = nativeSandboxPolicy({ packageRoot, stateRoot });
-  const fixed = nativeLaunchArgs({ requestRef: "ref-1", packageRoot, stateRoot, modeId: "fixed-1", allowedTools: ["Bash", "Read"], modelId: "model-1" });
+  const { settings, disallowedTools } = nativeSandboxPolicy({ packageRoot, stateRoot, nodePath });
+  const fixed = nativeLaunchArgs({ requestRef: "ref-1", packageRoot, stateRoot, nodePath, modeId: "fixed-1", allowedTools: ["Bash", "Read"], modelId: "model-1" });
   assert.deepEqual(JSON.parse(flagValues(fixed, "--settings")[0]), settings);
   assert.deepEqual(flagValues(fixed, "--allowedTools"), ["Bash", "Read"]);
   assert.deepEqual(flagValues(fixed, "--disallowedTools"), disallowedTools);
   assert.deepEqual(flagValues(fixed, "--permission-mode"), ["acceptEdits"]);
   assert.deepEqual(flagValues(fixed, "--agent"), ["mawf:mawf-fixed-orchestrator"]);
   assert.deepEqual(flagValues(fixed, "--model"), ["model-1"]);
+  assert.ok(flagValues(fixed, "--append-system-prompt")[0].includes(nativeCoreCommand({ packageRoot, nodePath })));
   assert.deepEqual(fixed.slice(0, 2), ["-p", "/mawf:run --request-ref ref-1"]);
-  const dynamic = nativeLaunchArgs({ requestRef: "ref-1", packageRoot, stateRoot, modeId: "dynamic", allowedTools: ["Bash"], modelId: "model-1" });
+  const dynamic = nativeLaunchArgs({ requestRef: "ref-1", packageRoot, stateRoot, nodePath, modeId: "dynamic", allowedTools: ["Bash"], modelId: "model-1" });
   assert.deepEqual(flagValues(dynamic, "--permission-mode"), ["dontAsk"]);
   assert.equal(dynamic.includes("--agent"), false);
   assert.deepEqual(flagValues(dynamic, "--disallowedTools"), disallowedTools);
@@ -136,4 +155,26 @@ test("run prepare names a session-writable input directory outside the state roo
   assert.equal(out.inputDirectory, path.join(project, ".mawf", "inputs", out.runId));
   assert.ok(fs.statSync(out.inputDirectory).isDirectory());
   assert.ok(path.relative(out.stateRoot, out.inputDirectory).startsWith(".."), "the input directory is not inside the state root");
+});
+
+
+test("sandbox rules refuse wildcard paths rather than granting a wider command prefix", () => {
+  for (const unsafe of ['/opt/mawf*', '/opt/mawf?', '/opt/mawf[1]', '/opt/mawf\nnext']) {
+    assert.throws(() => nativeSandboxPolicy({ packageRoot: unsafe, stateRoot, nodePath }), { code: 'NATIVE_SANDBOX_PATH_UNSUPPORTED' });
+    assert.throws(() => nativeSandboxPolicy({ packageRoot, stateRoot: unsafe, nodePath }), { code: 'NATIVE_SANDBOX_PATH_UNSUPPORTED' });
+    assert.throws(() => nativeSandboxPolicy({ packageRoot, stateRoot, nodePath: unsafe }), { code: 'NATIVE_SANDBOX_PATH_UNSUPPORTED' });
+  }
+});
+
+
+test("the literal Core prefix preserves spaced Unicode and shell-special paths", { skip: process.platform !== 'linux' }, (t) => {
+  const root = path.join(tmp(t), "package 项目 '$literal");
+  fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'bin', 'mawf.js'), 'console.log(JSON.stringify(process.argv.slice(2)))');
+  const prefix = nativeCoreCommand({ packageRoot: root });
+  const result = spawnSync('/bin/sh', ['-c', `${prefix} task status --json`], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), ['task', 'status', '--json']);
+  const rules = nativeSandboxPolicy({ packageRoot: root, stateRoot });
+  assert.ok(rules.settings.sandbox.excludedCommands.includes(`${prefix} task status *`));
 });

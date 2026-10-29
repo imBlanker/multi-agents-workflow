@@ -37,7 +37,7 @@ export function candidateIdentity(run, opts = {}) {
   const files = inventory(workspace, [...scope, ...artifacts]);
   if (!files.length) throw stateError('EMPTY_CANDIDATE', 'Candidate scope contains no product files');
   const commitSha = git(workspace, ['rev-parse', 'HEAD']);
-  const diff = commitSha ? git(workspace, ['diff', '--binary', 'HEAD', '--', ...scope, ...artifacts]) : null;
+  const diff = commitSha ? git(workspace, ['diff', '--binary', '--no-ext-diff', '--no-textconv', 'HEAD', '--', ...scope, ...artifacts]) : null;
   if (commitSha && diff === null) throw stateError('CANDIDATE_DIFF_UNAVAILABLE', 'Cannot hash the dirty candidate diff');
   const identity = { schemaVersion: 1, commitSha, diffHash: digest(diff || ''), contentHash: digest(files), effectiveConfigHash: run.snapshot.effectiveConfigHash, scope, artifacts };
   return { ...identity, candidateId: digest(identity), workspace, files };

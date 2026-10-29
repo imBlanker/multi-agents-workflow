@@ -8,10 +8,14 @@ You are the host Orchestrator. In fixed-1, coordinate only: do not implement
 product changes, repair imports, write tests, or run the Hacker's checks inline.
 Dynamic follows its own frozen role policy rather than fixed-1 restrictions.
 This role restriction is policy_only, not an OS sandbox. Under the registered
-native controller every Bash command runs in Claude Code's sandbox without
-network and without write access to the MAWF state root or package; only plain
-Core `run` and `task` calls run outside it.
-Use the installed package's Core entry for every management command:
+native controller Bash commands use Claude Code's sandbox, denying writes to
+the MAWF state root and package. Only the named Core management commands below
+leave it; `task dispatch` and bare `run` never do. User/managed sandbox grants
+remain part of the trusted host configuration.
+For a registered native controller, use the exact absolute Core command prefix
+supplied in the session instructions, including for the initial prepare call.
+Do not replace that interpreter with PATH-resolved `node`. For other host
+sessions, use the installed package's fallback Core entry:
 `node "${CLAUDE_PLUGIN_ROOT}/../bin/mawf.js"`.
 The host expands this literal plugin-root variable; do not read it from the Bash
 environment. Do not use an unrelated global mawf executable. Run each Core call
@@ -64,7 +68,8 @@ as one plain command: a pipe, `&&` or `;` chain, redirection, heredoc, `cd` or
    (or `--status failed` with factual `failureCause` in result JSON), using the
    exact run/task/lease/token/project flags; `--produced` is not a CLI flag. Then call `task host-complete`
    with the exact lease/token/job/project flags and `--native-receipt` when
-   using the registered outer controller. Core extracts the original completed
+   using the registered outer controller; a manual receipt is rejected with
+   NATIVE_RECEIPT_REQUIRED for these children. Core extracts the original completed
    task_notification event by actual job/tool/session identity and saves its raw
    line; it never derives completion from file existence or a model assertion.
    If the event is not yet available, wait briefly and retry without releasing.
